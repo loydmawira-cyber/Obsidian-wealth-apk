@@ -132,7 +132,7 @@ class PreferencesManager(context: Context) {
 
     // AUTH & QUICK 4-DIGIT PIN METHODS
     fun isLoggedIn(): Boolean {
-        return prefs.getBoolean(KEY_IS_LOGGED_IN, true)
+        return prefs.getBoolean(KEY_IS_LOGGED_IN, false)
     }
 
     fun setLoggedIn(loggedIn: Boolean) {
@@ -140,7 +140,7 @@ class PreferencesManager(context: Context) {
     }
 
     fun getUserEmail(): String {
-        return prefs.getString(KEY_USER_EMAIL, "investor@sovereign.io") ?: "investor@sovereign.io"
+        return prefs.getString(KEY_USER_EMAIL, "") ?: ""
     }
 
     fun setUserEmail(email: String) {
@@ -148,7 +148,7 @@ class PreferencesManager(context: Context) {
     }
 
     fun getUserPassword(): String {
-        return prefs.getString(KEY_USER_PASSWORD, "password123") ?: "password123"
+        return prefs.getString(KEY_USER_PASSWORD, "") ?: ""
     }
 
     fun setUserPassword(password: String) {
