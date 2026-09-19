@@ -1,0 +1,673 @@
+package com.example
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+
+import androidx.compose.material3.FabPosition
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.data.models.CreditCardEntity
+import com.example.data.models.UserSettings
+import com.example.ui.auth.AuthScreen
+import com.example.ui.auth.PinLockScreen
+import com.example.ui.components.AddHoldingDialog
+import com.example.ui.components.AddSipDialog
+import com.example.ui.components.AddTransactionDialog
+import com.example.ui.components.AiSmartLogDialog
+import com.example.ui.components.ExportReportDialog
+import com.example.ui.components.ObsidianAiAdvisorSheet
+import com.example.ui.components.ObsidianSettingsSheet
+import com.example.ui.components.PayCreditCardDialog
+import com.example.ui.screens.CashFlowScreen
+import com.example.ui.screens.DebtCenterScreen
+import com.example.ui.screens.GoalsAndReportsScreen
+import com.example.ui.screens.InvestmentsScreen
+import com.example.ui.screens.OverviewScreen
+import com.example.ui.theme.CyanAccent
+import com.example.ui.theme.CyanLight
+import com.example.ui.theme.ElectricIndigo
+import com.example.ui.theme.EmeraldGrowth
+import com.example.ui.theme.EmeraldLight
+import com.example.ui.theme.GoldBorder
+import com.example.ui.theme.GoldBright
+import com.example.ui.theme.GoldGradientStart
+import com.example.ui.theme.GoldLight
+import com.example.ui.theme.IndigoLight
+import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.ObsidianBg
+import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianBorderSubtle
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.ObsidianSurfaceVariant
+import com.example.ui.theme.SovereignGold
+import com.example.ui.theme.TextMuted
+import com.example.ui.theme.TextPrimary
+import com.example.ui.theme.TextSecondary
+
+import com.example.ui.viewmodel.FinanceTab
+import com.example.ui.viewmodel.FinanceViewModel
+
+class MainActivity : ComponentActivity() {
+    private val viewModel: FinanceViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            MyApplicationTheme {
+                ObsidianApp(viewModel)
+            }
+        }
+    }
+}
+
+@Composable
+fun ObsidianApp(viewModel: FinanceViewModel) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                viewModel.onAppBackgrounded()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val isLoggedIn by viewModel.isLoggedIn.collectAsState()
+    val isPinLocked by viewModel.isPinLocked.collectAsState()
+    val isPinEnabled by viewModel.isPinEnabled.collectAsState()
+
+    if (!isLoggedIn) {
+        AuthScreen(
+            viewModel = viewModel,
+            onUsePinUnlock = if (isPinEnabled) { { viewModel.openPinLock() } } else null
+        )
+        return
+    }
+
+    if (isPinLocked) {
+        PinLockScreen(
+            viewModel = viewModel,
+            onUseEmailPassword = { viewModel.logout() }
+        )
+        return
+    }
+
+    val selectedTab by viewModel.selectedTab.collectAsState()
+    val chatMessages by viewModel.chatMessages.collectAsState()
+    val isAiThinking by viewModel.isAiThinking.collectAsState()
+    val userSettings by viewModel.userSettings.collectAsState()
+
+    // Dialog & Sheet States
+    var showAddTransactionDialog by remember { mutableStateOf(false) }
+    var showAiSmartLogDialog by remember { mutableStateOf(false) }
+    var showAddHoldingDialog by remember { mutableStateOf(false) }
+    var showAddSipDialog by remember { mutableStateOf(false) }
+    var showAiAdvisorSheet by remember { mutableStateOf(false) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
+    var showExportReportDialog by remember { mutableStateOf(false) }
+    var exportReportContent by remember { mutableStateOf("") }
+    var cardToPay by remember { mutableStateOf<CreditCardEntity?>(null) }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = ObsidianBg,
+        topBar = {
+            ObsidianTopBar(
+                userSettings = userSettings,
+                onOpenSettings = { showSettingsSheet = true },
+                onToggleHideBalances = { viewModel.toggleHideBalances() },
+                onProfileClick = { showSettingsSheet = true }
+            )
+        },
+        floatingActionButton = {
+            if (userSettings.showFloatingAiAdvisor) {
+                FloatingAiAdvisorButton(
+                    onClick = { showAiAdvisorSheet = true }
+                )
+            }
+        },
+        floatingActionButtonPosition = FabPosition.End,
+        bottomBar = {
+            ObsidianBottomNavigation(
+                currentTab = selectedTab,
+                userSettings = userSettings,
+                onTabSelect = { viewModel.selectTab(it) }
+            )
+        }
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label = "screen_transition"
+            ) { tab ->
+                when (tab) {
+                    FinanceTab.OVERVIEW -> OverviewScreen(
+                        viewModel = viewModel,
+                        onOpenAiAdvisor = { prompt ->
+                            if (prompt != null) {
+                                viewModel.askAi(prompt)
+                            }
+                            showAiAdvisorSheet = true
+                        },
+                        onQuickAddTransaction = { showAddTransactionDialog = true }
+                    )
+
+                    FinanceTab.CASH_FLOW -> CashFlowScreen(
+                        viewModel = viewModel,
+                        onQuickAdd = { showAddTransactionDialog = true },
+                        onAiSmartLog = { showAiSmartLogDialog = true }
+                    )
+
+                    FinanceTab.INVEST -> InvestmentsScreen(
+                        viewModel = viewModel,
+                        onAddHolding = { showAddHoldingDialog = true },
+                        onAddSip = { showAddSipDialog = true },
+                        onOpenAiAdvisor = { prompt ->
+                            viewModel.askAi(prompt)
+                            showAiAdvisorSheet = true
+                        }
+                    )
+
+                    FinanceTab.DEBT -> DebtCenterScreen(
+                        viewModel = viewModel,
+                        onPayCard = { cardToPay = it }
+                    )
+
+                    FinanceTab.GOALS_REPORTS -> GoalsAndReportsScreen(
+                        viewModel = viewModel,
+                        onAddGoal = { showAddTransactionDialog = true },
+                        onExportReport = { report ->
+                            exportReportContent = report
+                            showExportReportDialog = true
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // Modal Dialogs
+    if (showAddTransactionDialog) {
+        AddTransactionDialog(
+            onDismiss = { showAddTransactionDialog = false },
+            onAdd = { title, amt, type, cat, acc, note ->
+                viewModel.addTransaction(title, amt, type, cat, acc, note)
+            },
+            onAiSmartLog = {
+                showAddTransactionDialog = false
+                showAiSmartLogDialog = true
+            }
+        )
+    }
+
+    if (showAiSmartLogDialog) {
+        AiSmartLogDialog(
+            onDismiss = { showAiSmartLogDialog = false },
+            onSubmit = { naturalText ->
+                viewModel.parseAndAddNaturalTransaction(naturalText) {
+                    // done
+                }
+            }
+        )
+    }
+
+    if (showAddHoldingDialog) {
+        AddHoldingDialog(
+            onDismiss = { showAddHoldingDialog = false },
+            onAdd = { sym, name, type, shares, avg, cur ->
+                viewModel.addHolding(sym, name, type, shares, avg, cur)
+            }
+        )
+    }
+
+    if (showAddSipDialog) {
+        AddSipDialog(
+            onDismiss = { showAddSipDialog = false },
+            onAdd = { fund, cat, amt, day ->
+                viewModel.addSip(fund, cat, amt, day)
+            }
+        )
+    }
+
+    if (cardToPay != null) {
+        PayCreditCardDialog(
+            card = cardToPay!!,
+            onDismiss = { cardToPay = null },
+            onPay = { amt ->
+                viewModel.payCreditCard(cardToPay!!, amt)
+            }
+        )
+    }
+
+    if (showExportReportDialog) {
+        ExportReportDialog(
+            summaryText = exportReportContent,
+            onDismiss = { showExportReportDialog = false }
+        )
+    }
+
+    if (showAiAdvisorSheet) {
+        ObsidianAiAdvisorSheet(
+            messages = chatMessages,
+            isThinking = isAiThinking,
+            onSendMessage = { q -> viewModel.askAi(q) },
+            onDismiss = { showAiAdvisorSheet = false }
+        )
+    }
+
+    if (showSettingsSheet) {
+        ObsidianSettingsSheet(
+            viewModel = viewModel,
+            onDismiss = { showSettingsSheet = false }
+        )
+    }
+}
+
+@Composable
+fun ObsidianTopBar(
+    userSettings: UserSettings,
+    onOpenSettings: () -> Unit = {},
+    onToggleHideBalances: () -> Unit = {},
+    onProfileClick: () -> Unit = {}
+) {
+    val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
+
+    Surface(
+        color = ObsidianBg,
+        border = BorderStroke(1.dp, GoldBorder.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color(0xFF141A24),
+                            ObsidianBg
+                        )
+                    )
+                )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = statusBarPadding.calculateTopPadding() + 8.dp,
+                        bottom = 12.dp
+                    ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Left: Brand Monogram & Title
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(GoldGradientStart, Color(0xFF1E2638))
+                                ),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .border(1.5.dp, SovereignGold, RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Shield,
+                            contentDescription = "Obsidian Shield",
+                            tint = GoldBright,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Column {
+                        Text(
+                            text = "OBSIDIAN WEALTH",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 1.2.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(EmeraldGrowth, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Vault Encrypted",
+                                color = SovereignGold,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.3.sp
+                            )
+                        }
+                    }
+                }
+
+                // Right: Regional Badge, Privacy Toggle, Settings & Profile Avatar
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Regional Currency Pill
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFF121824),
+                        border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.45f)),
+                        modifier = Modifier
+                            .clickable { onOpenSettings() }
+                            .testTag("currency_selector_pill")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                text = userSettings.currency.flag,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = userSettings.currency.code,
+                                color = GoldBright,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Discreet / Hide Balances Toggle
+                    IconButton(
+                        onClick = onToggleHideBalances,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(ObsidianSurfaceVariant, CircleShape)
+                            .border(1.dp, GoldBorder.copy(alpha = 0.35f), CircleShape)
+                            .testTag("toggle_hide_balances_button")
+                    ) {
+                        Icon(
+                            imageVector = if (userSettings.hideBalances) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (userSettings.hideBalances) "Show Balances" else "Hide Balances",
+                            tint = if (userSettings.hideBalances) SovereignGold else TextMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    // 3-Dash (Hamburger) Menu Button -> Opens Settings
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(ObsidianSurfaceVariant, CircleShape)
+                            .border(1.2.dp, SovereignGold.copy(alpha = 0.65f), CircleShape)
+                            .testTag("open_settings_button")
+                    ) {
+                        Icon(
+                            Icons.Default.Menu,
+                            contentDescription = "Menu & Settings",
+                            tint = GoldBright,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Profile Monogram Avatar
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(Color(0xFF2A2012), ObsidianSurfaceVariant)
+                                )
+                            )
+                            .border(1.2.dp, SovereignGold, CircleShape)
+                            .clickable { onProfileClick() }
+                            .testTag("profile_avatar_button"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "OW",
+                            color = GoldBright,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                }
+            }
+
+            // Bottom Gold Horizon Accent Line
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color.Transparent,
+                                SovereignGold.copy(alpha = 0.6f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+        }
+    }
+}
+
+@Composable
+fun FloatingAiAdvisorButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = Color(0xFF161C26),
+        border = BorderStroke(1.5.dp, SovereignGold),
+        shadowElevation = 8.dp,
+        modifier = modifier
+            .padding(bottom = 6.dp, end = 2.dp)
+            .size(48.dp)
+            .testTag("floating_ai_advisor_button")
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            Color(0xFF382914),
+                            Color(0xFF181E2A),
+                            Color(0xFF0F141E)
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.AutoAwesome,
+                contentDescription = "Advisor AI",
+                tint = GoldBright,
+                modifier = Modifier.size(22.dp)
+            )
+            // Tiny active pulse dot
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 9.dp, end = 9.dp)
+                    .size(5.dp)
+                    .background(EmeraldGrowth, CircleShape)
+            )
+        }
+    }
+}
+
+@Composable
+fun ObsidianBottomNavigation(
+    currentTab: FinanceTab,
+    userSettings: UserSettings,
+    onTabSelect: (FinanceTab) -> Unit
+) {
+    val navBarPadding = WindowInsets.navigationBars.asPaddingValues()
+
+    val allTabs = listOf(
+        NavigationTabItem(FinanceTab.OVERVIEW, "Overview", Icons.AutoMirrored.Filled.TrendingUp, true),
+        NavigationTabItem(FinanceTab.CASH_FLOW, "Cash Flow", Icons.Default.AccountBalanceWallet, userSettings.enableCashFlow),
+        NavigationTabItem(FinanceTab.INVEST, "Invest", Icons.AutoMirrored.Filled.ShowChart, userSettings.enableInvestments),
+        NavigationTabItem(FinanceTab.DEBT, "Debt", Icons.Default.CreditCard, userSettings.enableDebtCenter),
+        NavigationTabItem(FinanceTab.GOALS_REPORTS, "Goals", Icons.Default.Flag, userSettings.enableGoals)
+    )
+    val activeTabs = allTabs.filter { it.isEnabled }
+
+    Surface(
+        color = ObsidianBg,
+        border = BorderStroke(1.dp, GoldBorder.copy(alpha = 0.3f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = 8.dp,
+                    end = 8.dp,
+                    top = 8.dp,
+                    bottom = navBarPadding.calculateBottomPadding() + 4.dp
+                ),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            activeTabs.forEach { item ->
+                val isSelected = currentTab == item.tab
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onTabSelect(item.tab) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(
+                                if (isSelected) SovereignGold.copy(alpha = 0.22f) else Color.Transparent,
+                                CircleShape
+                            )
+                            .then(
+                                if (isSelected) Modifier.border(1.dp, SovereignGold.copy(alpha = 0.6f), CircleShape) else Modifier
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = item.icon,
+                            contentDescription = item.label,
+                            tint = if (isSelected) SovereignGold else TextMuted,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = item.label,
+                        color = if (isSelected) GoldBright else TextMuted,
+                        fontSize = 10.sp,
+                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+    }
+}
+
+data class NavigationTabItem(
+    val tab: FinanceTab,
+    val label: String,
+    val icon: ImageVector,
+    val isEnabled: Boolean = true
+)

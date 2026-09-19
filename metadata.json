@@ -1,0 +1,7 @@
+{
+  "name": "Obsidian Wealth",
+  "description": "Elite wealth & personal finance intelligence engine for income, expense tracking, SIPs, stock portfolios, credit & debt optimization, and AI insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
