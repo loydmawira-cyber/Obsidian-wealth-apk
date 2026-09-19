@@ -87,6 +87,7 @@ fun AuthScreen(
     var showForgotPasswordDialog by remember { mutableStateOf(false) }
 
     val isPinEnabled by viewModel.isPinEnabled.collectAsState()
+    val authError by viewModel.authError.collectAsState()
 
     Box(
         modifier = Modifier
@@ -254,7 +255,7 @@ fun AuthScreen(
                     OutlinedTextField(
                         value = emailInput,
                         onValueChange = { emailInput = it },
-                        placeholder = { Text("e.g. investor@sovereign.io", color = TextMuted, fontSize = 13.sp) },
+                        placeholder = { Text("you@example.com", color = TextMuted, fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = SovereignGold, modifier = Modifier.size(18.dp)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
@@ -357,11 +358,9 @@ fun AuthScreen(
                                     errorMessage = "Passwords do not match."
                                     return@Button
                                 }
-                                val ok = viewModel.registerUser(emailInput, passwordInput)
-                                if (ok) {
-                                    successMessage = "Account registered! Welcome to Obsidian Vault."
-                                } else {
-                                    errorMessage = "Registration failed. Please check your credentials."
+                                viewModel.registerUser(emailInput, passwordInput) { ok ->
+                                    if (ok) successMessage = "Account registered! Welcome to Obsidian Vault."
+                                    else errorMessage = "Registration failed. ${viewModel.authError.value ?: "Please check your credentials."}"
                                 }
                             } else {
                                 if (emailInput.isBlank()) {
@@ -372,9 +371,8 @@ fun AuthScreen(
                                     errorMessage = "Please enter your password."
                                     return@Button
                                 }
-                                val ok = viewModel.loginWithEmail(emailInput, passwordInput)
-                                if (!ok) {
-                                    errorMessage = "Invalid email or password. Please try again."
+                                viewModel.loginWithEmail(emailInput, passwordInput) { ok ->
+                                    if (!ok) errorMessage = viewModel.authError.value ?: "Invalid email or password. Please try again."
                                 }
                             }
                         },
@@ -434,13 +432,11 @@ fun AuthScreen(
             initialEmail = emailInput,
             onDismiss = { showForgotPasswordDialog = false },
             onReset = { resetEmail, newPassword ->
-                val ok = viewModel.resetPassword(resetEmail, newPassword)
-                if (ok) {
-                    successMessage = "Password successfully reset! You can now log in with your new password."
-                    emailInput = resetEmail
-                    passwordInput = newPassword
-                } else {
-                    errorMessage = "Failed to reset password. Ensure email is valid."
+                viewModel.resetPassword(resetEmail, newPassword) { ok ->
+                    if (ok) {
+                        successMessage = "Password reset email sent. Check your inbox."
+                        emailInput = resetEmail
+                    } else errorMessage = viewModel.authError.value ?: "Failed to reset password."
                 }
                 showForgotPasswordDialog = false
             }
