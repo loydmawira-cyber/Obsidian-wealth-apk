@@ -73,6 +73,9 @@ import com.example.ui.viewmodel.PayoffStrategy
 fun DebtCenterScreen(
     viewModel: FinanceViewModel,
     onPayCard: (CreditCardEntity) -> Unit,
+    onPayLoan: (LoanEntity) -> Unit,
+    onAddLoan: () -> Unit,
+    onAddCreditCard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val summary by viewModel.summary.collectAsState()
@@ -234,15 +237,29 @@ fun DebtCenterScreen(
 
         // Revolving Credit Cards Section Header & List
         item {
-            Text(
-                text = "REVOLVING CREDIT CARDS",
-                color = TextSecondary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "REVOLVING CREDIT CARDS",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                Button(
+                    onClick = onAddCreditCard,
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                    Text("Add", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
-
         items(creditCards, key = { "card_${it.id}" }) { card ->
             val util = card.utilizationPercent.toFloat()
             FinCard {
@@ -327,15 +344,29 @@ fun DebtCenterScreen(
 
         // Fixed Amortization Loans (EMIs)
         item {
-            Text(
-                text = "FIXED AMORTIZATION LOANS & EMIS",
-                color = TextSecondary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "FIXED AMORTIZATION LOANS & EMIS",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                Button(
+                    onClick = onAddLoan,
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                    Text("Add", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
-
         items(loans, key = { "loan_${it.id}" }) { loan ->
             val paidPct = loan.paidPercent.toFloat()
             FinCard {
@@ -380,7 +411,7 @@ fun DebtCenterScreen(
                     }
 
                     Button(
-                        onClick = { viewModel.payLoanEmi(loan) },
+                        onClick = { onPayLoan(loan) },
                         colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.height(32.dp)
