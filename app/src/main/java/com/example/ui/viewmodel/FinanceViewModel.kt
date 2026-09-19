@@ -2,6 +2,8 @@ package com.example.ui.viewmodel
 
 import android.app.Application
 import android.app.Activity
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.GeminiClient
@@ -71,6 +73,8 @@ data class FinanceSummary(
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val billingManager = BillingManager(application)
+    private val firebaseAuth = FirebaseAuth.getInstance()
+    private val firestore = FirebaseFirestore.getInstance()
 
     val isPremium: StateFlow<Boolean> = billingManager.isPremium
     val billingMessage: StateFlow<String?> = billingManager.message
@@ -103,10 +107,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val lastCloudSyncTime: StateFlow<Long> = _lastCloudSyncTime
 
     // AUTH & QUICK 4-PIN LOCK STATES
-    private val _isLoggedIn = MutableStateFlow(true)
+    private val _isLoggedIn = MutableStateFlow(firebaseAuth.currentUser != null)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn
 
-    private val _userEmail = MutableStateFlow("")
+    private val _userEmail = MutableStateFlow(firebaseAuth.currentUser?.email ?: "")
+    private val _authError = MutableStateFlow<String?>(null)
+    val authError: StateFlow<String?> = _authError
     val userEmail: StateFlow<String> = _userEmail
 
     private val _isPinEnabled = MutableStateFlow(false)
@@ -127,6 +133,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _cloudVaultId.value = preferencesManager.getCloudVaultId()
         _lastCloudSyncTime.value = preferencesManager.getLastCloudSyncTime()
 
+        // Firebase Auth is the source of truth for login state.
+        firebaseAuth.addAuthStateListener { user ->
+            _isLoggedIn.value = user != null
+            _userEmail.value = user?.email ?: ""
+            if (user != null) {
+                preferencesManager.setCloudVaultId(user.uid)
+                _cloudVaultId.value = user.uid
+            }
+        }
+
         // Init Auth & PIN
         _isLoggedIn.value = preferencesManager.isLoggedIn()
         _userEmail.value = preferencesManager.getUserEmail()
@@ -136,46 +152,62 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // AUTH & PIN ACTIONS
-    fun loginWithEmail(email: String, pass: String): Boolean {
-        val savedEmail = preferencesManager.getUserEmail()
-        val savedPass = preferencesManager.getUserPassword()
+    fun clearAuthError() { _authError.value = null }
 
-        if (email.trim().equals(savedEmail, ignoreCase = true) && pass == savedPass) {
-            preferencesManager.setLoggedIn(true)
-            _isLoggedIn.value = true
-            _isPinLocked.value = false
-            _userEmail.value = email.trim()
-            return true
-        }
-        // If default / first launch login
-        if (savedEmail == "investor@sovereign.io" && savedPass == "password123") {
-            preferencesManager.setUserEmail(email.trim())
-            preferencesManager.setUserPassword(pass)
-            preferencesManager.setLoggedIn(true)
-            _isLoggedIn.value = true
-            _isPinLocked.value = false
-            _userEmail.value = email.trim()
-            return true
-        }
-        return false
+    fun loginWithEmail(email: String, pass: String, onResult: (Boolean) -> Unit = {}) {
+        _authError.value = null
+        firebaseAuth.signInWithEmailAndPassword(email.trim(), pass)
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val uid = firebaseAuth.currentUser?.uid
+                    if (uid != null) {
+                        preferencesManager.setCloudVaultId(uid)
+                        _cloudVaultId.value = uid
+                        _isLoggedIn.value = true
+                        _userEmail.value = email.trim()
+                        viewModelScope.launch {
+                            firestore.collection("users").document(uid).set(mapOf("email" to email.trim(), "uid" to uid), com.google.firebase.firestore.SetOptions.merge())
+                            restoreVaultFromCloud()
+                        }
+                    }
+                    onResult(true)
+                } else {
+                    _authError.value = task.exception?.localizedMessage ?: "Login failed."
+                    onResult(false)
+                }
+            }
     }
 
-    fun registerUser(email: String, pass: String): Boolean {
-        if (email.isBlank() || !email.contains("@") || pass.length < 4) return false
-        preferencesManager.setUserEmail(email.trim())
-        preferencesManager.setUserPassword(pass)
-        preferencesManager.setLoggedIn(true)
-        _isLoggedIn.value = true
-        _isPinLocked.value = false
-        _userEmail.value = email.trim()
-        return true
+    fun registerUser(email: String, pass: String, onResult: (Boolean) -> Unit = {}) {
+        _authError.value = null
+        firebaseAuth.createUserWithEmailAndPassword(email.trim(), pass)
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val user = firebaseAuth.currentUser
+                    if (user != null) {
+                        preferencesManager.setCloudVaultId(user.uid)
+                        _cloudVaultId.value = user.uid
+                        _isLoggedIn.value = true
+                        _userEmail.value = email.trim()
+                        viewModelScope.launch {
+                            firestore.collection("users").document(user.uid).set(mapOf("email" to email.trim(), "uid" to user.uid, "createdAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
+                            syncVaultToCloud()
+                        }
+                    }
+                    onResult(true)
+                } else {
+                    _authError.value = task.exception?.localizedMessage ?: "Registration failed."
+                    onResult(false)
+                }
+            }
     }
 
-    fun resetPassword(email: String, newPass: String): Boolean {
-        if (email.isBlank() || !email.contains("@") || newPass.length < 4) return false
-        preferencesManager.setUserEmail(email.trim())
-        preferencesManager.setUserPassword(newPass)
-        return true
+    fun resetPassword(email: String, newPass: String, onResult: (Boolean) -> Unit = {}) {
+        _authError.value = null
+        firebaseAuth.sendPasswordResetEmail(email.trim()).addOnCompleteListener { task ->
+            if (!task.isSuccessful) _authError.value = task.exception?.localizedMessage ?: "Password reset failed."
+            onResult(task.isSuccessful)
+        }
     }
 
     fun verifyAndUnlockPin(pinInput: String): Boolean {
@@ -206,6 +238,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun logout() {
+        firebaseAuth.signOut()
         preferencesManager.setLoggedIn(false)
         _isLoggedIn.value = false
         _isPinLocked.value = false
@@ -277,6 +310,18 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearCloudSyncResult() {
         _cloudSyncResult.value = null
+    }
+
+    /** Permanently clears local finance records. Cloud records require a separate cloud deletion flow. */
+    fun clearAllFinancialData() {
+        viewModelScope.launch {
+            database.financeDao().clearAllTransactions()
+            database.financeDao().clearAllHoldings()
+            database.financeDao().clearAllSips()
+            database.financeDao().clearAllCreditCards()
+            database.financeDao().clearAllLoans()
+            database.financeDao().clearAllGoals()
+        }
     }
 
     fun reseedWithKenyanData() {
@@ -490,6 +535,7 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
                     note = note
                 )
             )
+            syncVaultToCloud()
         }
     }
 
@@ -512,13 +558,17 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
                         account = parsed.account
                     )
                 )
+                syncVaultToCloud()
             }
             onDone()
         }
     }
 
     fun deleteTransaction(transaction: TransactionEntity) {
-        viewModelScope.launch { repository.deleteTransaction(transaction) }
+        viewModelScope.launch {
+            repository.deleteTransaction(transaction)
+            syncVaultToCloud()
+        }
     }
 
     fun addHolding(
@@ -541,11 +591,15 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
                     dailyChangePercent = 0.5
                 )
             )
+            syncVaultToCloud()
         }
     }
 
     fun deleteHolding(holding: HoldingEntity) {
-        viewModelScope.launch { repository.deleteHolding(holding) }
+        viewModelScope.launch {
+            repository.deleteHolding(holding)
+            syncVaultToCloud()
+        }
     }
 
     fun addSip(
@@ -565,15 +619,22 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
                     totalInvested = monthlyAmount * 6
                 )
             )
+            syncVaultToCloud()
         }
     }
 
     fun toggleSip(sip: SipEntity) {
-        viewModelScope.launch { repository.toggleSipActive(sip) }
+        viewModelScope.launch {
+            repository.toggleSipActive(sip)
+            syncVaultToCloud()
+        }
     }
 
     fun deleteSip(sip: SipEntity) {
-        viewModelScope.launch { repository.deleteSip(sip) }
+        viewModelScope.launch {
+            repository.deleteSip(sip)
+            syncVaultToCloud()
+        }
     }
 
     fun addCreditCard(
@@ -593,6 +654,7 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
                     dueDateDays = dueDays
                 )
             )
+            syncVaultToCloud()
         }
     }
 
@@ -609,6 +671,7 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
                     note = "Card debt reduction"
                 )
             )
+            syncVaultToCloud()
         }
     }
 
@@ -634,23 +697,36 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
                     remainingMonths = (months * (remainingBalance / totalAmount)).toInt().coerceAtLeast(1)
                 )
             )
+            syncVaultToCloud()
         }
     }
 
+    private val loanPaymentsInFlight = mutableSetOf<Long>()
+
     fun payLoanEmi(loan: LoanEntity) {
+        synchronized(loanPaymentsInFlight) {
+            if (!loanPaymentsInFlight.add(loan.id)) return
+        }
         viewModelScope.launch {
-            repository.payLoanEmi(loan)
-            repository.addTransaction(
-                TransactionEntity(
-                    title = "EMI: ${loan.loanName}",
-                    amount = loan.emiAmount,
-                    type = TransactionType.EXPENSE,
-                    category = Category.LOAN_EMI,
-                    account = "Chase Checking",
-                    note = "Scheduled monthly amortization",
-                    isRecurring = true
-                )
-            )
+            try {
+                val paymentAmount = repository.payLoanEmi(loan)
+                if (paymentAmount > 0.0) {
+                    repository.addTransaction(
+                        TransactionEntity(
+                            title = "EMI: ${loan.loanName}",
+                            amount = paymentAmount,
+                            type = TransactionType.EXPENSE,
+                            category = Category.LOAN_EMI,
+                            account = "Cash / selected account",
+                            note = "Manual EMI payment recorded in Obsidian Wealth",
+                            isRecurring = false
+                        )
+                    )
+                }
+                syncVaultToCloud()
+            } finally {
+                synchronized(loanPaymentsInFlight) { loanPaymentsInFlight.remove(loan.id) }
+            }
         }
     }
 
@@ -671,6 +747,7 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
                     monthlyContribution = monthlyContribution
                 )
             )
+            syncVaultToCloud()
         }
     }
 
@@ -687,6 +764,7 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
                     note = "Capital reserve deposit"
                 )
             )
+            syncVaultToCloud()
         }
     }
 }
