@@ -1074,3 +1074,152 @@ fun PayCreditCardDialog(
         }
     }
 }
+
+
+@Composable
+fun AddLoanDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String, String, Double, Double, Double, Double, Int) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var lender by remember { mutableStateOf("") }
+    var total by remember { mutableStateOf("") }
+    var remaining by remember { mutableStateOf("") }
+    var emi by remember { mutableStateOf("") }
+    var apr by remember { mutableStateOf("") }
+    var months by remember { mutableStateOf("") }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(20.dp), color = ObsidianSurface, border = BorderStroke(1.dp, ObsidianBorder), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Add Loan", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary) }
+                }
+                Spacer(Modifier.height(12.dp))
+                listOf(
+                    Triple("Loan name", name) { v: String -> name = v },
+                    Triple("Lender", lender) { v: String -> lender = v },
+                    Triple("Original amount", total) { v: String -> total = v },
+                    Triple("Remaining balance", remaining) { v: String -> remaining = v },
+                    Triple("Monthly EMI", emi) { v: String -> emi = v },
+                    Triple("Interest rate / APR %", apr) { v: String -> apr = v },
+                    Triple("Total term in months", months) { v: String -> months = v }
+                ).forEach { (label, value, setter) ->
+                    OutlinedTextField(value = value, onValueChange = setter, label = { Text(label, color = TextSecondary) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedBorderColor = EmeraldGrowth, unfocusedBorderColor = ObsidianBorder))
+                    Spacer(Modifier.height(7.dp))
+                }
+                Button(onClick = {
+                    val values = listOf(total.toDoubleOrNull(), remaining.toDoubleOrNull(), emi.toDoubleOrNull(), apr.toDoubleOrNull())
+                    val term = months.toIntOrNull()
+                    if (name.isNotBlank() && lender.isNotBlank() && values.all { it != null && it >= 0.0 } && term != null && term > 0) {
+                        onAdd(name, lender, values[0]!!, values[1]!!, values[2]!!, values[3]!!, term)
+                        onDismiss()
+                    }
+                }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Add Loan", color = Color.Black, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
+@Composable
+fun AddCreditCardDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String, Double, Double, Double, Int) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var balance by remember { mutableStateOf("") }
+    var limit by remember { mutableStateOf("") }
+    var apr by remember { mutableStateOf("") }
+    var due by remember { mutableStateOf("15") }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(20.dp), color = ObsidianSurface, border = BorderStroke(1.dp, ObsidianBorder), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Add Credit Card", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary) }
+                }
+                Spacer(Modifier.height(12.dp))
+                listOf(
+                    Triple("Card name", name) { v: String -> name = v },
+                    Triple("Current balance", balance) { v: String -> balance = v },
+                    Triple("Credit limit", limit) { v: String -> limit = v },
+                    Triple("Interest rate / APR %", apr) { v: String -> apr = v },
+                    Triple("Due day of month", due) { v: String -> due = v }
+                ).forEach { (label, value, setter) ->
+                    OutlinedTextField(value = value, onValueChange = setter, label = { Text(label, color = TextSecondary) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedBorderColor = EmeraldGrowth, unfocusedBorderColor = ObsidianBorder))
+                    Spacer(Modifier.height(7.dp))
+                }
+                Button(onClick = {
+                    val b = balance.toDoubleOrNull(); val l = limit.toDoubleOrNull(); val a = apr.toDoubleOrNull(); val d = due.toIntOrNull()
+                    if (name.isNotBlank() && b != null && l != null && a != null && d != null && b >= 0 && l > 0 && d in 1..31) { onAdd(name, b, l, a, d); onDismiss() }
+                }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Add Credit Card", color = Color.Black, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
+@Composable
+fun AddGoalDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String, String, Double, Double, Double) -> Unit
+) {
+    var title by remember { mutableStateOf("") }; var category by remember { mutableStateOf("Savings") }; var target by remember { mutableStateOf("") }; var current by remember { mutableStateOf("0") }; var monthly by remember { mutableStateOf("") }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(20.dp), color = ObsidianSurface, border = BorderStroke(1.dp, ObsidianBorder), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("Add Financial Goal", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold); IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary) } }
+                Spacer(Modifier.height(12.dp))
+                listOf(Triple("Goal name", title) { v: String -> title = v }, Triple("Category", category) { v: String -> category = v }, Triple("Target amount", target) { v: String -> target = v }, Triple("Current amount", current) { v: String -> current = v }, Triple("Monthly contribution", monthly) { v: String -> monthly = v }).forEach { (label, value, setter) -> OutlinedTextField(value = value, onValueChange = setter, label = { Text(label, color = TextSecondary) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedBorderColor = EmeraldGrowth, unfocusedBorderColor = ObsidianBorder)); Spacer(Modifier.height(7.dp)) }
+                Button(onClick = { val t = target.toDoubleOrNull(); val c = current.toDoubleOrNull(); val m = monthly.toDoubleOrNull(); if (title.isNotBlank() && t != null && c != null && m != null && t > 0 && c >= 0 && m >= 0) { onAdd(title, category, t, c, m); onDismiss() } }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Add Goal", color = Color.Black, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
+@Composable
+fun ConfirmLoanPaymentDialog(
+    loanName: String,
+    paymentAmount: Double,
+    currencySymbol: String,
+    remainingBalance: Double,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(18.dp), color = ObsidianSurface, border = BorderStroke(1.dp, ElectricIndigo), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Confirm EMI payment", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text("Record one manual payment for $loanName?", color = TextSecondary, fontSize = 13.sp)
+                Spacer(Modifier.height(12.dp))
+                Text("Payment: $currencySymbol${String.format("%,.2f", paymentAmount)}", color = EmeraldLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("Balance after payment: $currencySymbol${String.format("%,.2f", (remainingBalance - paymentAmount).coerceAtLeast(0.0))}", color = TextMuted, fontSize = 12.sp)
+                Spacer(Modifier.height(8.dp))
+                Text("This does not run automatically. Tap once for one payment; use it again only for a separate payment period.", color = TextMuted, fontSize = 11.sp)
+                Spacer(Modifier.height(16.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                    Button(onClick = { onConfirm(); onDismiss() }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo)) { Text("Confirm EMI", color = Color.White) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ConfirmClearDataDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(18.dp), color = ObsidianSurface, border = BorderStroke(1.dp, Color(0xFFFF7185)), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Clear local data?", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text("This permanently removes local transactions, investments, SIPs, credit cards, loans, and goals. It does not delete data already stored in the cloud.", color = TextSecondary, fontSize = 13.sp)
+                Spacer(Modifier.height(16.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                    Button(onClick = { onConfirm(); onDismiss() }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))) { Text("Clear Data", color = Color.White) }
+                }
+            }
+        }
+    }
+}
