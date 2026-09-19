@@ -1,9 +1,11 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.app.Activity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.GeminiClient
+import com.example.data.billing.BillingManager
 import com.example.data.database.AppDatabase
 import com.example.data.models.Category
 import com.example.data.models.CreditCardEntity
@@ -68,6 +70,18 @@ data class FinanceSummary(
 )
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
+    private val billingManager = BillingManager(application)
+
+    val isPremium: StateFlow<Boolean> = billingManager.isPremium
+    val billingMessage: StateFlow<String?> = billingManager.message
+
+    fun launchPremiumPurchase(activity: Activity) {
+        billingManager.launchPremiumPurchase(activity)
+    }
+
+    fun clearBillingMessage() {
+        billingManager.clearMessage()
+    }
 
     private val repository: FinanceRepository
     private val preferencesManager: PreferencesManager
