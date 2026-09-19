@@ -74,6 +74,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.models.CreditCardEntity
+import com.example.ui.components.AddLoanDialog
+import com.example.ui.components.AddCreditCardDialog
+import com.example.ui.components.AddGoalDialog
+import com.example.ui.components.ConfirmClearDataDialog
+import com.example.ui.components.ConfirmLoanPaymentDialog
 import com.example.data.models.UserSettings
 import com.example.ui.auth.AuthScreen
 import com.example.ui.auth.PinLockScreen
@@ -173,11 +178,16 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     var showAiSmartLogDialog by remember { mutableStateOf(false) }
     var showAddHoldingDialog by remember { mutableStateOf(false) }
     var showAddSipDialog by remember { mutableStateOf(false) }
+    var showAddLoanDialog by remember { mutableStateOf(false) }
+    var showAddCreditCardDialog by remember { mutableStateOf(false) }
+    var showAddGoalDialog by remember { mutableStateOf(false) }
+    var showClearDataDialog by remember { mutableStateOf(false) }
     var showAiAdvisorSheet by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showExportReportDialog by remember { mutableStateOf(false) }
     var exportReportContent by remember { mutableStateOf("") }
     var cardToPay by remember { mutableStateOf<CreditCardEntity?>(null) }
+    var loanToPay by remember { mutableStateOf<com.example.data.models.LoanEntity?>(null) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -246,12 +256,15 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
 
                     FinanceTab.DEBT -> DebtCenterScreen(
                         viewModel = viewModel,
-                        onPayCard = { cardToPay = it }
+                        onPayCard = { cardToPay = it },
+                        onPayLoan = { loanToPay = it },
+                        onAddLoan = { showAddLoanDialog = true },
+                        onAddCreditCard = { showAddCreditCardDialog = true }
                     )
 
                     FinanceTab.GOALS_REPORTS -> GoalsAndReportsScreen(
                         viewModel = viewModel,
-                        onAddGoal = { showAddTransactionDialog = true },
+                        onAddGoal = { showAddGoalDialog = true },
                         onExportReport = { report ->
                             exportReportContent = report
                             showExportReportDialog = true
@@ -305,6 +318,43 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         )
     }
 
+    if (showAddLoanDialog) {
+        AddLoanDialog(onDismiss = { showAddLoanDialog = false }) { name, lender, total, remaining, emi, apr, months ->
+            viewModel.addLoan(name, lender, total, remaining, emi, apr, months)
+        }
+    }
+
+    if (showAddCreditCardDialog) {
+        AddCreditCardDialog(onDismiss = { showAddCreditCardDialog = false }) { name, balance, limit, apr, due ->
+            viewModel.addCreditCard(name, balance, limit, apr, due)
+        }
+    }
+
+    if (showAddGoalDialog) {
+        AddGoalDialog(onDismiss = { showAddGoalDialog = false }) { title, category, target, current, monthly ->
+            viewModel.addGoal(title, category, target, current, monthly)
+        }
+    }
+
+    if (loanToPay != null) {
+        val loan = loanToPay!!
+        ConfirmLoanPaymentDialog(
+            loanName = loan.loanName,
+            paymentAmount = loan.emiAmount.coerceAtLeast(0.0).coerceAtMost(loan.remainingBalance),
+            currencySymbol = userSettings.currency.symbol,
+            remainingBalance = loan.remainingBalance,
+            onDismiss = { loanToPay = null },
+            onConfirm = { viewModel.payLoanEmi(loan) }
+        )
+    }
+
+    if (showClearDataDialog) {
+        ConfirmClearDataDialog(
+            onDismiss = { showClearDataDialog = false },
+            onConfirm = { viewModel.clearAllFinancialData() }
+        )
+    }
+
     if (cardToPay != null) {
         PayCreditCardDialog(
             card = cardToPay!!,
@@ -334,7 +384,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     if (showSettingsSheet) {
         ObsidianSettingsSheet(
             viewModel = viewModel,
-            onDismiss = { showSettingsSheet = false }
+            onDismiss = { showSettingsSheet = false },
+            onRequestClearAllData = { showClearDataDialog = true }
         )
     }
 }
