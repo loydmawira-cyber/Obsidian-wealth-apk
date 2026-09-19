@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Lock
@@ -108,7 +109,8 @@ import com.example.ui.viewmodel.FinanceViewModel
 @Composable
 fun ObsidianSettingsSheet(
     viewModel: FinanceViewModel,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRequestClearAllData: () -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val settings by viewModel.userSettings.collectAsState()
@@ -872,6 +874,44 @@ fun ObsidianSettingsSheet(
                                     Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color(0xFFFB7185), modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text("LOG OUT", color = Color(0xFFFB7185), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0x11F43F5E),
+                            border = BorderStroke(1.dp, Color(0xFFF43F5E).copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Danger Zone",
+                                        color = Color(0xFFFB7185),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Permanently erase all local vault data",
+                                        color = TextMuted,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Button(
+                                    onClick = { onRequestClearAllData() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF43F5E)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("CLEAR ALL DATA", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
