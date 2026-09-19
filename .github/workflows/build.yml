@@ -29,8 +29,20 @@ jobs:
       - name: Install required Android SDK packages
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          SDKMANAGER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}" -type f -name sdkmanager -print -quit 2>/dev/null || true)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager was not found under ${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+            find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}" -maxdepth 4 -type f 2>/dev/null | head -100 || true
+            exit 1
+          fi
+
+          SDK_DIR="$(dirname "$(dirname "$SDKMANAGER")")"
+          echo "Using sdkmanager: $SDKMANAGER"
+          echo "$SDK_DIR" >> "$GITHUB_PATH"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Generate Android debug keystore
         run: |
