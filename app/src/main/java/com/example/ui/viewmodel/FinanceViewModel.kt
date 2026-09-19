@@ -110,7 +110,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _isLoggedIn = MutableStateFlow(firebaseAuth.currentUser != null)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn
 
-    private val _userEmail = MutableStateFlow(firebaseAuth.currentUser?.email ?: "")
+    private val _userEmail: MutableStateFlow<String> = MutableStateFlow(firebaseAuth.currentUser?.email.orEmpty())
     private val _authError = MutableStateFlow<String?>(null)
     val authError: StateFlow<String?> = _authError
     val userEmail: StateFlow<String> = _userEmail
@@ -136,16 +136,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         // Firebase Auth is the source of truth for login state.
         firebaseAuth.addAuthStateListener { user ->
             _isLoggedIn.value = user != null
-            _userEmail.value = user?.email ?: ""
+            _userEmail.value = user?.email.orEmpty()
             if (user != null) {
                 preferencesManager.setCloudVaultId(user.uid)
                 _cloudVaultId.value = user.uid
             }
         }
 
-        // Init Auth & PIN
-        _isLoggedIn.value = preferencesManager.isLoggedIn()
-        _userEmail.value = preferencesManager.getUserEmail()
+        // Firebase Auth is authoritative. Do not restore the old local-only login state.
         _isPinEnabled.value = preferencesManager.isPinEnabled()
         _quickPin.value = preferencesManager.getQuickPin()
         _isPinLocked.value = preferencesManager.isPinEnabled() && preferencesManager.isLoggedIn()
