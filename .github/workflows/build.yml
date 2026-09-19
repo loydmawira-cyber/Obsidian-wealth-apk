@@ -40,7 +40,20 @@ jobs:
           retention-days: 14
 
       # -------------------------------------------------------------
-      # NOTE: Release signing, keystore decoding, and Play Store publishing
-      # will be configured here later when ready to publish.
-      # (e.g., ./gradlew bundleRelease with signing secrets)
+      # No real release keystore/secrets exist yet, so this "release" build
+      # automatically falls back to signing with the debug key (see the
+      # signingConfigs fallback in app/build.gradle.kts). It's a real
+      # release-type build (minify/proguard rules applied) but NOT signed
+      # for the Play Store. Swap in KEYSTORE_BASE64 / STORE_PASSWORD /
+      # KEY_PASSWORD secrets + a decode step here later when ready to
+      # publish for real.
       # -------------------------------------------------------------
+      - name: Build Release APK (debug-signed fallback)
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: obsidian-wealth-release-apk-unsigned
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 14
