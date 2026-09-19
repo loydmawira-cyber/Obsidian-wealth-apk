@@ -20,6 +20,7 @@ import com.example.data.models.UserSettings
 import com.example.data.repository.PreferencesManager
 import com.google.android.gms.tasks.Task
 import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
@@ -100,6 +101,12 @@ class FirestoreSyncManager(private val context: Context) {
             )
 
         try {
+            val authUser = FirebaseAuth.getInstance().currentUser
+                ?: return@withContext CloudSyncResult(false, "Please sign in before syncing to Firestore.")
+            firestore.collection("users").document(authUser.uid).set(
+                mapOf("uid" to authUser.uid, "email" to (authUser.email ?: ""), "vaultId" to authUser.uid, "lastSeenMillis" to System.currentTimeMillis()),
+                SetOptions.merge()
+            ).awaitTask()
             val transactions = dao.getTransactionsSnapshot()
             val holdings = dao.getHoldingsSnapshot()
             val sips = dao.getSipsSnapshot()
@@ -107,7 +114,7 @@ class FirestoreSyncManager(private val context: Context) {
             val loans = dao.getLoansSnapshot()
             val goals = dao.getGoalsSnapshot()
 
-            val vaultRef = firestore.collection("wealth_vaults").document(vaultId)
+            val vaultRef = firestore.collection("wealth_vaults").document(authUser.uid)
 
             // 1. Vault Metadata
             val metaData = hashMapOf(
