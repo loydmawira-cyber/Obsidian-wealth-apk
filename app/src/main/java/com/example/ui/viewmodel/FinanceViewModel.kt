@@ -134,12 +134,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _lastCloudSyncTime.value = preferencesManager.getLastCloudSyncTime()
 
         // Firebase Auth is the source of truth for login state.
-        firebaseAuth.addAuthStateListener { user ->
-            _isLoggedIn.value = user != null
-            _userEmail.value = user?.email.orEmpty()
-            if (user != null) {
-                preferencesManager.setCloudVaultId(user.uid)
-                _cloudVaultId.value = user.uid
+        firebaseAuth.addAuthStateListener { auth ->
+            val currentUser = auth.currentUser
+            _isLoggedIn.value = currentUser != null
+            _userEmail.value = currentUser?.email.orEmpty()
+            if (currentUser != null) {
+                preferencesManager.setCloudVaultId(currentUser.uid)
+                _cloudVaultId.value = currentUser.uid
             }
         }
 
