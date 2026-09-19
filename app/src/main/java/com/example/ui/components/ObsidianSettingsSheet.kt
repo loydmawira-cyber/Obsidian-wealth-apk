@@ -74,6 +74,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -117,6 +118,9 @@ fun ObsidianSettingsSheet(
     val lastSyncTime by viewModel.lastCloudSyncTime.collectAsState()
     val isPinEnabled by viewModel.isPinEnabled.collectAsState()
     val userEmail by viewModel.userEmail.collectAsState()
+    val isPremium by viewModel.isPremium.collectAsState()
+    val billingMessage by viewModel.billingMessage.collectAsState()
+    val context = LocalContext.current
 
     var activeTab by remember { mutableStateOf(0) } // 0: Regional, 1: Modules, 2: AI & Privacy, 3: Cloud Vault
     var vaultIdInput by remember(cloudVaultId) { mutableStateOf(cloudVaultId) }
@@ -773,6 +777,59 @@ fun ObsidianSettingsSheet(
                                             Text("SET 4-DIGIT PIN", color = ObsidianBg, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = ObsidianSurfaceVariant,
+                            border = BorderStroke(1.dp, if (isPremium) EmeraldGrowth else SovereignGold.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (isPremium) "PREMIUM MARKET PRICES ACTIVE" else "PREMIUM MARKET PRICES",
+                                            color = if (isPremium) EmeraldGrowth else SovereignGold,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            letterSpacing = 0.7.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = if (isPremium) "Automatic stock and crypto price updates are enabled." else "All finance features remain unlimited. Premium only adds automatic market prices.",
+                                            color = TextMuted,
+                                            fontSize = 11.sp,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                    if (!isPremium) {
+                                        Button(
+                                            onClick = { (context as? android.app.Activity)?.let(viewModel::launchPremiumPurchase) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("GO PREMIUM", color = ObsidianBg, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = if (isPremium) "Google Play subscription: premium_annual" else "Annual subscription • Managed by Google Play",
+                                    color = if (isPremium) EmeraldGrowth else TextSecondary,
+                                    fontSize = 10.sp
+                                )
+                                billingMessage?.let { message ->
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(text = message, color = Color(0xFFFCA5A5), fontSize = 10.sp)
                                 }
                             }
                         }
