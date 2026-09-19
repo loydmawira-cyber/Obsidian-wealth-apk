@@ -58,11 +58,8 @@ abstract class AppDatabase : RoomDatabase() {
         ) : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
-                INSTANCE?.let { database ->
-                    scope.launch(Dispatchers.IO) {
-                        populateDatabase(database.financeDao())
-                    }
-                }
+                // Production installs start empty. Demo data must be explicitly requested.
+                // Keep populateDatabase() available for a separate debug/demo build only.
             }
         }
 
