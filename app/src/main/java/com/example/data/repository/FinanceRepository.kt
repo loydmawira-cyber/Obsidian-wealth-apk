@@ -50,10 +50,14 @@ class FinanceRepository(private val dao: FinanceDao) {
     suspend fun addLoan(loan: LoanEntity): Long = dao.insertLoan(loan)
     suspend fun updateLoan(loan: LoanEntity) = dao.updateLoan(loan)
     suspend fun deleteLoan(loan: LoanEntity) = dao.deleteLoan(loan)
-    suspend fun payLoanEmi(loan: LoanEntity) {
-        val newBalance = (loan.remainingBalance - (loan.emiAmount * 0.88)).coerceAtLeast(0.0)
+    suspend fun payLoanEmi(loan: LoanEntity): Double {
+        if (loan.remainingBalance <= 0.0 || loan.remainingMonths <= 0) return 0.0
+        val paymentAmount = loan.emiAmount.coerceAtLeast(0.0).coerceAtMost(loan.remainingBalance)
+        if (paymentAmount <= 0.0) return 0.0
+        val newBalance = (loan.remainingBalance - paymentAmount).coerceAtLeast(0.0)
         val newRemainingMonths = (loan.remainingMonths - 1).coerceAtLeast(0)
         dao.updateLoan(loan.copy(remainingBalance = newBalance, remainingMonths = newRemainingMonths))
+        return paymentAmount
     }
 
     // Goal Operations
