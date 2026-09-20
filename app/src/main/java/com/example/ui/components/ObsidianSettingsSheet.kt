@@ -126,7 +126,6 @@ fun ObsidianSettingsSheet(
     val context = LocalContext.current
 
     var activeTab by remember { mutableStateOf(0) } // 0: Regional, 1: Modules, 2: AI & Privacy, 3: Cloud Vault
-    var vaultIdInput by remember(cloudVaultId) { mutableStateOf(cloudVaultId) }
     var showSetPinDialog by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
@@ -1099,37 +1098,25 @@ fun ObsidianSettingsSheet(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Devices sharing this Vault ID synchronize the same financial records.",
+                                    text = "Your vault is bound to your signed-in account. Sign in with the same account on another device to synchronize the same financial records.",
                                     color = TextMuted,
                                     fontSize = 11.sp
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
-                                OutlinedTextField(
-                                    value = vaultIdInput,
-                                    onValueChange = { vaultIdInput = it },
-                                    label = { Text("Vault ID", fontSize = 12.sp) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = SovereignGold,
-                                        unfocusedBorderColor = ObsidianBorder,
-                                        focusedTextColor = TextPrimary,
-                                        unfocusedTextColor = TextPrimary,
-                                        focusedLabelColor = SovereignGold,
-                                        unfocusedLabelColor = TextMuted
-                                    )
+                                // Read-only. The vault id is the authenticated uid; making it
+                                // editable allowed pointing a restore at another user's vault.
+                                Text(
+                                    text = "Vault ID",
+                                    color = TextMuted,
+                                    fontSize = 11.sp
                                 )
-                                if (vaultIdInput != cloudVaultId && vaultIdInput.isNotBlank()) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Button(
-                                        onClick = { viewModel.setCloudVaultId(vaultIdInput.trim()) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text("SAVE VAULT ID", color = ObsidianBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (cloudVaultId.isBlank()) "Not signed in" else cloudVaultId,
+                                    color = TextPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
