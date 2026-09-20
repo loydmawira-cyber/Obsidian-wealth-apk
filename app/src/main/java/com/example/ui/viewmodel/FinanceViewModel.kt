@@ -139,16 +139,32 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             _isLoggedIn.value = currentUser != null
             _userEmail.value = currentUser?.email.orEmpty()
             if (currentUser != null) {
+                val lastUid = preferencesManager.getLastSignedInUid()
+                val isAccountSwitch = lastUid.isNotBlank() && lastUid != currentUser.uid
+
                 preferencesManager.setCloudVaultId(currentUser.uid)
                 _cloudVaultId.value = currentUser.uid
+                preferencesManager.setLastSignedInUid(currentUser.uid)
 
-                // Auto-seed demo data for the single designated demo/review account,
-                // only once (first login on this device), never for any other account.
-                if (currentUser.email.equals(DEMO_SEED_EMAIL, ignoreCase = true) &&
-                    !preferencesManager.hasAutoSeededDemoData()
-                ) {
-                    preferencesManager.setAutoSeededDemoData(true)
-                    viewModelScope.launch {
+                viewModelScope.launch {
+                    if (isAccountSwitch) {
+                        // A different account was last active on this device.
+                        // Its local data must not leak into this account's session.
+                        database.financeDao().clearAllTransactions()
+                        database.financeDao().clearAllHoldings()
+                        database.financeDao().clearAllSips()
+                        database.financeDao().clearAllCreditCards()
+                        database.financeDao().clearAllLoans()
+                        database.financeDao().clearAllGoals()
+                    }
+
+                    // Auto-seed demo data for the single designated demo/review account.
+                    // Runs on first-ever login on this device, or again after switching
+                    // back into this account from a different one (local was just wiped).
+                    if (currentUser.email.equals(DEMO_SEED_EMAIL, ignoreCase = true) &&
+                        (!preferencesManager.hasAutoSeededDemoData() || isAccountSwitch)
+                    ) {
+                        preferencesManager.setAutoSeededDemoData(true)
                         AppDatabase.reseedDatabase(database.financeDao())
                         preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
                     }
@@ -332,6 +348,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             database.financeDao().clearAllCreditCards()
             database.financeDao().clearAllLoans()
             database.financeDao().clearAllGoals()
+
+            // Safety net: the shared demo/tester account must never end up blank,
+            // even if this function is somehow reached for it. Immediately re-seed.
+            if (_userEmail.value.equals(DEMO_SEED_EMAIL, ignoreCase = true)) {
+                AppDatabase.reseedDatabase(database.financeDao())
+                preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
+            }
         }
     }
 
@@ -781,7 +804,7 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
 
     companion object {
         // Only this account receives auto-seeded Kenyan demo/sample data on first login
-        // (used for Play Store review / demo purposes). All other accounts start blank.
-        private const val DEMO_SEED_EMAIL = "smarttechlab.apps@gmail.com"
+        // (used as a shared demo login for testers/reviewers). All other accounts start blank.
+        const val DEMO_SEED_EMAIL = "smarttechlab.apps@gmail.com"
     }
 }
