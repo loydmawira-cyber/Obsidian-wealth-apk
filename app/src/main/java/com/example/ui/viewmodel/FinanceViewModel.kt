@@ -73,8 +73,29 @@ data class FinanceSummary(
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val billingManager = BillingManager(application)
-    private val firebaseAuth = FirebaseAuth.getInstance()
-    private val firestore = FirebaseFirestore.getInstance()
+    private val firebaseAuth: FirebaseAuth? by lazy {
+        try {
+            if (com.google.firebase.FirebaseApp.getApps(application).isEmpty()) {
+                com.google.firebase.FirebaseApp.initializeApp(application)
+            }
+            FirebaseAuth.getInstance()
+        } catch (e: Exception) {
+            android.util.Log.e("FinanceViewModel", "FirebaseAuth init error", e)
+            null
+        }
+    }
+
+    private val firestore: FirebaseFirestore? by lazy {
+        try {
+            if (com.google.firebase.FirebaseApp.getApps(application).isEmpty()) {
+                com.google.firebase.FirebaseApp.initializeApp(application)
+            }
+            FirebaseFirestore.getInstance()
+        } catch (e: Exception) {
+            android.util.Log.e("FinanceViewModel", "FirebaseFirestore init error", e)
+            null
+        }
+    }
 
     val isPremium: StateFlow<Boolean> = billingManager.isPremium
     val billingMessage: StateFlow<String?> = billingManager.message
@@ -107,10 +128,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val lastCloudSyncTime: StateFlow<Long> = _lastCloudSyncTime
 
     // AUTH & QUICK 4-PIN LOCK STATES
-    private val _isLoggedIn = MutableStateFlow(firebaseAuth.currentUser != null)
+    private val _isLoggedIn = MutableStateFlow(firebaseAuth?.currentUser != null)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn
 
-    private val _userEmail: MutableStateFlow<String> = MutableStateFlow(firebaseAuth.currentUser?.email.orEmpty())
+    private val _userEmail: MutableStateFlow<String> = MutableStateFlow(firebaseAuth?.currentUser?.email.orEmpty())
     private val _authError = MutableStateFlow<String?>(null)
     val authError: StateFlow<String?> = _authError
     val userEmail: StateFlow<String> = _userEmail
@@ -133,8 +154,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _cloudVaultId.value = preferencesManager.getCloudVaultId()
         _lastCloudSyncTime.value = preferencesManager.getLastCloudSyncTime()
 
-        // Firebase Auth is the source of truth for login state.
-        firebaseAuth.addAuthStateListener { auth ->
+        // Firebase Auth is the source of truth for login state when available.
+        firebaseAuth?.addAuthStateListener { auth ->
             val currentUser = auth.currentUser
             _isLoggedIn.value = currentUser != null
             _userEmail.value = currentUser?.email.orEmpty()
@@ -183,17 +204,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun loginWithEmail(email: String, pass: String, onResult: (Boolean) -> Unit = {}) {
         _authError.value = null
-        firebaseAuth.signInWithEmailAndPassword(email.trim(), pass)
+        val auth = firebaseAuth
+        if (auth == null) {
+            _authError.value = "Firebase Authentication is unavailable."
+            onResult(false)
+            return
+        }
+        auth.signInWithEmailAndPassword(email.trim(), pass)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
-                    val uid = firebaseAuth.currentUser?.uid
+                    val uid = auth.currentUser?.uid
                     if (uid != null) {
                         preferencesManager.setCloudVaultId(uid)
                         _cloudVaultId.value = uid
                         _isLoggedIn.value = true
                         _userEmail.value = email.trim()
                         viewModelScope.launch {
-                            firestore.collection("users").document(uid).set(mapOf("email" to email.trim(), "uid" to uid), com.google.firebase.firestore.SetOptions.merge())
+                            firestore?.collection("users")?.document(uid)?.set(mapOf("email" to email.trim(), "uid" to uid), com.google.firebase.firestore.SetOptions.merge())
                             restoreVaultFromCloud()
                         }
                     }
@@ -207,17 +234,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun registerUser(email: String, pass: String, onResult: (Boolean) -> Unit = {}) {
         _authError.value = null
-        firebaseAuth.createUserWithEmailAndPassword(email.trim(), pass)
+        val auth = firebaseAuth
+        if (auth == null) {
+            _authError.value = "Firebase Authentication is unavailable."
+            onResult(false)
+            return
+        }
+        auth.createUserWithEmailAndPassword(email.trim(), pass)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
-                    val user = firebaseAuth.currentUser
+                    val user = auth.currentUser
                     if (user != null) {
                         preferencesManager.setCloudVaultId(user.uid)
                         _cloudVaultId.value = user.uid
                         _isLoggedIn.value = true
                         _userEmail.value = email.trim()
                         viewModelScope.launch {
-                            firestore.collection("users").document(user.uid).set(mapOf("email" to email.trim(), "uid" to user.uid, "createdAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
+                            firestore?.collection("users")?.document(user.uid)?.set(mapOf("email" to email.trim(), "uid" to user.uid, "createdAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
                             syncVaultToCloud()
                         }
                     }
@@ -231,7 +264,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun resetPassword(email: String, newPass: String, onResult: (Boolean) -> Unit = {}) {
         _authError.value = null
-        firebaseAuth.sendPasswordResetEmail(email.trim()).addOnCompleteListener { task ->
+        val auth = firebaseAuth
+        if (auth == null) {
+            _authError.value = "Firebase Authentication is unavailable."
+            onResult(false)
+            return
+        }
+        auth.sendPasswordResetEmail(email.trim()).addOnCompleteListener { task ->
             if (!task.isSuccessful) _authError.value = task.exception?.localizedMessage ?: "Password reset failed."
             onResult(task.isSuccessful)
         }
@@ -265,7 +304,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun logout() {
-        firebaseAuth.signOut()
+        firebaseAuth?.signOut()
         preferencesManager.setLoggedIn(false)
         _isLoggedIn.value = false
         _isPinLocked.value = false

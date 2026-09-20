@@ -44,7 +44,11 @@ class BillingManager(context: Context) : BillingClientStateListener {
         .build()
 
     init {
-        billingClient.startConnection(this)
+        try {
+            billingClient.startConnection(this)
+        } catch (e: Exception) {
+            _message.value = "Google Play Billing unavailable: ${e.localizedMessage}"
+        }
     }
 
     override fun onBillingSetupFinished(billingResult: BillingResult) {
