@@ -1,0 +1,46 @@
+rules_version = '2';
+
+// Obsidian Wealth — Cloud Firestore security rules.
+//
+// These rules are the primary access boundary for every financial record the app stores.
+// There were previously no rules in the repository at all, which meant nothing versioned,
+// nothing reviewable, and nothing testable in CI for a database of user financial history.
+//
+// Model: a user's data lives under their own Firebase Auth uid and is reachable by nobody else.
+//   users/{uid}                      — profile document
+//   wealth_vaults/{uid}              — vault metadata
+//   wealth_vaults/{uid}/{sub}/{doc}  — transactions, holdings, sips, credit_cards, loans,
+//                                      goals, settings
+//
+// Deploy:  firebase deploy --only firestore:rules
+// Test:    firebase emulators:exec --only firestore "npm test"
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A request is only ever valid for the caller's own uid.
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /wealth_vaults/{uid} {
+      allow read, write: if isOwner(uid);
+
+      // Every subcollection (transactions, holdings, sips, credit_cards, loans, goals,
+      // settings) inherits the same owner-only constraint. Nested matches do not inherit
+      // the parent's allow rules in Firestore, so this is stated explicitly.
+      match /{subcollection=**} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // Anything not matched above is denied. Do not add a permissive catch-all.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
