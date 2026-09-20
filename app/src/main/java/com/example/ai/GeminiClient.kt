@@ -29,7 +29,7 @@ object GeminiClient {
      * Valid Gemini Flash model id. The previous value ("gemini-3.5-flash") does not exist, so
      * every live call 404'd and silently fell through to the fallback path.
      */
-    private const val MODEL_NAME = "gemini-2.5-flash"
+    private const val MODEL_NAME = "gemini-3.6-flash"
 
     private const val SYSTEM_INSTRUCTION = """
 You are "Obsidian AI", a wealth management and financial intelligence assistant embedded in the Obsidian Wealth personal finance app.
