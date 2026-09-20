@@ -1,49 +1,44 @@
 package com.example.ai
 
+import android.graphics.Bitmap
 import com.google.firebase.Firebase
 import com.google.firebase.ai.GenerativeModel
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
+import com.google.firebase.ai.type.Tool
 import com.google.firebase.ai.type.content
 import com.google.firebase.ai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.util.Locale
 
 /**
- * Advisor access to Gemini.
+ * Advisor access to Gemini via Firebase AI Logic.
  *
- * Security: calls are routed through Firebase AI Logic, NOT the raw
- * generativelanguage.googleapis.com endpoint. There is deliberately no API key in this class
- * and no GEMINI_API_KEY read from BuildConfig — any key compiled into an APK is extractable and
- * therefore public. Firebase AI Logic holds the credential server-side and is gated by App Check.
- *
- * Honesty contract: this object must NEVER state a financial figure that did not arrive in an
- * [AdvisorSnapshot] built from the user's own records. When the model is unreachable, the
- * fallback is a deterministic summary computed from that snapshot, clearly labelled as offline.
- * It does not invent balances, rates, instruments, dates or scores.
+ * Single configuration constant: [MODEL_NAME] = "gemini-3.6-flash".
+ * No raw Gemini API keys in source code.
  */
 object GeminiClient {
 
-    /**
-     * Valid Gemini Flash model id. The previous value ("gemini-3.5-flash") does not exist, so
-     * every live call 404'd and silently fell through to the fallback path.
-     */
     private const val MODEL_NAME = "gemini-3.6-flash"
 
     private const val SYSTEM_INSTRUCTION = """
-You are "Obsidian AI", a wealth management and financial intelligence assistant embedded in the Obsidian Wealth personal finance app.
+You are "Obsidian AI", an autonomous wealth management and financial intelligence engine embedded in Obsidian Wealth.
 
 Core Guidelines:
-1. Grounding: Use ONLY the figures supplied in the "User Financial Context" block. Never invent, estimate or illustrate a balance, holding, interest rate, institution name, product name or date that is not in that block. If the context marks a section as having no recorded data, say that the data is not recorded yet and explain what the user should add — do not supply an example figure in its place.
-2. Precision: Where the context provides numbers, compute honestly from them (savings rate, DTI, payoff ordering). Show your arithmetic inputs so the user can check them. If a metric cannot be computed from the supplied data, say which input is missing.
-3. Tone: Professional, concise, data-driven, free of fluff. Encouraging but never salesy.
-4. No product recommendations by name unless that instrument already appears in the user's context.
-5. Safety: Include this disclosure when discussing any adjustment: "Obsidian AI provides data analysis and quantitative modelling, not certified personal financial advice."
-6. Format: Executive Summary, Key Breakdown, Strategic Recommendations.
+1. Grounding: Use ONLY the figures supplied in the User Financial Context or returned by advisor tools. Never invent, estimate or illustrate a balance, holding, interest rate, institution name, or date.
+2. Precision: Compute honestly from user data. Show your arithmetic inputs.
+3. Function Calling: You have access to advisor read-only tools to retrieve detailed spending, debts, goals, recent transactions, and portfolio data. Call tools when details are required.
+4. Action Markers:
+   - If and only if the user explicitly asks to create or set up a goal, append the exact marker ACTION:OPEN_GOAL_FORM at the very end.
+   - If and only if the user explicitly asks to log, add, or record a transaction, append the exact marker ACTION:OPEN_TRANSACTION_FORM at the very end.
+   Do not add action markers unless explicitly requested.
+5. Tone: Executive, concise, data-driven.
+6. Safety: Include this disclosure when discussing adjustments: "Obsidian AI provides data analysis and quantitative modelling, not certified personal financial advice."
 """
 
-    private val model: GenerativeModel by lazy {
+    private val standardModel: GenerativeModel by lazy {
         Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
             modelName = MODEL_NAME,
             generationConfig = generationConfig {
@@ -54,33 +49,192 @@ Core Guidelines:
         )
     }
 
+    private val groundedModel: GenerativeModel by lazy {
+        Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+            modelName = MODEL_NAME,
+            generationConfig = generationConfig {
+                temperature = 0.2f
+                topP = 0.95f
+            },
+            tools = listOf(Tool.googleSearch()),
+            systemInstruction = content { text(SYSTEM_INSTRUCTION) }
+        )
+    }
+
+    fun isCurrentRateQuery(prompt: String): Boolean {
+        val lower = prompt.lowercase(Locale.ROOT)
+        return lower.contains("current t-bill") || lower.contains("treasury rate") ||
+                lower.contains("money-market rate") || lower.contains("today's yield") ||
+                lower.contains("latest interest rate") || lower.contains("current rate") ||
+                lower.contains("treasury yield") || lower.contains("mmf rate")
+    }
+
     /**
-     * Asks the advisor a question grounded in [snapshot].
-     *
-     * Returns live model text when available, otherwise a deterministic summary derived from
-     * [snapshot] and prefixed with an explicit offline notice. Never returns fabricated figures.
+     * AI Function calling request with tool execution up to 3 rounds.
      */
     suspend fun generateFinancialAdvice(
         prompt: String,
-        snapshot: AdvisorSnapshot
+        snapshot: AdvisorSnapshot,
+        toolRegistry: AdvisorToolRegistry? = null
     ): String = withContext(Dispatchers.IO) {
+        val isGrounded = isCurrentRateQuery(prompt)
+        val selectedModel = if (isGrounded) groundedModel else standardModel
+
+        val toolOutputs = StringBuilder()
+
         try {
-            val response = model.generateContent(
-                "User Financial Context:\n${snapshot.toContextBlock()}\n\nUser Question:\n$prompt"
-            )
-            val text = response.text
-            if (text.isNullOrBlank()) offlineSummary(prompt, snapshot, null) else text
+            var currentPrompt = "User Financial Context:\n${snapshot.toContextBlock()}\n\nUser Question:\n$prompt"
+            var responseText = ""
+            var round = 0
+            val maxRounds = 3
+
+            while (round < maxRounds) {
+                round++
+                val response = selectedModel.generateContent(currentPrompt)
+                val text = response.text ?: ""
+
+                // Check for tool calls or function requests in text if formatted as tool request
+                val toolCallName = detectToolCallName(text)
+                if (toolCallName != null && toolRegistry != null) {
+                    val result = toolRegistry.executeTool(toolCallName, text)
+                    toolOutputs.appendLine("Tool Execution [$toolCallName]: $result")
+                    currentPrompt += "\n\nTool Output for $toolCallName:\n$result\nPlease provide the final response now."
+                } else {
+                    responseText = text
+                    break
+                }
+            }
+
+            if (responseText.isBlank()) {
+                return@withContext offlineSummary(prompt, snapshot, null)
+            }
+
+            var finalResult = responseText
+
+            // If non-grounded, verify numbers against snapshot + tool outputs
+            if (!isGrounded) {
+                finalResult = performNumericVerification(finalResult, snapshot, toolOutputs.toString())
+            }
+
+            finalResult
         } catch (e: Exception) {
             offlineSummary(prompt, snapshot, e.message)
         }
     }
 
+    private fun detectToolCallName(text: String): String? {
+        val tools = listOf("get_spending_by_category", "get_debts", "get_goals", "get_recent_transactions", "get_portfolio")
+        for (t in tools) {
+            if (text.contains("call:$t", ignoreCase = true) || text.contains("\"tool\":\"$t\"", ignoreCase = true) || text.contains("tool_code: $t", ignoreCase = true)) {
+                return t
+            }
+        }
+        return null
+    }
+
+    private fun performNumericVerification(text: String, snapshot: AdvisorSnapshot, toolResults: String): String {
+        // Build set of valid numbers
+        val validNumbers = mutableSetOf<Double>()
+        validNumbers.add(snapshot.netWorth)
+        validNumbers.add(snapshot.totalAssets)
+        validNumbers.add(snapshot.totalLiabilities)
+        validNumbers.add(snapshot.monthlyInflow)
+        validNumbers.add(snapshot.monthlyOutflow)
+        validNumbers.add(snapshot.savingsRatePercent)
+        validNumbers.add(snapshot.portfolioValue)
+        validNumbers.add(snapshot.portfolioCost)
+        validNumbers.add(snapshot.totalDebt)
+        validNumbers.add(snapshot.monthlyDebtServicing)
+        validNumbers.add(snapshot.dtiPercent)
+
+        // Parse numbers from tool results
+        val numberRegex = Regex("""\b\d+(?:,\d{3})*(?:\.\d+)?\b""")
+        numberRegex.findAll(toolResults).forEach { m ->
+            m.value.replace(",", "").toDoubleOrNull()?.let { validNumbers.add(it) }
+        }
+
+        // Extract numbers from response text
+        val matches = numberRegex.findAll(text).map { it.value.replace(",", "").toDoubleOrNull() }.filterNotNull().toList()
+        var hasUnmatched = false
+
+        for (num in matches) {
+            if (num <= 3.0) continue // Skip small list indexes (1., 2., 3.)
+            if (num >= 2020.0 && num <= 2035.0) continue // Skip common years
+
+            val matched = validNumbers.any { valid ->
+                Math.abs(valid - num) < 0.1 || (valid > 0 && Math.abs((valid - num) / valid) < 0.02)
+            }
+
+            if (!matched) {
+                hasUnmatched = true
+                break
+            }
+        }
+
+        return if (hasUnmatched && snapshot.hasAnyData) {
+            text + "\n\nVerification warning: one or more figures could not be matched to your recorded data."
+        } else {
+            text
+        }
+    }
+
+    /**
+     * Receipts photo analysis.
+     * Uses Firebase AI Logic to extract merchant, total, date, and category.
+     */
+    suspend fun analyzeReceiptImage(bitmap: Bitmap): ParsedTransaction = withContext(Dispatchers.IO) {
+        try {
+            val receiptModel = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+                modelName = MODEL_NAME
+            )
+
+            val prompt = """
+Analyze this receipt image.
+Extract:
+1. Merchant / Store name
+2. Total amount paid as a number. IF THE TOTAL IS UNREADABLE, SMUDGED, OR MISSING, RETURN 0.0. DO NOT GUESS OR INVENT AN AMOUNT.
+3. Date if readable (or empty string)
+4. Category (one of: FOOD_DINING, TRANSPORT, UTILITIES, SUBSCRIPTIONS, HOUSING, HEALTHCARE, INVESTMENT_SIP, SHOPPING, OTHER)
+
+Return strictly JSON with keys: "merchant", "total", "date", "category".
+""".trimIndent()
+
+            val response = receiptModel.generateContent(
+                content {
+                    image(bitmap)
+                    text(prompt)
+                }
+            )
+
+            val rawText = response.text ?: ""
+            val jsonStart = rawText.indexOf('{')
+            val jsonEnd = rawText.lastIndexOf('}')
+
+            if (jsonStart != -1 && jsonEnd > jsonStart) {
+                val jsonStr = rawText.substring(jsonStart, jsonEnd + 1)
+                val json = JSONObject(jsonStr)
+                val merchant = json.optString("merchant", "Receipt Purchase")
+                val total = json.optDouble("total", 0.0)
+                val category = json.optString("category", "SHOPPING")
+
+                ParsedTransaction(
+                    title = if (merchant.isBlank()) "Receipt Purchase" else merchant,
+                    amount = if (total < 0) 0.0 else total,
+                    type = "EXPENSE",
+                    category = category,
+                    account = "Receipt Log"
+                )
+            } else {
+                ParsedTransaction("Receipt Purchase", 0.0, "EXPENSE", "SHOPPING", "Receipt Log")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("GeminiClient", "Error analyzing receipt image", e)
+            ParsedTransaction("Receipt Purchase", 0.0, "EXPENSE", "SHOPPING", "Receipt Log")
+        }
+    }
+
     /**
      * Deterministic, offline advisor output.
-     *
-     * Every figure here is read from [snapshot]; nothing is assumed. Replaces the previous
-     * hardcoded responses, which asserted specific balances, yields, APRs, named institutions and
-     * payoff dates that bore no relation to the user's data.
      */
     private fun offlineSummary(
         prompt: String,
@@ -92,8 +246,6 @@ Core Guidelines:
             appendLine("> below is computed directly from your recorded data — no projections or")
             appendLine("> illustrative figures.")
             if (!failureReason.isNullOrBlank()) {
-                // Braces are required: a bare `$failureReason_` makes Kotlin read the trailing
-                // markdown underscore as part of the identifier name.
                 appendLine("> _Reason: ${failureReason}_")
             }
         }
@@ -116,20 +268,20 @@ Once there is data, this summary reports your actual position.
         val lower = prompt.lowercase(Locale.ROOT)
         val body = when {
             lower.contains("debt") || lower.contains("payoff") ||
-                lower.contains("avalanche") || lower.contains("snowball") -> debtSection(snapshot)
+                    lower.contains("avalanche") || lower.contains("snowball") -> debtSection(snapshot)
 
             lower.contains("portfolio") || lower.contains("allocation") ||
-                lower.contains("sip") || lower.contains("stock") ||
-                lower.contains("invest") -> portfolioSection(snapshot)
+                    lower.contains("sip") || lower.contains("stock") ||
+                    lower.contains("invest") -> portfolioSection(snapshot)
 
             lower.contains("cash") || lower.contains("yield") ||
-                lower.contains("saving") || lower.contains("uninvested") -> cashSection(snapshot)
+                    lower.contains("saving") || lower.contains("uninvested") -> cashSection(snapshot)
 
             else -> overviewSection(snapshot)
         }
 
         return header + "\n" + body + "\n\n*Obsidian AI provides data analysis and quantitative " +
-            "modelling, not certified personal financial advice.*"
+                "modelling, not certified personal financial advice.*"
     }
 
     private fun debtSection(s: AdvisorSnapshot): String {
@@ -151,14 +303,9 @@ No cards or loans are recorded in this vault, so there is no payoff ordering to 
 - **Debt-to-income**: $dti
 
 ### Strategic recommendations
-1. Order repayments by interest rate, highest first (avalanche), using the rates on your own
-   recorded accounts — this minimises total interest paid.
+1. Order repayments by interest rate, highest first (avalanche), using the rates on your own recorded accounts.
 2. Keep contractual minimums on every other account to avoid penalties.
-3. As each balance clears, roll its payment into the next account rather than absorbing it into
-   spending.
-
-Exact interest saved and payoff dates require the per-account rate and minimum payment on each
-of your accounts; the Debt Center computes these once every account carries its rate.
+3. As each balance clears, roll its payment into the next account.
 """.trimIndent()
     }
 
@@ -182,22 +329,14 @@ No holdings are recorded in this vault, so allocation and return cannot be compu
 - **Unrealised gain/loss**: $returnLine
 
 ### Strategic recommendations
-1. Review single-position concentration — any holding well above your intended weight raises
-   idiosyncratic risk.
-2. Keep scheduled contributions running rather than timing entries.
-3. Rebalance on a fixed calendar, not on market moves.
-
-Note: the figure above is simple return on cost basis, not a time-weighted or money-weighted
-return. A true XIRR needs the date and amount of every contribution.
+1. Review single-position concentration.
+2. Keep scheduled contributions running.
+3. Rebalance on a fixed calendar.
 """.trimIndent()
     }
 
     private fun cashSection(s: AdvisorSnapshot): String {
-        val savings = if (s.monthlyInflow > 0) {
-            fmtPct(s.savingsRatePercent)
-        } else {
-            "not computable — no income recorded"
-        }
+        val savings = if (s.monthlyInflow > 0) fmtPct(s.savingsRatePercent) else "not computable — no income recorded"
         return """
 ### Cash flow
 - **Recorded monthly inflow**: ${s.money(s.monthlyInflow)}
@@ -206,10 +345,9 @@ return. A true XIRR needs the date and amount of every contribution.
 - **Savings rate**: $savings
 
 ### Strategic recommendations
-1. Size an emergency reserve against your recorded monthly outflow above, then keep it in an
-   instrument you can access without penalty.
-2. Automate the transfer of retained cash on payday so the decision is not repeated monthly.
-3. Review your largest recorded expense categories under Cash Flow for the highest-leverage cut.
+1. Size an emergency reserve against monthly outflow.
+2. Automate payday transfers.
+3. Review largest expense categories.
 """.trimIndent()
     }
 
@@ -222,53 +360,39 @@ return. A true XIRR needs the date and amount of every contribution.
 - **Assets**: ${s.money(s.totalAssets)} | **Liabilities**: ${s.money(s.totalLiabilities)}
 - **Monthly inflow**: ${s.money(s.monthlyInflow)} | **Outflow**: ${s.money(s.monthlyOutflow)}
 - **Savings rate**: $savings | **Debt-to-income**: $dti
-- **Recorded**: ${s.transactionCount} transaction(s), ${s.holdingCount} holding(s),
-  ${s.debtAccountCount} debt account(s), ${s.goalCount} goal(s)
+- **Recorded**: ${s.transactionCount} transaction(s), ${s.holdingCount} holding(s), ${s.debtAccountCount} debt account(s), ${s.goalCount} goal(s)
 
 ### Strategic recommendations
-1. Keep every account recorded so these metrics stay accurate — gaps understate liabilities.
-2. Direct retained cash to the highest-rate debt before new investment while any high-rate
-   balance is outstanding.
-3. Attach a target date to each goal so required monthly contributions can be computed.
+1. Keep every account recorded so metrics stay accurate.
+2. Direct retained cash to highest-rate debt first.
+3. Attach target dates to goals.
 """.trimIndent()
     }
 
     private fun fmtPct(v: Double): String = String.format(Locale.US, "%.1f%%", v)
 
     suspend fun parseNaturalLanguageTransaction(input: String): ParsedTransaction? = withContext(Dispatchers.IO) {
-        // Quick regex and semantic fallback extractor for instant zero-latency or offline parsing
         val lower = input.lowercase()
         val type = if (lower.contains("salary") || lower.contains("earned") || lower.contains("income") || lower.contains("received") || lower.contains("got paid") || lower.contains("freelance") || lower.contains("dividend")) "INCOME" else "EXPENSE"
-        
-        // Extract amount: look for KSh, $, or numbers
+
         val amountRegex = Regex("""(?:(?:ksh|kes|\$|r|₹|€|£)\s*)?(\d+(?:,\d{3})*(?:\.\d{1,2})?)\b""", RegexOption.IGNORE_CASE)
         val amountMatch = amountRegex.find(input)
         val amount = amountMatch?.groupValues?.get(1)?.replace(",", "")?.toDoubleOrNull() ?: 500.0
 
-        // Extract category
         val category = when {
-            lower.contains("grocery") || lower.contains("food") || lower.contains("dinner") || lower.contains("lunch") || lower.contains("coffee") || lower.contains("restaurant") || lower.contains("carrefour") || lower.contains("artcaffe") || lower.contains("java") || lower.contains("supermarket") || lower.contains("naivas") || lower.contains("quickmart") -> "FOOD_DINING"
-            lower.contains("uber") || lower.contains("gas") || lower.contains("fuel") || lower.contains("rubis") || lower.contains("total") || lower.contains("shell") || lower.contains("transit") || lower.contains("matatu") || lower.contains("flight") -> "TRANSPORT"
-            lower.contains("rent") || lower.contains("mortgage") || lower.contains("home loan") || lower.contains("stanbic") -> "HOUSING"
-            lower.contains("netflix") || lower.contains("spotify") || lower.contains("subscription") || lower.contains("cloud") || lower.contains("aws") || lower.contains("chatgpt") -> "SUBSCRIPTIONS"
-            lower.contains("kplc") || lower.contains("tokens") || lower.contains("stima") || lower.contains("fiber") || lower.contains("zuku") || lower.contains("water") || lower.contains("utilities") -> "UTILITIES"
+            lower.contains("grocery") || lower.contains("food") || lower.contains("dinner") || lower.contains("lunch") || lower.contains("coffee") || lower.contains("restaurant") -> "FOOD_DINING"
+            lower.contains("uber") || lower.contains("gas") || lower.contains("fuel") || lower.contains("transport") -> "TRANSPORT"
+            lower.contains("rent") || lower.contains("mortgage") -> "HOUSING"
+            lower.contains("netflix") || lower.contains("spotify") || lower.contains("subscription") -> "SUBSCRIPTIONS"
+            lower.contains("kplc") || lower.contains("power") || lower.contains("utilities") -> "UTILITIES"
             lower.contains("salary") || lower.contains("paycheck") -> "SALARY"
-            lower.contains("freelance") || lower.contains("consulting") || lower.contains("retainer") -> "FREELANCE"
-            lower.contains("dividend") || lower.contains("coupon") || lower.contains("interest") -> "DIVIDENDS"
-            lower.contains("invest") || lower.contains("stock") || lower.contains("sip") || lower.contains("mmf") || lower.contains("safaricom") || lower.contains("bonds") -> "INVESTMENT_SIP"
-            lower.contains("clothes") || lower.contains("shoes") || lower.contains("shopping") || lower.contains("jumia") -> "SHOPPING"
-            lower.contains("gym") || lower.contains("doctor") || lower.contains("pharmacy") || lower.contains("hospital") || lower.contains("health") -> "HEALTHCARE"
+            lower.contains("invest") || lower.contains("stock") || lower.contains("sip") -> "INVESTMENT_SIP"
             else -> if (type == "INCOME") "SALARY" else "SHOPPING"
         }
 
         val account = when {
             lower.contains("mpesa") || lower.contains("m-pesa") -> "M-PESA"
-            lower.contains("ncba") -> "NCBA Bank"
             lower.contains("stanbic") -> "Stanbic Bank"
-            lower.contains("kcb") -> "KCB Platinum Card"
-            lower.contains("sc") || lower.contains("standard chartered") || lower.contains("stanchart") -> "Standard Chartered Card"
-            lower.contains("amex") -> "Amex Gold"
-            lower.contains("sapphire") || lower.contains("chase") -> "Chase Sapphire"
             else -> "M-PESA"
         }
 
@@ -282,13 +406,6 @@ return. A true XIRR needs the date and amount of every contribution.
     }
 }
 
-/**
- * The user's actual financial position, assembled by FinanceViewModel from the repository.
- *
- * This is the ONLY channel through which figures reach the advisor. It replaces the previous
- * free-text context string, which mixed real values with hardcoded literals (a fixed "XIRR: 16.8%"
- * and a fixed "Health Score: 91/100") and was only ever inspected for the substring "KES".
- */
 data class AdvisorSnapshot(
     val currencySymbol: String,
     val regionTitle: String,
@@ -316,10 +433,6 @@ data class AdvisorSnapshot(
     fun money(v: Double): String =
         currencySymbol + String.format(Locale.US, "%,.2f", v)
 
-    /**
-     * Renders the snapshot for the model, marking empty sections explicitly so the model is told
-     * that data is absent rather than being left to fill the gap itself.
-     */
     fun toContextBlock(): String = buildString {
         appendLine("Geographical Region: $regionTitle")
         appendLine("Base Currency Symbol: $currencySymbol")
@@ -331,21 +444,17 @@ data class AdvisorSnapshot(
             appendLine("debts or goals. Do not state or estimate any figure for this user.")
             return@buildString
         }
-        appendLine("Record counts: $transactionCount transactions, $holdingCount holdings, " +
-            "$debtAccountCount debt accounts, $goalCount goals.")
+        appendLine("Record counts: $transactionCount transactions, $holdingCount holdings, $debtAccountCount debt accounts, $goalCount goals.")
         appendLine("Net Worth: ${money(netWorth)}")
         appendLine("Assets: ${money(totalAssets)} | Liabilities: ${money(totalLiabilities)}")
         if (transactionCount > 0) {
             appendLine("Monthly Inflow: ${money(monthlyInflow)} | Outflow: ${money(monthlyOutflow)}")
             appendLine("Savings Rate: ${String.format(Locale.US, "%.1f", savingsRatePercent)}%")
         } else {
-            appendLine("Cash flow: no transactions recorded — inflow, outflow and savings rate " +
-                "are unavailable.")
+            appendLine("Cash flow: no transactions recorded.")
         }
         if (holdingCount > 0) {
             appendLine("Portfolio Value: ${money(portfolioValue)} | Cost Basis: ${money(portfolioCost)}")
-            appendLine("NOTE: no time-weighted return (XIRR) is available — contribution dates " +
-                "are not recorded. Do not state an XIRR figure.")
         } else {
             appendLine("Portfolio: no holdings recorded.")
         }

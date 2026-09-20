@@ -32,6 +32,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -73,6 +79,7 @@ fun GoalsAndReportsScreen(
     viewModel: FinanceViewModel,
     onAddGoal: () -> Unit,
     onExportReport: (String) -> Unit,
+    onAskAiToExplain: (String) -> Unit = { viewModel.askAi(it) },
     modifier: Modifier = Modifier
 ) {
     val summary by viewModel.summary.collectAsState()
@@ -338,6 +345,15 @@ statement to produce an audit of your actual position.
             }
         }
 
+        item {
+            WhatIfCalculatorCard(
+                summary = summary,
+                goals = goals,
+                viewModel = viewModel,
+                onAskAiToExplain = onAskAiToExplain
+            )
+        }
+
         // Monthly Financial Reports & Audited Statements
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -404,6 +420,135 @@ statement to produce an audit of your actual position.
 
         item {
             Spacer(modifier = Modifier.height(20.dp))
+        }
+    }
+}
+
+@Composable
+fun WhatIfCalculatorCard(
+    summary: com.example.ui.viewmodel.FinanceSummary,
+    goals: List<GoalEntity>,
+    viewModel: FinanceViewModel,
+    onAskAiToExplain: (String) -> Unit
+) {
+    var extraSavingsInput by remember { mutableStateOf("10000") }
+    val extraSavings = extraSavingsInput.toDoubleOrNull() ?: 0.0
+
+    val currentInflow = summary.totalInflow
+    val currentRetained = summary.netCashRetained
+    val newMonthlyRetainedCash = currentRetained + extraSavings
+    val newSavingsRate = if (currentInflow > 0) ((currentRetained + extraSavings) / currentInflow * 100.0).coerceIn(0.0, 100.0) else 0.0
+    val additionalAnnualSavings = extraSavings * 12.0
+
+    val primaryGoal = goals.firstOrNull()
+    val goalImpactText = if (primaryGoal != null && primaryGoal.targetAmount > 0) {
+        val remaining = (primaryGoal.targetAmount - primaryGoal.currentAmount).coerceAtLeast(0.0)
+        val currentMonthly = primaryGoal.monthlyContribution
+        val currentMonths = if (currentMonthly > 0) Math.ceil(remaining / currentMonthly).toInt() else primaryGoal.monthsRemaining
+        val newMonthly = currentMonthly + extraSavings
+        val newMonths = if (newMonthly > 0) Math.ceil(remaining / newMonthly).toInt() else 0
+        val timeSaved = maxOf(0, currentMonths - newMonths)
+        "${primaryGoal.title}: $newMonths mos ($timeSaved mos faster)"
+    } else {
+        "No active goals set"
+    }
+
+    FinCard(
+        border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.5f))
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Calculate, contentDescription = null, tint = SovereignGold, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("WHAT-IF FINANCIAL CALCULATOR", color = SovereignGold, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text("Simulate extra monthly savings. All calculations are strictly deterministic Kotlin logic.", color = TextSecondary, fontSize = 11.sp)
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            OutlinedTextField(
+                value = extraSavingsInput,
+                onValueChange = { extraSavingsInput = it },
+                label = { Text("Extra Monthly Savings (${viewModel.userSettings.value.currency.symbol})", fontSize = 11.sp) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    focusedBorderColor = SovereignGold,
+                    unfocusedBorderColor = ObsidianBorder
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(2000.0, 5000.0, 10000.0, 25000.0).forEach { amt ->
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { extraSavingsInput = amt.toInt().toString() },
+                        color = ObsidianSurfaceVariant,
+                        border = BorderStroke(1.dp, ObsidianBorder)
+                    ) {
+                        Text(
+                            text = "+${viewModel.formatCompact(amt)}",
+                            color = IndigoLight,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(ObsidianSurfaceVariant, RoundedCornerShape(8.dp))
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("New Monthly Retained Cash", color = TextSecondary, fontSize = 11.sp)
+                    Text(viewModel.formatAmount(newMonthlyRetainedCash), color = EmeraldLight, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("New Savings Rate", color = TextSecondary, fontSize = 11.sp)
+                    Text("${"%.1f".format(newSavingsRate)}%", color = CyanAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Additional Annual Savings", color = TextSecondary, fontSize = 11.sp)
+                    Text("+${viewModel.formatAmount(additionalAnnualSavings)}/yr", color = SovereignGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Goal Timeline Impact", color = TextSecondary, fontSize = 11.sp)
+                    Text(goalImpactText, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    val prompt = "Explain my What-If calculation: If I save an extra ${viewModel.formatAmount(extraSavings)} per month, my retained cash becomes ${viewModel.formatAmount(newMonthlyRetainedCash)}, my savings rate increases to ${"%.1f".format(newSavingsRate)}%, and my additional annual savings is ${viewModel.formatAmount(additionalAnnualSavings)}."
+                    onAskAiToExplain(prompt)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Ask AI Advisor to Explain What-If", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

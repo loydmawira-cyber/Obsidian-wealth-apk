@@ -129,6 +129,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val repository: FinanceRepository
     private val preferencesManager: PreferencesManager
     private val database: AppDatabase
+    private val advisorToolRegistry: com.example.ai.AdvisorToolRegistry
 
     val userSettings: StateFlow<UserSettings>
     private val firestoreSyncManager: FirestoreSyncManager
@@ -169,6 +170,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     init {
         database = AppDatabase.getDatabase(application, viewModelScope)
         repository = FinanceRepository(database.financeDao())
+        advisorToolRegistry = com.example.ai.AdvisorToolRegistry(database.financeDao())
         preferencesManager = PreferencesManager(application)
         userSettings = preferencesManager.settings
         firestoreSyncManager = FirestoreSyncManager(application)
@@ -621,9 +623,35 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 goalCount = s.goalCount
             )
 
-            val aiResponseText = GeminiClient.generateFinancialAdvice(question, snapshot)
+            val aiResponseText = GeminiClient.generateFinancialAdvice(question, snapshot, advisorToolRegistry)
             _isAiThinking.value = false
             _chatMessages.value = _chatMessages.value + ChatMessage(sender = "AI", text = aiResponseText)
+        }
+    }
+
+    fun analyzeReceipt(bitmap: android.graphics.Bitmap, onResult: (com.example.ai.ParsedTransaction) -> Unit) {
+        viewModelScope.launch {
+            val result = GeminiClient.analyzeReceiptImage(bitmap)
+            onResult(result)
+        }
+    }
+
+    fun addImportedTransactions(transactions: List<com.example.data.util.ParsedTransaction>) {
+        viewModelScope.launch {
+            transactions.forEach { tx ->
+                repository.addTransaction(
+                    TransactionEntity(
+                        title = tx.title,
+                        amount = tx.amount,
+                        type = tx.type,
+                        category = tx.category,
+                        account = tx.account,
+                        dateMillis = tx.dateMillis,
+                        note = "Imported Statement [FP: ${tx.fingerprint.take(8)}]"
+                    )
+                )
+            }
+            syncVaultToCloud()
         }
     }
 

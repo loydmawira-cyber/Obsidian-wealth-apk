@@ -124,6 +124,27 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        try {
+            val appCheck = com.google.firebase.appcheck.FirebaseAppCheck.getInstance()
+            val debugFactory = com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory.getInstance()
+            appCheck.installAppCheckProviderFactory(debugFactory)
+            android.util.Log.d("ObsidianAppCheck", "Initialized App Check with DebugAppCheckProviderFactory.")
+        } catch (e: Exception) {
+            android.util.Log.e("ObsidianAppCheck", "App Check init notice", e)
+        }
+
+        try {
+            val alertWork = androidx.work.PeriodicWorkRequestBuilder<com.example.alerts.AlertWorker>(24, java.util.concurrent.TimeUnit.HOURS).build()
+            androidx.work.WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
+                "obsidian_proactive_alerts",
+                androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+                alertWork
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("ObsidianAlerts", "WorkManager init notice", e)
+        }
+
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
@@ -377,7 +398,9 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
             messages = chatMessages,
             isThinking = isAiThinking,
             onSendMessage = { q -> viewModel.askAi(q) },
-            onDismiss = { showAiAdvisorSheet = false }
+            onDismiss = { showAiAdvisorSheet = false },
+            onOpenGoalForm = { showAddGoalDialog = true },
+            onOpenTransactionForm = { showAddTransactionDialog = true }
         )
     }
 

@@ -34,7 +34,10 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Subscriptions
-import androidx.compose.material.icons.filled.TimeToLeave
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Receipt
+import com.example.ui.components.ReceiptPhotoDialog
+import com.example.ui.components.StatementImportDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -105,6 +108,8 @@ fun CashFlowScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") }
+    var showReceiptDialog by remember { mutableStateOf(false) }
+    var showStatementDialog by remember { mutableStateOf(false) }
 
     val filteredTransactions = transactions.filter { tx ->
         val matchesSearch = tx.title.contains(searchQuery, ignoreCase = true) ||
@@ -419,7 +424,41 @@ fun CashFlowScreen(
                         letterSpacing = 1.sp
                     )
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { showReceiptDialog = true },
+                            color = CyanAccent.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, CyanAccent.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Receipt, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Receipt", color = CyanAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { showStatementDialog = true },
+                            color = SovereignGold.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, tint = SovereignGold, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Import", color = GoldLight, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
                         Surface(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
@@ -428,12 +467,12 @@ fun CashFlowScreen(
                             border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.5f))
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = SovereignGold, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("AI Log", color = GoldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("AI Log", color = GoldLight, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -445,12 +484,12 @@ fun CashFlowScreen(
                             border = BorderStroke(1.dp, EmeraldGrowth.copy(alpha = 0.4f))
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null, tint = EmeraldLight, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("+ Add", color = EmeraldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("+ Add", color = EmeraldLight, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -634,6 +673,20 @@ fun CashFlowScreen(
             Spacer(modifier = Modifier.height(20.dp))
         }
     }
+
+    if (showReceiptDialog) {
+        ReceiptPhotoDialog(
+            viewModel = viewModel,
+            onDismiss = { showReceiptDialog = false }
+        )
+    }
+
+    if (showStatementDialog) {
+        StatementImportDialog(
+            viewModel = viewModel,
+            onDismiss = { showStatementDialog = false }
+        )
+    }
 }
 
 fun getCategoryIcon(category: Category): ImageVector {
@@ -641,7 +694,7 @@ fun getCategoryIcon(category: Category): ImageVector {
         Category.SALARY, Category.FREELANCE, Category.DIVIDENDS, Category.RENTAL -> Icons.Default.LocalAtm
         Category.FOOD_DINING -> Icons.Default.Fastfood
         Category.HOUSING -> Icons.Default.Home
-        Category.TRANSPORT -> Icons.Default.TimeToLeave
+        Category.TRANSPORT -> Icons.Default.Payments
         Category.SHOPPING -> Icons.Default.ShoppingBag
         Category.HEALTHCARE -> Icons.Default.MedicalServices
         Category.SUBSCRIPTIONS -> Icons.Default.Subscriptions

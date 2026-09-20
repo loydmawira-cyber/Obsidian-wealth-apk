@@ -112,6 +112,7 @@ dependencies {
   implementation(libs.firebase.ai)
   implementation(libs.firebase.firestore)
   implementation("com.android.billingclient:billing-ktx:7.1.1")
+  implementation("androidx.work:work-runtime-ktx:2.9.1")
 
   // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
   // Sign-In via Credential Manager:

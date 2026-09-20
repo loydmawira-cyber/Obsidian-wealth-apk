@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -397,7 +398,9 @@ fun ObsidianAiAdvisorSheet(
     messages: List<ChatMessage>,
     isThinking: Boolean,
     onSendMessage: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenGoalForm: () -> Unit = {},
+    onOpenTransactionForm: () -> Unit = {}
 ) {
     var inputText by remember { mutableStateOf("") }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -536,12 +539,54 @@ fun ObsidianAiAdvisorSheet(
                                         )
                                     }
                                 }
+                                val rawText = msg.text
+                                val hasGoalMarker = rawText.contains("ACTION:OPEN_GOAL_FORM")
+                                val hasTxMarker = rawText.contains("ACTION:OPEN_TRANSACTION_FORM")
+                                val displayText = rawText
+                                    .replace("ACTION:OPEN_GOAL_FORM", "")
+                                    .replace("ACTION:OPEN_TRANSACTION_FORM", "")
+                                    .trim()
+
                                 Text(
-                                    text = msg.text,
+                                    text = displayText,
                                     color = if (isAi) TextPrimary else Color.White,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp
                                 )
+
+                                if (isAi && hasGoalMarker) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            onDismiss()
+                                            onOpenGoalForm()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("🎯 Create Goal (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                if (isAi && hasTxMarker) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            onDismiss()
+                                            onOpenTransactionForm()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("➕ Log Transaction (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
                             }
                         }
                     }
