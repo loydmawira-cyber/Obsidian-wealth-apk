@@ -307,9 +307,10 @@ fun AiSmartLogDialog(
     var selectedCategory by remember { mutableStateOf(Category.FOOD_DINING) }
     var account by remember { mutableStateOf("M-PESA") }
     var note by remember { mutableStateOf("") }
-    var dateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var dateMillis by remember { mutableStateOf(0L) }
     val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
-    var dateText by remember { mutableStateOf(dateFormatter.format(Date(dateMillis))) }
+    var dateText by remember { mutableStateOf("") }
+    var dateNeedsReview by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -419,9 +420,10 @@ fun AiSmartLogDialog(
                                         selectedCategory = try { Category.valueOf(parsed.category) } catch (_: Exception) { Category.OTHER }
                                         account = parsed.account
                                         note = "Natural Language Log: \"$prompt\""
-                                        val parsedDate = parsed.dateMillis ?: System.currentTimeMillis()
-                                        dateMillis = parsedDate
-                                        dateText = dateFormatter.format(Date(parsedDate))
+                                        val parsedDate = parsed.dateMillis
+                                        dateNeedsReview = parsed.dateNeedsReview || parsedDate == null
+                                        dateMillis = parsedDate ?: 0L
+                                        dateText = parsedDate?.let { dateFormatter.format(Date(it)) } ?: ""
                                         isReviewMode = true
                                     }
                                 }
@@ -553,6 +555,10 @@ fun AiSmartLogDialog(
                             val parsed = StatementParser.parseDateString(it)
                             if (parsed != null) {
                                 dateMillis = parsed
+                                dateNeedsReview = false
+                            } else {
+                                dateMillis = 0L
+                                dateNeedsReview = true
                             }
                         },
                         label = { Text("Date (YYYY-MM-DD)") },
@@ -564,6 +570,14 @@ fun AiSmartLogDialog(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    if (dateNeedsReview || dateMillis <= 0L) {
+                        Text(
+                            text = "Date could not be read. Enter a valid date before saving.",
+                            color = Color(0xFFF59E0B),
+                            fontSize = 11.sp
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -583,6 +597,8 @@ fun AiSmartLogDialog(
                                     validationError = "Title cannot be blank."
                                 } else if (amt == null || amt <= 0.0) {
                                     validationError = "Please enter a valid positive amount."
+                                } else if (dateMillis <= 0L || StatementParser.parseDateString(dateText) == null) {
+                                    validationError = "Please enter a valid transaction date."
                                 } else {
                                     onConfirm(
                                         TransactionEntity(
