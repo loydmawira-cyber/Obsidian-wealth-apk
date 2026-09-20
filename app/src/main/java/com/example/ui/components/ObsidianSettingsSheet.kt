@@ -68,6 +68,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,6 +105,7 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.FinanceViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -127,6 +129,8 @@ fun ObsidianSettingsSheet(
 
     var activeTab by remember { mutableStateOf(0) } // 0: Regional, 1: Modules, 2: AI & Privacy, 3: Cloud Vault
     var showSetPinDialog by remember { mutableStateOf(false) }
+    // Saving a PIN derives a salted hash off the main thread, so it needs a scope.
+    val pinScope = rememberCoroutineScope()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1286,7 +1290,7 @@ fun ObsidianSettingsSheet(
             SetPinDialog(
                 onDismiss = { showSetPinDialog = false },
                 onSavePin = { pin ->
-                    viewModel.saveQuickPin(pin)
+                    pinScope.launch { viewModel.saveQuickPin(pin) }
                     showSetPinDialog = false
                 }
             )
