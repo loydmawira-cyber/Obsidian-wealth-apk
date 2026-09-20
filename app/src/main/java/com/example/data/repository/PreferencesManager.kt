@@ -180,6 +180,17 @@ class PreferencesManager(context: Context) {
         prefs.edit().putBoolean(KEY_DEMO_SEEDED, seeded).apply()
     }
 
+    // Tracks which Firebase account last used this device's local database,
+    // so we can detect an account switch and avoid leaking one account's
+    // local data into another account's session.
+    fun getLastSignedInUid(): String {
+        return prefs.getString(KEY_LAST_SIGNED_IN_UID, "") ?: ""
+    }
+
+    fun setLastSignedInUid(uid: String) {
+        prefs.edit().putString(KEY_LAST_SIGNED_IN_UID, uid).apply()
+    }
+
     companion object {
         private const val KEY_CURRENCY = "pref_currency"
         private const val KEY_REGION = "pref_region"
@@ -201,5 +212,6 @@ class PreferencesManager(context: Context) {
         private const val KEY_QUICK_PIN = "pref_quick_pin"
         private const val KEY_PIN_ENABLED = "pref_pin_enabled"
         private const val KEY_DEMO_SEEDED = "pref_demo_seeded"
+        private const val KEY_LAST_SIGNED_IN_UID = "pref_last_signed_in_uid"
     }
 }
