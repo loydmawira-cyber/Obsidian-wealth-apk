@@ -111,7 +111,7 @@ Core Guidelines:
                 temperature = 0.2f
                 topP = 0.95f
             },
-            tools = listOf(Tool.googleSearch()),
+            tools = advisorTools + listOf(Tool.googleSearch()),
             systemInstruction = content { text(SYSTEM_INSTRUCTION) }
         )
     }
@@ -160,7 +160,7 @@ Core Guidelines:
 
                 currentResponse = chat.sendMessage(
                     Content(
-                        role = "tool",
+                        role = "user",
                         parts = responseParts
                     )
                 )
