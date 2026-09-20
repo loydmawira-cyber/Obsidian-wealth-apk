@@ -30,10 +30,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.security.PinCredentialStore
 import com.example.ui.theme.EmeraldGrowth
 import com.example.ui.theme.GoldBright
 import com.example.ui.theme.ObsidianBg
@@ -55,6 +58,8 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.FinanceViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun PinLockScreen(
@@ -63,24 +68,66 @@ fun PinLockScreen(
 ) {
     var pinDigits by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isVerifying by remember { mutableStateOf(false) }
+    // Seeded from the store so a lockout survives backgrounding and process death.
+    var lockoutRemaining by remember { mutableStateOf(viewModel.pinLockoutRemainingMillis()) }
     val userEmail by viewModel.userEmail.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    val isLockedOut = lockoutRemaining > 0L
+    val keypadEnabled = !isLockedOut && !isVerifying
+
+    // Counts an active lockout down so the keypad re-enables on its own, re-reading the store
+    // rather than trusting a local timer.
+    LaunchedEffect(isLockedOut) {
+        while (lockoutRemaining > 0L) {
+            delay(1_000L)
+            lockoutRemaining = viewModel.pinLockoutRemainingMillis()
+        }
+    }
 
     fun onDigitPress(digit: String) {
+        if (!keypadEnabled) return
         if (pinDigits.length < 4) {
             errorMessage = null
             val newPin = pinDigits + digit
             pinDigits = newPin
             if (newPin.length == 4) {
-                val ok = viewModel.verifyAndUnlockPin(newPin)
-                if (!ok) {
-                    errorMessage = "Incorrect PIN. Please try again."
-                    pinDigits = ""
+                // Verification is suspend now: the PIN is checked against a salted hash, which
+                // is deliberately slow, so it cannot run inline on the main thread.
+                isVerifying = true
+                scope.launch {
+                    when (val result = viewModel.verifyAndUnlockPin(newPin)) {
+                        is PinCredentialStore.Verification.Success -> {
+                            errorMessage = null
+                        }
+                        is PinCredentialStore.Verification.Incorrect -> {
+                            val left = result.attemptsRemaining
+                            errorMessage = if (left > 0) {
+                                "Incorrect PIN. $left attempt${if (left == 1) "" else "s"} remaining."
+                            } else {
+                                "Incorrect PIN."
+                            }
+                            pinDigits = ""
+                        }
+                        is PinCredentialStore.Verification.LockedOut -> {
+                            lockoutRemaining = result.retryAfterMillis
+                            errorMessage = null
+                            pinDigits = ""
+                        }
+                        is PinCredentialStore.Verification.NotSet -> {
+                            errorMessage = "No PIN is set. Use email & password to sign in."
+                            pinDigits = ""
+                        }
+                    }
+                    isVerifying = false
                 }
             }
         }
     }
 
     fun onBackspacePress() {
+        if (!keypadEnabled) return
         if (pinDigits.isNotEmpty()) {
             errorMessage = null
             pinDigits = pinDigits.dropLast(1)
@@ -88,6 +135,7 @@ fun PinLockScreen(
     }
 
     fun onClearPress() {
+        if (!keypadEnabled) return
         errorMessage = null
         pinDigits = ""
     }
@@ -176,11 +224,16 @@ fun PinLockScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Error Message
-            errorMessage?.let { err ->
+            // Error / lockout message
+            val statusMessage = when {
+                isLockedOut -> "Too many incorrect attempts. Try again in ${formatLockoutDuration(lockoutRemaining)}."
+                isVerifying -> "Checking PIN…"
+                else -> errorMessage
+            }
+            statusMessage?.let { err ->
                 Text(
                     text = err,
-                    color = Color(0xFFFCA5A5),
+                    color = if (isVerifying) TextMuted else Color(0xFFFCA5A5),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -209,7 +262,7 @@ fun PinLockScreen(
                                 modifier = Modifier
                                     .size(64.dp)
                                     .clip(CircleShape)
-                                    .clickable {
+                                    .clickable(enabled = keypadEnabled) {
                                         when (item) {
                                             "C" -> onClearPress()
                                             "DEL" -> onBackspacePress()
@@ -221,22 +274,25 @@ fun PinLockScreen(
                                 border = BorderStroke(1.dp, ObsidianBorderSubtle)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
+                                    // Dimmed while locked out or verifying, so the keypad reads
+                                    // as unavailable rather than unresponsive.
+                                    val keyAlpha = if (keypadEnabled) 1f else 0.35f
                                     when (item) {
                                         "DEL" -> Icon(
                                             Icons.Default.Backspace,
                                             contentDescription = "Backspace",
-                                            tint = SovereignGold,
+                                            tint = SovereignGold.copy(alpha = keyAlpha),
                                             modifier = Modifier.size(20.dp)
                                         )
                                         "C" -> Text(
                                             text = "CLEAR",
-                                            color = TextMuted,
+                                            color = TextMuted.copy(alpha = keyAlpha),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                         else -> Text(
                                             text = item,
-                                            color = TextPrimary,
+                                            color = TextPrimary.copy(alpha = keyAlpha),
                                             fontSize = 22.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -270,4 +326,12 @@ fun PinLockScreen(
             }
         }
     }
+}
+
+/** Renders a remaining lockout as "2m 05s" / "45s". Rounds up so it never shows "0s". */
+private fun formatLockoutDuration(millis: Long): String {
+    val totalSeconds = ((millis + 999L) / 1000L).toInt().coerceAtLeast(1)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return if (minutes > 0) "${minutes}m ${"%02d".format(seconds)}s" else "${seconds}s"
 }
