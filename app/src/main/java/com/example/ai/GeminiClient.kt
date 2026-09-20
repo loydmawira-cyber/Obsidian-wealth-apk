@@ -92,7 +92,9 @@ Core Guidelines:
             appendLine("> below is computed directly from your recorded data — no projections or")
             appendLine("> illustrative figures.")
             if (!failureReason.isNullOrBlank()) {
-                appendLine("> _Reason: $failureReason_")
+                // Braces are required: a bare `$failureReason_` makes Kotlin read the trailing
+                // markdown underscore as part of the identifier name.
+                appendLine("> _Reason: ${failureReason}_")
             }
         }
 
