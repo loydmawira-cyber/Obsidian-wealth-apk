@@ -1,15 +1,22 @@
 package com.example.ai
 
 import android.graphics.Bitmap
+import com.example.data.util.StatementParser
 import com.google.firebase.Firebase
 import com.google.firebase.ai.GenerativeModel
 import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.Content
+import com.google.firebase.ai.type.FunctionDeclaration
+import com.google.firebase.ai.type.FunctionResponsePart
 import com.google.firebase.ai.type.GenerativeBackend
+import com.google.firebase.ai.type.Schema
 import com.google.firebase.ai.type.Tool
 import com.google.firebase.ai.type.content
 import com.google.firebase.ai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.json.JSONObject
 import java.util.Locale
 
@@ -29,7 +36,7 @@ You are "Obsidian AI", an autonomous wealth management and financial intelligenc
 Core Guidelines:
 1. Grounding: Use ONLY the figures supplied in the User Financial Context or returned by advisor tools. Never invent, estimate or illustrate a balance, holding, interest rate, institution name, or date.
 2. Precision: Compute honestly from user data. Show your arithmetic inputs.
-3. Function Calling: You have access to advisor read-only tools to retrieve detailed spending, debts, goals, recent transactions, and portfolio data. Call tools when details are required.
+3. Function Calling: You have access to read-only advisor tools to retrieve detailed spending, debts, goals, recent transactions, and portfolio data. Call tools when details are required.
 4. Action Markers:
    - If and only if the user explicitly asks to create or set up a goal, append the exact marker ACTION:OPEN_GOAL_FORM at the very end.
    - If and only if the user explicitly asks to log, add, or record a transaction, append the exact marker ACTION:OPEN_TRANSACTION_FORM at the very end.
@@ -38,6 +45,53 @@ Core Guidelines:
 6. Safety: Include this disclosure when discussing adjustments: "Obsidian AI provides data analysis and quantitative modelling, not certified personal financial advice."
 """
 
+    private val getSpendingByCategoryDeclaration = FunctionDeclaration(
+        name = "get_spending_by_category",
+        description = "Returns category breakdown of expenses over the given number of months.",
+        parameters = mapOf("months" to Schema.integer(description = "Number of months to analyze", nullable = false)),
+        optionalParameters = listOf("months")
+    )
+
+    private val getDebtsDeclaration = FunctionDeclaration(
+        name = "get_debts",
+        description = "Returns list of recorded credit cards and loans with APR, balance, and servicing costs.",
+        parameters = emptyMap(),
+        optionalParameters = emptyList()
+    )
+
+    private val getGoalsDeclaration = FunctionDeclaration(
+        name = "get_goals",
+        description = "Returns list of recorded financial goals, progress, target dates, and monthly contributions.",
+        parameters = emptyMap(),
+        optionalParameters = emptyList()
+    )
+
+    private val getRecentTransactionsDeclaration = FunctionDeclaration(
+        name = "get_recent_transactions",
+        description = "Returns transactions within the last days.",
+        parameters = mapOf("days" to Schema.integer(description = "Number of days to inspect", nullable = false)),
+        optionalParameters = listOf("days")
+    )
+
+    private val getPortfolioDeclaration = FunctionDeclaration(
+        name = "get_portfolio",
+        description = "Returns holdings and active SIPs/standing orders.",
+        parameters = emptyMap(),
+        optionalParameters = emptyList()
+    )
+
+    private val advisorTools = listOf(
+        Tool.functionDeclarations(
+            listOf(
+                getSpendingByCategoryDeclaration,
+                getDebtsDeclaration,
+                getGoalsDeclaration,
+                getRecentTransactionsDeclaration,
+                getPortfolioDeclaration
+            )
+        )
+    )
+
     private val standardModel: GenerativeModel by lazy {
         Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
             modelName = MODEL_NAME,
@@ -45,6 +99,7 @@ Core Guidelines:
                 temperature = 0.2f
                 topP = 0.95f
             },
+            tools = advisorTools,
             systemInstruction = content { text(SYSTEM_INSTRUCTION) }
         )
     }
@@ -70,7 +125,7 @@ Core Guidelines:
     }
 
     /**
-     * AI Function calling request with tool execution up to 3 rounds.
+     * AI Function calling request with multi-turn tool execution up to 3 rounds.
      */
     suspend fun generateFinancialAdvice(
         prompt: String,
@@ -83,35 +138,56 @@ Core Guidelines:
         val toolOutputs = StringBuilder()
 
         try {
-            var currentPrompt = "User Financial Context:\n${snapshot.toContextBlock()}\n\nUser Question:\n$prompt"
-            var responseText = ""
+            val chat = selectedModel.startChat()
+            val userContent = content {
+                text("User Financial Context:\n${snapshot.toContextBlock()}\n\nUser Question:\n$prompt")
+            }
+            var currentResponse = chat.sendMessage(userContent)
+
             var round = 0
             val maxRounds = 3
 
-            while (round < maxRounds) {
+            while (currentResponse.functionCalls.isNotEmpty() && round < maxRounds) {
                 round++
-                val response = selectedModel.generateContent(currentPrompt)
-                val text = response.text ?: ""
-
-                // Check for tool calls or function requests in text if formatted as tool request
-                val toolCallName = detectToolCallName(text)
-                if (toolCallName != null && toolRegistry != null) {
-                    val result = toolRegistry.executeTool(toolCallName, text)
-                    toolOutputs.appendLine("Tool Execution [$toolCallName]: $result")
-                    currentPrompt += "\n\nTool Output for $toolCallName:\n$result\nPlease provide the final response now."
-                } else {
-                    responseText = text
-                    break
+                val calls = currentResponse.functionCalls
+                val responseParts = mutableListOf<FunctionResponsePart>()
+                for (call in calls) {
+                    val resultJson = toolRegistry?.executeTool(call.name, call.args)
+                        ?: buildJsonObject { put("error", "Tool registry unavailable") }
+                    toolOutputs.appendLine("Tool [${call.name}]: $resultJson")
+                    responseParts.add(FunctionResponsePart(call.name, resultJson))
                 }
+
+                currentResponse = chat.sendMessage(
+                    Content(
+                        role = "tool",
+                        parts = responseParts
+                    )
+                )
             }
 
+            var responseText = currentResponse.text ?: ""
             if (responseText.isBlank()) {
                 return@withContext offlineSummary(prompt, snapshot, null)
             }
 
-            var finalResult = responseText
+            // Grounding sources extraction
+            val candidate = currentResponse.candidates.firstOrNull()
+            val chunks = candidate?.groundingMetadata?.groundingChunks ?: emptyList()
+            val sources = mutableListOf<String>()
+            for (chunk in chunks) {
+                val web = chunk.web ?: continue
+                val uri = web.uri ?: continue
+                val title = web.title?.takeIf { it.isNotBlank() } ?: web.domain ?: uri
+                sources.add("[$title]($uri)")
+            }
+            if (sources.isNotEmpty()) {
+                val distinctSources = sources.distinct()
+                responseText += "\n\n### Sources\n" + distinctSources.joinToString("\n") { "- $it" }
+            }
 
             // If non-grounded, verify numbers against snapshot + tool outputs
+            var finalResult = responseText
             if (!isGrounded) {
                 finalResult = performNumericVerification(finalResult, snapshot, toolOutputs.toString())
             }
@@ -120,16 +196,6 @@ Core Guidelines:
         } catch (e: Exception) {
             offlineSummary(prompt, snapshot, e.message)
         }
-    }
-
-    private fun detectToolCallName(text: String): String? {
-        val tools = listOf("get_spending_by_category", "get_debts", "get_goals", "get_recent_transactions", "get_portfolio")
-        for (t in tools) {
-            if (text.contains("call:$t", ignoreCase = true) || text.contains("\"tool\":\"$t\"", ignoreCase = true) || text.contains("tool_code: $t", ignoreCase = true)) {
-                return t
-            }
-        }
-        return null
     }
 
     private fun performNumericVerification(text: String, snapshot: AdvisorSnapshot, toolResults: String): String {
@@ -193,7 +259,7 @@ Analyze this receipt image.
 Extract:
 1. Merchant / Store name
 2. Total amount paid as a number. IF THE TOTAL IS UNREADABLE, SMUDGED, OR MISSING, RETURN 0.0. DO NOT GUESS OR INVENT AN AMOUNT.
-3. Date if readable (or empty string)
+3. Date if readable in YYYY-MM-DD or readable format (or empty string)
 4. Category (one of: FOOD_DINING, TRANSPORT, UTILITIES, SUBSCRIPTIONS, HOUSING, HEALTHCARE, INVESTMENT_SIP, SHOPPING, OTHER)
 
 Return strictly JSON with keys: "merchant", "total", "date", "category".
@@ -216,20 +282,41 @@ Return strictly JSON with keys: "merchant", "total", "date", "category".
                 val merchant = json.optString("merchant", "Receipt Purchase")
                 val total = json.optDouble("total", 0.0)
                 val category = json.optString("category", "SHOPPING")
+                val rawDate = json.optString("date", "")
+                val parsedDate = if (rawDate.isNotBlank()) StatementParser.parseDateString(rawDate) else null
+                val needsDateReview = (parsedDate == null)
 
                 ParsedTransaction(
                     title = if (merchant.isBlank()) "Receipt Purchase" else merchant,
                     amount = if (total < 0) 0.0 else total,
                     type = "EXPENSE",
                     category = category,
-                    account = "Receipt Log"
+                    account = "Receipt Log",
+                    dateMillis = parsedDate,
+                    dateNeedsReview = needsDateReview
                 )
             } else {
-                ParsedTransaction("Receipt Purchase", 0.0, "EXPENSE", "SHOPPING", "Receipt Log")
+                ParsedTransaction(
+                    title = "Receipt Purchase",
+                    amount = 0.0,
+                    type = "EXPENSE",
+                    category = "SHOPPING",
+                    account = "Receipt Log",
+                    dateMillis = null,
+                    dateNeedsReview = true
+                )
             }
         } catch (e: Exception) {
             android.util.Log.e("GeminiClient", "Error analyzing receipt image", e)
-            ParsedTransaction("Receipt Purchase", 0.0, "EXPENSE", "SHOPPING", "Receipt Log")
+            ParsedTransaction(
+                title = "Receipt Purchase",
+                amount = 0.0,
+                type = "EXPENSE",
+                category = "SHOPPING",
+                account = "Receipt Log",
+                dateMillis = null,
+                dateNeedsReview = true
+            )
         }
     }
 
@@ -372,15 +459,15 @@ No holdings are recorded in this vault, so allocation and return cannot be compu
     private fun fmtPct(v: Double): String = String.format(Locale.US, "%.1f%%", v)
 
     suspend fun parseNaturalLanguageTransaction(input: String): ParsedTransaction? = withContext(Dispatchers.IO) {
-        val lower = input.lowercase()
+        val lower = input.lowercase(Locale.ROOT)
         val type = if (lower.contains("salary") || lower.contains("earned") || lower.contains("income") || lower.contains("received") || lower.contains("got paid") || lower.contains("freelance") || lower.contains("dividend")) "INCOME" else "EXPENSE"
 
         val amountRegex = Regex("""(?:(?:ksh|kes|\$|r|₹|€|£)\s*)?(\d+(?:,\d{3})*(?:\.\d{1,2})?)\b""", RegexOption.IGNORE_CASE)
         val amountMatch = amountRegex.find(input)
-        val amount = amountMatch?.groupValues?.get(1)?.replace(",", "")?.toDoubleOrNull() ?: 500.0
+        val amount = amountMatch?.groupValues?.get(1)?.replace(",", "")?.toDoubleOrNull() ?: 0.0
 
         val category = when {
-            lower.contains("grocery") || lower.contains("food") || lower.contains("dinner") || lower.contains("lunch") || lower.contains("coffee") || lower.contains("restaurant") -> "FOOD_DINING"
+            lower.contains("grocer") || lower.contains("food") || lower.contains("dinner") || lower.contains("lunch") || lower.contains("coffee") || lower.contains("restaurant") -> "FOOD_DINING"
             lower.contains("uber") || lower.contains("gas") || lower.contains("fuel") || lower.contains("transport") -> "TRANSPORT"
             lower.contains("rent") || lower.contains("mortgage") -> "HOUSING"
             lower.contains("netflix") || lower.contains("spotify") || lower.contains("subscription") -> "SUBSCRIPTIONS"
@@ -393,15 +480,21 @@ No holdings are recorded in this vault, so allocation and return cannot be compu
         val account = when {
             lower.contains("mpesa") || lower.contains("m-pesa") -> "M-PESA"
             lower.contains("stanbic") -> "Stanbic Bank"
-            else -> "M-PESA"
+            lower.contains("chase") -> "Chase Checking"
+            lower.contains("cash") -> "Cash Wallet"
+            else -> "Checking"
         }
+
+        val parsedDate = StatementParser.parseDateString(input)
 
         ParsedTransaction(
             title = input.take(40).replaceFirstChar { it.uppercase() },
             amount = amount,
             type = type,
             category = category,
-            account = account
+            account = account,
+            dateMillis = parsedDate,
+            dateNeedsReview = (parsedDate == null)
         )
     }
 }
@@ -474,5 +567,7 @@ data class ParsedTransaction(
     val amount: Double,
     val type: String,
     val category: String,
-    val account: String
+    val account: String,
+    val dateMillis: Long? = null,
+    val dateNeedsReview: Boolean = false
 )

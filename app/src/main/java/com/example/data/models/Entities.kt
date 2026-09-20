@@ -28,7 +28,8 @@ data class TransactionEntity(
     val account: String, // e.g., "Checking (Chase)", "Amex Gold", "Savings (High Yield)"
     val dateMillis: Long = System.currentTimeMillis(),
     val note: String = "",
-    val isRecurring: Boolean = false
+    val isRecurring: Boolean = false,
+    val statementFingerprint: String? = null
 )
 
 @Entity(tableName = "holdings")

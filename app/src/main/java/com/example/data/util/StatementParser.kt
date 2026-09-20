@@ -15,7 +15,8 @@ data class ParsedTransaction(
     val category: Category,
     val account: String,
     val fingerprint: String,
-    val isDuplicate: Boolean = false
+    val isDuplicate: Boolean = false,
+    val dateAmbiguous: Boolean = false
 )
 
 object StatementParser {
@@ -49,7 +50,10 @@ object StatementParser {
         if (parts.size < 3) return null
 
         // Try date in part 0, description in part 1, amount in part 2
-        val dateMillis = parseDateString(parts[0]) ?: System.currentTimeMillis()
+        val parsedDate = parseDateString(parts[0])
+        val dateMillis = parsedDate ?: 0L
+        val dateAmbiguous = (parsedDate == null)
+
         val title = parts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: return null
         val rawAmount = parts.getOrNull(2)?.toDoubleOrNull() ?: return null
 
@@ -66,14 +70,12 @@ object StatementParser {
             type = type,
             category = category,
             account = account,
-            fingerprint = fp
+            fingerprint = fp,
+            dateAmbiguous = dateAmbiguous
         )
     }
 
     private fun parseMPesaSmsLine(line: String, defaultAccount: String): ParsedTransaction? {
-        // Example M-Pesa format:
-        // "QGH1234567 Confirmed. Ksh1,500.00 paid to KPLC PREPAID on 12/5/24 at 2:30 PM. New M-PESA balance is..."
-        // "QGH7654321 Confirmed. You have received Ksh5,000.00 from JOHN DOS..."
         if (!line.contains("M-PESA", ignoreCase = true) && !line.contains("Ksh", ignoreCase = true)) return null
 
         val amountRegex = Regex("Ksh\\s*([\\d,]+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE)
@@ -94,7 +96,10 @@ object StatementParser {
             else -> "M-Pesa Transaction"
         }.ifBlank { "M-Pesa Record" }
 
-        val dateMillis = parseDateString(line) ?: System.currentTimeMillis()
+        val parsedDate = parseDateString(line)
+        val dateMillis = parsedDate ?: 0L
+        val dateAmbiguous = (parsedDate == null)
+
         val category = inferCategory(title)
         val fp = generateFingerprint(dateMillis, amount, title, type)
 
@@ -105,7 +110,8 @@ object StatementParser {
             type = type,
             category = category,
             account = "M-Pesa Wallet",
-            fingerprint = fp
+            fingerprint = fp,
+            dateAmbiguous = dateAmbiguous
         )
     }
 
@@ -118,7 +124,10 @@ object StatementParser {
         val amount = Math.abs(rawAmount)
         if (amount == 0.0) return null
 
-        val dateMillis = parseDateString(line) ?: System.currentTimeMillis()
+        val parsedDate = parseDateString(line)
+        val dateMillis = parsedDate ?: 0L
+        val dateAmbiguous = (parsedDate == null)
+
         val title = line.take(40).trim()
         val type = if (rawAmount < 0 || line.contains("dr", ignoreCase = true) || line.contains("debit", ignoreCase = true)) {
             TransactionType.EXPENSE
@@ -136,21 +145,52 @@ object StatementParser {
             type = type,
             category = category,
             account = defaultAccount,
-            fingerprint = fp
+            fingerprint = fp,
+            dateAmbiguous = dateAmbiguous
         )
     }
 
-    private fun parseDateString(str: String): Long? {
-        val formats = listOf(
-            "yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "dd-MM-yyyy", "yyyy/MM/dd"
+    fun parseDateString(str: String): Long? {
+        val patterns = listOf(
+            Regex("""\b(\d{4}[-/]\d{1,2}[-/]\d{1,2})\b"""),
+            Regex("""\b(\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b"""),
+            Regex("""\b(\d{1,2}[-\s]+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-\s]+\d{2,4})\b""", RegexOption.IGNORE_CASE)
         )
+
+        val formats = listOf(
+            "yyyy-MM-dd", "yyyy/MM/dd",
+            "dd/MM/yyyy", "MM/dd/yyyy", "dd-MM-yyyy",
+            "dd/MM/yy", "MM/dd/yy", "dd-MM-yy",
+            "d/M/yy", "d/M/yyyy",
+            "dd MMM yyyy", "dd MMMM yyyy",
+            "dd-MMM-yyyy", "dd-MMMM-yyyy",
+            "d-MMM-yyyy", "d-MMMM-yyyy",
+            "d MMM yyyy", "d MMMM yyyy"
+        )
+
+        // 1. Direct try on trimmed string
+        val trimmed = str.trim()
         for (fmt in formats) {
             try {
-                val sdf = SimpleDateFormat(fmt, Locale.US)
-                val d = sdf.parse(str)
+                val sdf = SimpleDateFormat(fmt, Locale.US).apply { isLenient = false }
+                val d = sdf.parse(trimmed)
                 if (d != null) return d.time
             } catch (_: Exception) {}
         }
+
+        // 2. Pattern matching within substrings
+        for (pattern in patterns) {
+            val match = pattern.find(str) ?: continue
+            val candidate = match.groupValues[1]
+            for (fmt in formats) {
+                try {
+                    val sdf = SimpleDateFormat(fmt, Locale.US).apply { isLenient = false }
+                    val d = sdf.parse(candidate)
+                    if (d != null) return d.time
+                } catch (_: Exception) {}
+            }
+        }
+
         return null
     }
 

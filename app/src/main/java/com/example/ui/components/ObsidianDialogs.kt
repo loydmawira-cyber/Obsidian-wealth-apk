@@ -63,7 +63,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.ai.GeminiClient
 import com.example.data.models.Category
+import com.example.data.models.TransactionEntity
+import com.example.data.util.StatementParser
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.example.data.models.CreditCardEntity
 import com.example.data.models.HoldingType
 import com.example.data.models.TransactionType
@@ -285,9 +295,23 @@ fun AddTransactionDialog(
 @Composable
 fun AiSmartLogDialog(
     onDismiss: () -> Unit,
-    onSubmit: (String) -> Unit
+    onConfirm: (TransactionEntity) -> Unit
 ) {
     var prompt by remember { mutableStateOf("") }
+    var isExtracting by remember { mutableStateOf(false) }
+    var isReviewMode by remember { mutableStateOf(false) }
+
+    var title by remember { mutableStateOf("") }
+    var amountText by remember { mutableStateOf("") }
+    var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
+    var selectedCategory by remember { mutableStateOf(Category.FOOD_DINING) }
+    var account by remember { mutableStateOf("M-PESA") }
+    var note by remember { mutableStateOf("") }
+    var dateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
+    var dateText by remember { mutableStateOf(dateFormatter.format(Date(dateMillis))) }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -296,7 +320,12 @@ fun AiSmartLogDialog(
             border = BorderStroke(1.dp, CyanAccent.copy(alpha = 0.5f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -306,7 +335,7 @@ fun AiSmartLogDialog(
                         Icon(Icons.Default.AutoAwesome, contentDescription = "AI", tint = CyanAccent)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "AI Natural Language Log",
+                            text = if (isReviewMode) "Confirm Parsed Transaction" else "AI Natural Language Log",
                             color = TextPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
@@ -318,74 +347,263 @@ fun AiSmartLogDialog(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Type or speak any natural expense, salary credit, or trade. Obsidian AI extracts amount, category, and account.",
-                    color = TextSecondary,
-                    fontSize = 12.sp
-                )
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Quick presets
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val presets = listOf(
-                        "Paid KSh 4,500 for groceries at Carrefour via M-Pesa",
-                        "Received KSh 450,000 consulting retainer in Stanbic",
-                        "Paid KSh 12,500 for Kenya Power tokens",
-                        "Invested KSh 50,000 into CIC Money Market Fund",
-                        "Paid KSh 3,200 at Artcaffe with NCBA card",
-                        "Spent $48 on Uber airport ride"
+                if (!isReviewMode) {
+                    Text(
+                        text = "Type or speak any natural expense, salary credit, or trade. Obsidian AI extracts fields for your editable review before saving.",
+                        color = TextSecondary,
+                        fontSize = 12.sp
                     )
-                    items(presets) { preset ->
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Quick presets
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val presets = listOf(
+                            "Paid KSh 4,500 for groceries at Carrefour via M-Pesa",
+                            "Received KSh 450,000 consulting retainer in Stanbic",
+                            "Paid KSh 12,500 for Kenya Power tokens",
+                            "Invested KSh 50,000 into CIC Money Market Fund",
+                            "Paid KSh 3,200 at Artcaffe with NCBA card",
+                            "Spent $48 on Uber airport ride"
+                        )
+                        items(presets) { preset ->
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { prompt = preset },
+                                color = ObsidianSurfaceVariant,
+                                border = BorderStroke(1.dp, ObsidianBorderSubtle)
+                            ) {
+                                Text(
+                                    text = preset,
+                                    color = CyanAccent,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = prompt,
+                        onValueChange = { prompt = it },
+                        placeholder = { Text("e.g. Paid KSh 3,200 at Java House on M-Pesa", color = TextMuted) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = CyanAccent,
+                            unfocusedBorderColor = ObsidianBorder
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp),
+                        maxLines = 4
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            if (prompt.isNotBlank()) {
+                                scope.launch {
+                                    isExtracting = true
+                                    val parsed = GeminiClient.parseNaturalLanguageTransaction(prompt)
+                                    isExtracting = false
+                                    if (parsed != null) {
+                                        title = parsed.title
+                                        amountText = if (parsed.amount > 0.0) parsed.amount.toString() else ""
+                                        selectedType = if (parsed.type == "INCOME") TransactionType.INCOME else TransactionType.EXPENSE
+                                        selectedCategory = try { Category.valueOf(parsed.category) } catch (_: Exception) { Category.OTHER }
+                                        account = parsed.account
+                                        note = "Natural Language Log: \"$prompt\""
+                                        val parsedDate = parsed.dateMillis ?: System.currentTimeMillis()
+                                        dateMillis = parsedDate
+                                        dateText = dateFormatter.format(Date(parsedDate))
+                                        isReviewMode = true
+                                    }
+                                }
+                            }
+                        },
+                        enabled = prompt.isNotBlank() && !isExtracting,
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isExtracting) {
+                            CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp))
+                        } else {
+                            Text("Extract & Review Draft", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    // Editable Review Mode
+                    if (validationError != null) {
                         Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { prompt = preset },
-                            color = ObsidianSurfaceVariant,
-                            border = BorderStroke(1.dp, ObsidianBorderSubtle)
+                            color = Color(0x33EF4444),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                            modifier = Modifier.padding(bottom = 10.dp)
                         ) {
                             Text(
-                                text = preset,
-                                color = CyanAccent,
+                                text = validationError!!,
+                                color = Color(0xFFFB7185),
                                 fontSize = 11.sp,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                modifier = Modifier.padding(8.dp)
                             )
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = selectedType == TransactionType.EXPENSE,
+                            onClick = { selectedType = TransactionType.EXPENSE },
+                            label = { Text("Expense", color = if (selectedType == TransactionType.EXPENSE) Color.White else TextSecondary) },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFFE11D48)),
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = selectedType == TransactionType.INCOME,
+                            onClick = { selectedType = TransactionType.INCOME },
+                            label = { Text("Income", color = if (selectedType == TransactionType.INCOME) Color.Black else TextSecondary) },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = EmeraldGrowth),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
-                OutlinedTextField(
-                    value = prompt,
-                    onValueChange = { prompt = it },
-                    placeholder = { Text("e.g. Paid KSh 3,200 at Java House on M-Pesa", color = TextMuted) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = CyanAccent,
-                        unfocusedBorderColor = ObsidianBorder
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(100.dp),
-                    maxLines = 4
-                )
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = {
+                            title = it
+                            validationError = null
+                        },
+                        label = { Text("Title / Merchant") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = CyanAccent,
+                            unfocusedBorderColor = ObsidianBorder
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                Button(
-                    onClick = {
-                        if (prompt.isNotBlank()) {
-                            onSubmit(prompt)
-                            onDismiss()
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = {
+                            amountText = it
+                            validationError = null
+                        },
+                        label = { Text("Amount") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = CyanAccent,
+                            unfocusedBorderColor = ObsidianBorder
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text("Category", color = TextSecondary, fontSize = 12.sp)
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    ) {
+                        items(Category.values()) { cat ->
+                            FilterChip(
+                                selected = selectedCategory == cat,
+                                onClick = { selectedCategory = cat },
+                                label = { Text(cat.name.replace("_", " "), fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = SovereignGold,
+                                    selectedLabelColor = Color.Black
+                                )
+                            )
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Auto-Parse & Insert", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = account,
+                        onValueChange = { account = it },
+                        label = { Text("Account") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = CyanAccent,
+                            unfocusedBorderColor = ObsidianBorder
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = dateText,
+                        onValueChange = {
+                            dateText = it
+                            val parsed = StatementParser.parseDateString(it)
+                            if (parsed != null) {
+                                dateMillis = parsed
+                            }
+                        },
+                        label = { Text("Date (YYYY-MM-DD)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = CyanAccent,
+                            unfocusedBorderColor = ObsidianBorder
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { isReviewMode = false },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Back", color = TextSecondary)
+                        }
+
+                        Button(
+                            onClick = {
+                                val amt = amountText.toDoubleOrNull()
+                                if (title.isBlank()) {
+                                    validationError = "Title cannot be blank."
+                                } else if (amt == null || amt <= 0.0) {
+                                    validationError = "Please enter a valid positive amount."
+                                } else {
+                                    onConfirm(
+                                        TransactionEntity(
+                                            title = title.trim(),
+                                            amount = amt,
+                                            type = selectedType,
+                                            category = selectedCategory,
+                                            account = account.trim().ifEmpty { "Default" },
+                                            dateMillis = dateMillis,
+                                            note = note
+                                        )
+                                    )
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Confirm & Save", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }

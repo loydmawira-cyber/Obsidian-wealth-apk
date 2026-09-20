@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.dao.FinanceDao
 import com.example.data.models.Category
@@ -20,6 +21,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE transactions ADD COLUMN statementFingerprint TEXT DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [
         TransactionEntity::class,
@@ -29,7 +36,7 @@ import kotlinx.coroutines.launch
         LoanEntity::class,
         GoalEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -45,7 +52,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "obsidian_wealth_v3.db"
-                ).fallbackToDestructiveMigration()
+                ).addMigrations(MIGRATION_1_2)
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance

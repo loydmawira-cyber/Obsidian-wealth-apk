@@ -1,10 +1,15 @@
 package com.example
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -73,7 +78,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.models.Category
 import com.example.data.models.CreditCardEntity
+import com.example.data.models.TransactionType
 import com.example.ui.components.AddLoanDialog
 import com.example.ui.components.AddCreditCardDialog
 import com.example.ui.components.AddGoalDialog
@@ -122,16 +129,34 @@ import com.example.ui.viewmodel.FinanceViewModel
 class MainActivity : ComponentActivity() {
     private val viewModel: FinanceViewModel by viewModels()
 
+    private val requestNotificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        android.util.Log.d("MainActivity", "POST_NOTIFICATIONS granted: $isGranted")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         try {
             val appCheck = com.google.firebase.appcheck.FirebaseAppCheck.getInstance()
-            val debugFactory = com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory.getInstance()
-            appCheck.installAppCheckProviderFactory(debugFactory)
-            android.util.Log.d("ObsidianAppCheck", "Initialized App Check with DebugAppCheckProviderFactory.")
+            if (BuildConfig.DEBUG) {
+                val debugFactory = com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory.getInstance()
+                appCheck.installAppCheckProviderFactory(debugFactory)
+                android.util.Log.d("ObsidianAppCheck", "Initialized App Check with DebugAppCheckProviderFactory.")
+            } else {
+                val integrityFactory = com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory.getInstance()
+                appCheck.installAppCheckProviderFactory(integrityFactory)
+                android.util.Log.d("ObsidianAppCheck", "Initialized App Check with PlayIntegrityAppCheckProviderFactory.")
+            }
         } catch (e: Exception) {
             android.util.Log.e("ObsidianAppCheck", "App Check init notice", e)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
 
         try {
@@ -301,7 +326,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         AddTransactionDialog(
             onDismiss = { showAddTransactionDialog = false },
             onAdd = { title, amt, type, cat, acc, note ->
-                viewModel.addTransaction(title, amt, type, cat, acc, note)
+                viewModel.addTransaction(title, amt, type, cat, acc, note = note)
             },
             onAiSmartLog = {
                 showAddTransactionDialog = false
@@ -313,10 +338,9 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     if (showAiSmartLogDialog) {
         AiSmartLogDialog(
             onDismiss = { showAiSmartLogDialog = false },
-            onSubmit = { naturalText ->
-                viewModel.parseAndAddNaturalTransaction(naturalText) {
-                    // done
-                }
+            onConfirm = { transaction ->
+                viewModel.addTransaction(transaction)
+                showAiSmartLogDialog = false
             }
         )
     }

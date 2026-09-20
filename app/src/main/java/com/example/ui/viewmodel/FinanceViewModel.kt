@@ -636,20 +636,31 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    suspend fun parseStatement(rawText: String): List<com.example.data.util.ParsedTransaction> {
+        val parsed = com.example.data.util.StatementParser.parseStatementText(rawText)
+        return parsed.map { tx ->
+            val exists = repository.isFingerprintImported(tx.fingerprint)
+            tx.copy(isDuplicate = exists)
+        }
+    }
+
     fun addImportedTransactions(transactions: List<com.example.data.util.ParsedTransaction>) {
         viewModelScope.launch {
-            transactions.forEach { tx ->
-                repository.addTransaction(
-                    TransactionEntity(
-                        title = tx.title,
-                        amount = tx.amount,
-                        type = tx.type,
-                        category = tx.category,
-                        account = tx.account,
-                        dateMillis = tx.dateMillis,
-                        note = "Imported Statement [FP: ${tx.fingerprint.take(8)}]"
+            transactions.filter { !it.isDuplicate && !it.dateAmbiguous && it.dateMillis > 0L }.forEach { tx ->
+                if (!repository.isFingerprintImported(tx.fingerprint)) {
+                    repository.addTransaction(
+                        TransactionEntity(
+                            title = tx.title,
+                            amount = tx.amount,
+                            type = tx.type,
+                            category = tx.category,
+                            account = tx.account,
+                            dateMillis = tx.dateMillis,
+                            statementFingerprint = tx.fingerprint,
+                            note = "Imported Statement [FP: ${tx.fingerprint.take(8)}]"
+                        )
                     )
-                )
+                }
             }
             syncVaultToCloud()
         }
@@ -662,7 +673,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         type: TransactionType,
         category: Category,
         account: String,
-        note: String = ""
+        dateMillis: Long = System.currentTimeMillis(),
+        note: String = "",
+        statementFingerprint: String? = null
     ) {
         viewModelScope.launch {
             repository.addTransaction(
@@ -672,17 +685,33 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     type = type,
                     category = category,
                     account = account,
-                    note = note
+                    dateMillis = dateMillis,
+                    note = note,
+                    statementFingerprint = statementFingerprint
                 )
             )
             syncVaultToCloud()
         }
     }
 
+    fun addTransaction(transaction: TransactionEntity) {
+        viewModelScope.launch {
+            repository.addTransaction(transaction)
+            syncVaultToCloud()
+        }
+    }
+
+    fun parseNaturalTransaction(text: String, onResult: (com.example.ai.ParsedTransaction?) -> Unit) {
+        viewModelScope.launch {
+            val parsed = GeminiClient.parseNaturalLanguageTransaction(text)
+            onResult(parsed)
+        }
+    }
+
     fun parseAndAddNaturalTransaction(text: String, onDone: () -> Unit) {
         viewModelScope.launch {
             val parsed = GeminiClient.parseNaturalLanguageTransaction(text)
-            if (parsed != null) {
+            if (parsed != null && parsed.title.isNotBlank() && parsed.amount > 0.0) {
                 val cat = try {
                     Category.valueOf(parsed.category)
                 } catch (e: Exception) {
@@ -695,7 +724,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         amount = parsed.amount,
                         type = tType,
                         category = cat,
-                        account = parsed.account
+                        account = parsed.account,
+                        dateMillis = parsed.dateMillis ?: System.currentTimeMillis()
                     )
                 )
                 syncVaultToCloud()

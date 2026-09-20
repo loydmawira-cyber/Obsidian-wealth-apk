@@ -24,6 +24,12 @@ interface FinanceDao {
     @Query("SELECT * FROM transactions ORDER BY dateMillis DESC")
     suspend fun getTransactionsSnapshot(): List<TransactionEntity>
 
+    @Query("SELECT * FROM transactions WHERE statementFingerprint = :fingerprint LIMIT 1")
+    suspend fun findTransactionByFingerprint(fingerprint: String): TransactionEntity?
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE statementFingerprint = :fingerprint")
+    suspend fun hasTransactionWithFingerprint(fingerprint: String): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: TransactionEntity): Long
 

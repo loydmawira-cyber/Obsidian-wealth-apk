@@ -154,7 +154,8 @@ class FirestoreSyncManager(private val context: Context) {
                     "account" to tx.account,
                     "dateMillis" to tx.dateMillis,
                     "note" to tx.note,
-                    "isRecurring" to tx.isRecurring
+                    "isRecurring" to tx.isRecurring,
+                    "statementFingerprint" to tx.statementFingerprint
                 )
                 txCollection.document(tx.id.toString()).set(txMap, SetOptions.merge()).awaitTask()
             }
@@ -310,7 +311,8 @@ class FirestoreSyncManager(private val context: Context) {
                         account = doc.getString("account") ?: "Checking",
                         dateMillis = doc.getLong("dateMillis") ?: System.currentTimeMillis(),
                         note = doc.getString("note") ?: "",
-                        isRecurring = doc.getBoolean("isRecurring") ?: false
+                        isRecurring = doc.getBoolean("isRecurring") ?: false,
+                        statementFingerprint = doc.getString("statementFingerprint")
                     )
                 } catch (e: Exception) {
                     null

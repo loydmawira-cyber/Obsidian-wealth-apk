@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,11 +49,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +68,7 @@ import com.example.ui.theme.EmeraldGrowth
 import com.example.ui.theme.EmeraldLight
 import com.example.ui.theme.ObsidianBg
 import com.example.ui.theme.ObsidianBorder
+import com.example.ui.theme.ObsidianBorderSubtle
 import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.ObsidianSurfaceVariant
 import com.example.ui.theme.SovereignGold
@@ -70,6 +76,9 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.FinanceViewModel
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -78,7 +87,9 @@ fun StatementImportDialog(
     onDismiss: () -> Unit
 ) {
     var rawText by remember { mutableStateOf("") }
+    var isParsing by remember { mutableStateOf(false) }
     var parsedList by remember { mutableStateOf<List<com.example.data.util.ParsedTransaction>?>(null) }
+    val scope = rememberCoroutineScope()
 
     if (parsedList != null) {
         StatementPreviewDialog(
@@ -132,13 +143,21 @@ fun StatementImportDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val parsed = StatementParser.parseStatementText(rawText)
-                    parsedList = parsed
+                    scope.launch {
+                        isParsing = true
+                        val parsed = viewModel.parseStatement(rawText)
+                        parsedList = parsed
+                        isParsing = false
+                    }
                 },
-                enabled = rawText.isNotBlank(),
+                enabled = rawText.isNotBlank() && !isParsing,
                 colors = ButtonDefaults.buttonColors(containerColor = SovereignGold)
             ) {
-                Text("Parse Statement", color = Color.Black, fontWeight = FontWeight.Bold)
+                if (isParsing) {
+                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp))
+                } else {
+                    Text("Parse Statement", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
             }
         },
         dismissButton = {
@@ -155,7 +174,19 @@ fun StatementPreviewDialog(
     onConfirm: (List<com.example.data.util.ParsedTransaction>) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val selectedIndices = remember { mutableStateListOf<Int>().apply { addAll(parsedTransactions.indices) } }
+    // Only pre-select transactions that are not duplicates and not ambiguous
+    val selectedIndices = remember {
+        mutableStateListOf<Int>().apply {
+            parsedTransactions.indices.forEach { idx ->
+                val tx = parsedTransactions[idx]
+                if (!tx.isDuplicate && !tx.dateAmbiguous && tx.dateMillis > 0L) {
+                    add(idx)
+                }
+            }
+        }
+    }
+
+    val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -172,42 +203,72 @@ fun StatementPreviewDialog(
                 Text("No valid transaction records detected in the provided text.", color = TextMuted, fontSize = 13.sp)
             } else {
                 LazyColumn(
-                    modifier = Modifier.heightIn(max = 280.dp),
+                    modifier = Modifier.heightIn(max = 320.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(parsedTransactions.size) { idx ->
                         val tx = parsedTransactions[idx]
                         val isSelected = selectedIndices.contains(idx)
+                        val isBlocked = tx.isDuplicate || tx.dateAmbiguous || tx.dateMillis <= 0L
 
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = ObsidianSurfaceVariant,
-                            border = BorderStroke(1.dp, ObsidianBorder)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = isSelected,
-                                    onCheckedChange = { checked ->
-                                        if (checked) selectedIndices.add(idx) else selectedIndices.remove(idx)
-                                    },
-                                    colors = CheckboxDefaults.colors(checkedColor = SovereignGold)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(tx.title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    Text("${tx.category.name} • ${tx.account}", color = TextSecondary, fontSize = 11.sp)
+                            color = if (tx.isDuplicate) ObsidianSurfaceVariant.copy(alpha = 0.5f) else ObsidianSurfaceVariant,
+                            border = BorderStroke(
+                                1.dp,
+                                when {
+                                    tx.isDuplicate -> ObsidianBorderSubtle
+                                    tx.dateAmbiguous -> Color(0xFFF59E0B)
+                                    else -> ObsidianBorder
                                 }
-                                Text(
-                                    text = (if (tx.type == TransactionType.INCOME) "+" else "-") + String.format(Locale.US, "%.2f", tx.amount),
-                                    color = if (tx.type == TransactionType.INCOME) EmeraldLight else Color(0xFFFB7185),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = isSelected,
+                                        onCheckedChange = { checked ->
+                                            if (checked && !isBlocked) selectedIndices.add(idx) else selectedIndices.remove(idx)
+                                        },
+                                        enabled = !isBlocked,
+                                        colors = CheckboxDefaults.colors(
+                                            checkedColor = SovereignGold,
+                                            disabledCheckedColor = TextMuted,
+                                            disabledUncheckedColor = TextMuted
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(tx.title, color = if (isBlocked) TextSecondary else TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        val dateStr = if (tx.dateMillis > 0L) dateFormatter.format(Date(tx.dateMillis)) else "No Date"
+                                        Text("${tx.category.name} • ${tx.account} • $dateStr", color = TextSecondary, fontSize = 11.sp)
+                                    }
+                                    Text(
+                                        text = (if (tx.type == TransactionType.INCOME) "+" else "-") + String.format(Locale.US, "%.2f", tx.amount),
+                                        color = if (isBlocked) TextMuted else if (tx.type == TransactionType.INCOME) EmeraldLight else Color(0xFFFB7185),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                if (tx.isDuplicate) {
+                                    Text(
+                                        text = "Duplicate record: already imported into this vault",
+                                        color = TextMuted,
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(start = 36.dp, top = 2.dp)
+                                    )
+                                } else if (tx.dateAmbiguous || tx.dateMillis <= 0L) {
+                                    Text(
+                                        text = "Ambiguous date: excluded to protect timeline accuracy",
+                                        color = Color(0xFFF59E0B),
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(start = 36.dp, top = 2.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -268,7 +329,7 @@ fun ReceiptPhotoDialog(
     if (draft != null) {
         ReceiptReviewDialog(
             draft = draft!!,
-            onConfirm = { merchant, amount, categoryStr, account ->
+            onConfirm = { merchant, amount, categoryStr, account, dateMillis ->
                 val cat = try { Category.valueOf(categoryStr) } catch (_: Exception) { Category.SHOPPING }
                 viewModel.addTransaction(
                     title = merchant,
@@ -276,6 +337,7 @@ fun ReceiptPhotoDialog(
                     type = TransactionType.EXPENSE,
                     category = cat,
                     account = account,
+                    dateMillis = dateMillis,
                     note = "Receipt Photo Import"
                 )
                 onDismiss()
@@ -303,7 +365,7 @@ fun ReceiptPhotoDialog(
                     Text("Analyzing receipt image with Firebase AI...", color = TextSecondary, fontSize = 12.sp)
                 } else {
                     Text(
-                        "Select a photo of your receipt. Firebase AI will extract merchant, amount, and category for review. Original photo is not saved by default.",
+                        "Select a photo of your receipt. Firebase AI will extract merchant, amount, date, and category for review. Original photo is not saved by default.",
                         color = TextSecondary,
                         fontSize = 12.sp
                     )
@@ -339,13 +401,17 @@ fun ReceiptPhotoDialog(
 @Composable
 fun ReceiptReviewDialog(
     draft: ParsedTransaction,
-    onConfirm: (merchant: String, amount: Double, category: String, account: String) -> Unit,
+    onConfirm: (merchant: String, amount: Double, category: String, account: String, dateMillis: Long) -> Unit,
     onDismiss: () -> Unit
 ) {
     var merchant by remember { mutableStateOf(draft.title) }
     var amountText by remember { mutableStateOf(if (draft.amount > 0) draft.amount.toString() else "") }
     var account by remember { mutableStateOf(draft.account) }
     var selectedCategory by remember { mutableStateOf(draft.category) }
+    val initialDateMillis = draft.dateMillis ?: System.currentTimeMillis()
+    var dateMillis by remember { mutableStateOf(initialDateMillis) }
+    val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
+    var dateText by remember { mutableStateOf(dateFormatter.format(Date(initialDateMillis))) }
 
     val amountValue = amountText.toDoubleOrNull() ?: 0.0
     val isAmountUncertain = draft.amount <= 0.0 || amountValue <= 0.0
@@ -371,6 +437,21 @@ fun ReceiptReviewDialog(
                         Text(
                             "Total amount could not be unambiguously read from the image. Please verify or enter the total below.",
                             color = SovereignGold,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+
+                if (draft.dateNeedsReview) {
+                    Surface(
+                        color = Color(0x2238BDF8),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, CyanAccent)
+                    ) {
+                        Text(
+                            "Date was not clearly visible on receipt; defaulted to today. Adjust below if needed.",
+                            color = CyanAccent,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(8.dp)
                         )
@@ -404,6 +485,25 @@ fun ReceiptReviewDialog(
                 )
 
                 OutlinedTextField(
+                    value = dateText,
+                    onValueChange = {
+                        dateText = it
+                        val parsed = StatementParser.parseDateString(it)
+                        if (parsed != null) {
+                            dateMillis = parsed
+                        }
+                    },
+                    label = { Text("Date (YYYY-MM-DD)") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = SovereignGold,
+                        unfocusedBorderColor = ObsidianBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
                     value = account,
                     onValueChange = { account = it },
                     label = { Text("Account / Payment Source") },
@@ -420,7 +520,7 @@ fun ReceiptReviewDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    onConfirm(merchant, amountValue, selectedCategory, account)
+                    onConfirm(merchant, amountValue, selectedCategory, account, dateMillis)
                 },
                 enabled = merchant.isNotBlank() && amountValue > 0,
                 colors = ButtonDefaults.buttonColors(containerColor = SovereignGold)

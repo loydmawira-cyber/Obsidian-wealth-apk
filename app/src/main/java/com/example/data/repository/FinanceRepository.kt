@@ -23,6 +23,8 @@ class FinanceRepository(private val dao: FinanceDao) {
     suspend fun addTransaction(transaction: TransactionEntity): Long = dao.insertTransaction(transaction)
     suspend fun updateTransaction(transaction: TransactionEntity) = dao.updateTransaction(transaction)
     suspend fun deleteTransaction(transaction: TransactionEntity) = dao.deleteTransaction(transaction)
+    suspend fun isFingerprintImported(fingerprint: String): Boolean = dao.hasTransactionWithFingerprint(fingerprint) > 0
+    suspend fun getTransactionByFingerprint(fingerprint: String): TransactionEntity? = dao.findTransactionByFingerprint(fingerprint)
 
     // Holding Operations
     suspend fun addHolding(holding: HoldingEntity): Long = dao.insertHolding(holding)
