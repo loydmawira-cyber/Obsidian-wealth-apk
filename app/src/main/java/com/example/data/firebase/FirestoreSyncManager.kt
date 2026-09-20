@@ -69,6 +69,16 @@ class FirestoreSyncManager(private val context: Context) {
         }
     }
 
+    private fun getAuthInstance(): FirebaseAuth? {
+        return try {
+            if (FirebaseApp.getApps(context).isEmpty()) null
+            else FirebaseAuth.getInstance()
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to get FirebaseAuth instance", e)
+            null
+        }
+    }
+
     private fun getFirestoreInstance(): FirebaseFirestore? {
         return try {
             if (FirebaseApp.getApps(context).isEmpty()) null
@@ -100,7 +110,7 @@ class FirestoreSyncManager(private val context: Context) {
             )
 
         try {
-            val authUser = FirebaseAuth.getInstance().currentUser
+            val authUser = getAuthInstance()?.currentUser
                 ?: return@withContext CloudSyncResult(false, "Please sign in before syncing to Firestore.")
             firestore.collection("users").document(authUser.uid).set(
                 mapOf("uid" to authUser.uid, "email" to (authUser.email ?: ""), "vaultId" to authUser.uid, "lastSeenMillis" to System.currentTimeMillis()),
@@ -283,7 +293,7 @@ class FirestoreSyncManager(private val context: Context) {
             )
 
         try {
-            val authUser = FirebaseAuth.getInstance().currentUser
+            val authUser = getAuthInstance()?.currentUser
                 ?: return@withContext CloudSyncResult(false, "Please sign in before restoring from Firestore.")
             val vaultRef = firestore.collection("wealth_vaults").document(authUser.uid)
 
