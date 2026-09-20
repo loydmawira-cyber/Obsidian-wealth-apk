@@ -322,6 +322,8 @@ fun InvestmentsScreen(
                     D3InteractiveDonutChart(
                         slices = allocationSlices,
                         totalPortfolioValue = totalPortfolioValue,
+                        currencySymbol = sym,
+                        formatAmount = { viewModel.formatAmount(it) },
                         chartSize = 220.dp
                     )
                 }
@@ -344,8 +346,9 @@ fun InvestmentsScreen(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )
+                        val activeSipSum = sips.filter { it.isActive }.sumOf { it.monthlyAmount }
                         Text(
-                            text = "$${"%,.0f".format(sips.filter { it.isActive }.sumOf { it.monthlyAmount })}/month automated capital deployment",
+                            text = "${viewModel.formatAmount(activeSipSum)}/month automated capital deployment",
                             color = EmeraldLight,
                             fontSize = 11.sp
                         )

@@ -160,14 +160,10 @@ class MainActivity : ComponentActivity() {
         }
 
         try {
-            val alertWork = androidx.work.PeriodicWorkRequestBuilder<com.example.alerts.AlertWorker>(24, java.util.concurrent.TimeUnit.HOURS).build()
-            androidx.work.WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
-                "obsidian_proactive_alerts",
-                androidx.work.ExistingPeriodicWorkPolicy.KEEP,
-                alertWork
-            )
+            com.example.alerts.NotificationReminderManager.initChannels(this)
+            com.example.alerts.NotificationReminderManager.schedulePeriodicAlerts(this)
         } catch (e: Exception) {
-            android.util.Log.e("ObsidianAlerts", "WorkManager init notice", e)
+            android.util.Log.e("ObsidianAlerts", "Notification init notice", e)
         }
 
         enableEdgeToEdge()
@@ -314,6 +310,10 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
                         onExportReport = { report ->
                             exportReportContent = report
                             showExportReportDialog = true
+                        },
+                        onAskAiToExplain = { prompt ->
+                            viewModel.askAi(prompt)
+                            showAiAdvisorSheet = true
                         }
                     )
                 }

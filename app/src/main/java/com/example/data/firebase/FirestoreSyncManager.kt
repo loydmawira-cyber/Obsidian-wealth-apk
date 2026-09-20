@@ -255,7 +255,11 @@ class FirestoreSyncManager(private val context: Context) {
                 "showFloatingAiAdvisor" to settings.showFloatingAiAdvisor,
                 "aiRiskProfile" to settings.aiRiskProfile.name,
                 "hideBalances" to settings.hideBalances,
-                "biometricProtection" to settings.biometricProtection
+                "biometricProtection" to settings.biometricProtection,
+                "enableNotifications" to settings.enableNotifications,
+                "enableBillDueReminders" to settings.enableBillDueReminders,
+                "enableSipReminders" to settings.enableSipReminders,
+                "enableDailyBriefingReminders" to settings.enableDailyBriefingReminders
             )
             vaultRef.collection("settings").document("preferences")
                 .set(settingsMap, SetOptions.merge()).awaitTask()
@@ -445,7 +449,11 @@ class FirestoreSyncManager(private val context: Context) {
                     enableGoals = settingsDoc.getBoolean("enableGoals") ?: true,
                     showFloatingAiAdvisor = settingsDoc.getBoolean("showFloatingAiAdvisor") ?: true,
                     hideBalances = settingsDoc.getBoolean("hideBalances") ?: false,
-                    biometricProtection = settingsDoc.getBoolean("biometricProtection") ?: true
+                    biometricProtection = settingsDoc.getBoolean("biometricProtection") ?: true,
+                    enableNotifications = settingsDoc.getBoolean("enableNotifications") ?: true,
+                    enableBillDueReminders = settingsDoc.getBoolean("enableBillDueReminders") ?: true,
+                    enableSipReminders = settingsDoc.getBoolean("enableSipReminders") ?: true,
+                    enableDailyBriefingReminders = settingsDoc.getBoolean("enableDailyBriefingReminders") ?: true
                 )
                 preferencesManager.updateSettings(restoredSettings)
             }

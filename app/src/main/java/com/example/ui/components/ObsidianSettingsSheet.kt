@@ -37,12 +37,19 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Lock
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
+import com.example.alerts.NotificationReminderManager
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -259,42 +266,54 @@ fun ObsidianSettingsSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Tab Selector: Regional vs Modules vs Security vs Cloud Sync
-            Row(
+            // Tab Selector: Regional vs Modules vs Alerts vs Privacy vs Cloud Sync
+            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(ObsidianSurface, RoundedCornerShape(10.dp))
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                SettingsCategoryTab(
-                    title = "Region",
-                    icon = Icons.Default.Public,
-                    isSelected = activeTab == 0,
-                    modifier = Modifier.weight(1f),
-                    onClick = { activeTab = 0 }
-                )
-                SettingsCategoryTab(
-                    title = "Modules",
-                    icon = Icons.Default.Tune,
-                    isSelected = activeTab == 1,
-                    modifier = Modifier.weight(1f),
-                    onClick = { activeTab = 1 }
-                )
-                SettingsCategoryTab(
-                    title = "Privacy",
-                    icon = Icons.Default.Security,
-                    isSelected = activeTab == 2,
-                    modifier = Modifier.weight(1f),
-                    onClick = { activeTab = 2 }
-                )
-                SettingsCategoryTab(
-                    title = "Cloud Sync",
-                    icon = Icons.Default.Refresh,
-                    isSelected = activeTab == 3,
-                    modifier = Modifier.weight(1f),
-                    onClick = { activeTab = 3 }
-                )
+                item {
+                    SettingsCategoryTab(
+                        title = "Region",
+                        icon = Icons.Default.Public,
+                        isSelected = activeTab == 0,
+                        onClick = { activeTab = 0 }
+                    )
+                }
+                item {
+                    SettingsCategoryTab(
+                        title = "Modules",
+                        icon = Icons.Default.Tune,
+                        isSelected = activeTab == 1,
+                        onClick = { activeTab = 1 }
+                    )
+                }
+                item {
+                    SettingsCategoryTab(
+                        title = "Alerts & Reminders",
+                        icon = Icons.Default.NotificationsActive,
+                        isSelected = activeTab == 2,
+                        onClick = { activeTab = 2 }
+                    )
+                }
+                item {
+                    SettingsCategoryTab(
+                        title = "Privacy",
+                        icon = Icons.Default.Security,
+                        isSelected = activeTab == 3,
+                        onClick = { activeTab = 3 }
+                    )
+                }
+                item {
+                    SettingsCategoryTab(
+                        title = "Cloud Sync",
+                        icon = Icons.Default.Refresh,
+                        isSelected = activeTab == 4,
+                        onClick = { activeTab = 4 }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -598,6 +617,216 @@ fun ObsidianSettingsSheet(
                         )
                     }
                 } else if (activeTab == 2) {
+                    // PUSH NOTIFICATIONS & REMINDERS
+                    item {
+                        val hasNotificationPermission = NotificationReminderManager.hasPermission(context)
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = ObsidianSurfaceVariant,
+                            border = BorderStroke(1.dp, if (settings.enableNotifications) SovereignGold.copy(alpha = 0.6f) else ObsidianBorderSubtle),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            if (settings.enableNotifications) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
+                                            contentDescription = "Push Notifications",
+                                            tint = if (settings.enableNotifications) GoldBright else TextMuted,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = "Push Notifications & Alerts",
+                                                color = TextPrimary,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = if (settings.enableNotifications) "Automated wealth intelligence active" else "System alerts currently paused",
+                                                color = if (settings.enableNotifications) EmeraldGrowth else TextMuted,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                    }
+
+                                    Switch(
+                                        checked = settings.enableNotifications,
+                                        onCheckedChange = { viewModel.toggleNotificationOption("all", it) },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = GoldBright,
+                                            checkedTrackColor = SovereignGold.copy(alpha = 0.4f),
+                                            uncheckedThumbColor = TextMuted,
+                                            uncheckedTrackColor = ObsidianSurface
+                                        )
+                                    )
+                                }
+
+                                if (!hasNotificationPermission) {
+                                    val amber = Color(0xFFF59E0B)
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFF2D1600),
+                                        border = BorderStroke(1.dp, amber.copy(alpha = 0.4f))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.Warning, contentDescription = null, tint = amber, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "System notification permission is required for alerts to appear in your device notification shade.",
+                                                color = Color(0xFFFDE68A),
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Text(
+                            text = "AUTOMATED REMINDERS & SCHEDULES",
+                            color = SovereignGold,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 0.8.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Configure which financial events and triggers send push alerts",
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+
+                    // Bill & Debt Due Reminders
+                    item {
+                        ModuleToggleCard(
+                            title = "Bill & Credit Due Reminders",
+                            description = "Receive early alerts 1–3 days before revolving credit card payments and loan EMI schedules are due.",
+                            icon = Icons.Default.CreditCard,
+                            isEnabled = settings.enableBillDueReminders && settings.enableNotifications,
+                            onToggle = { viewModel.toggleNotificationOption("bills", it) }
+                        )
+                    }
+
+                    // SIP Investment Reminders
+                    item {
+                        ModuleToggleCard(
+                            title = "SIP Standing Order Reminders",
+                            description = "Timely notifications when scheduled monthly mutual fund and equity SIP debits are upcoming.",
+                            icon = Icons.AutoMirrored.Filled.ShowChart,
+                            isEnabled = settings.enableSipReminders && settings.enableNotifications,
+                            onToggle = { viewModel.toggleNotificationOption("sips", it) }
+                        )
+                    }
+
+                    // Daily Financial Briefing Reminders
+                    item {
+                        ModuleToggleCard(
+                            title = "Daily Wealth Briefing",
+                            description = "Evening push recap of today's cash burn, net savings velocity, and progress toward financial goals.",
+                            icon = Icons.Default.Flag,
+                            isEnabled = settings.enableDailyBriefingReminders && settings.enableNotifications,
+                            onToggle = { viewModel.toggleNotificationOption("briefing", it) }
+                        )
+                    }
+
+                    // Test Push Notification Card
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFF141A24),
+                            border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Send,
+                                        contentDescription = "Test Notification",
+                                        tint = SovereignGold,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "TEST DEVICE NOTIFICATIONS",
+                                        color = GoldLight,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        letterSpacing = 0.8.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Send an immediate test reminder to verify notification delivery and sound on your Android device.",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = {
+                                        viewModel.triggerTestNotification()
+                                        Toast.makeText(context, "🔔 Test push reminder sent to notifications tray!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = Color(0xFF0D0A00), modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Send Test Push Reminder", color = Color(0xFF0D0A00), fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                            }
+                        }
+                    }
+
+                    // Proactive Intelligence Triggers Summary
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = ObsidianSurface,
+                            border = BorderStroke(1.dp, ObsidianBorderSubtle),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "PROACTIVE ALERTS ENGINE",
+                                    color = SovereignGold,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 0.8.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Obsidian's background engine periodically evaluates:\n• Monthly spending surges exceeding 20% vs prior period\n• Outsized category concentration (>40% of outflow)\n• Accounts reaching payment due milestones\n• Goals falling behind monthly target velocity",
+                                    color = TextMuted,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+                } else if (activeTab == 3) {
                     // AI & PRIVACY SETTINGS
                     item {
                         Text(
@@ -883,46 +1112,6 @@ fun ObsidianSettingsSheet(
                         }
                     }
 
-                    if (!isDemoAccount) {
-                        item {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0x11F43F5E),
-                                border = BorderStroke(1.dp, Color(0xFFF43F5E).copy(alpha = 0.35f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(14.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Danger Zone",
-                                            color = Color(0xFFFB7185),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "Permanently erase all local vault data",
-                                            color = TextMuted,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                    Button(
-                                        onClick = { onRequestClearAllData() },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF43F5E)),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("CLEAR ALL DATA", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     item {
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
@@ -980,7 +1169,7 @@ fun ObsidianSettingsSheet(
                             }
                         }
                     }
-                } else if (activeTab == 3) {
+                } else if (activeTab == 4) {
                     // CLOUD FIRESTORE VAULT SYNCHRONIZATION
                     item {
                         Text(
@@ -1306,6 +1495,7 @@ fun SetPinDialog(
     var pinInput by remember { mutableStateOf("") }
     var confirmInput by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1408,11 +1598,19 @@ fun SetPinDialog(
                                 errorMessage = "PINs do not match. Try again."
                                 return@Button
                             }
+                            isSaving = true
                             onSavePin(pinInput)
                         },
+                        enabled = !isSaving,
                         colors = ButtonDefaults.buttonColors(containerColor = SovereignGold)
                     ) {
-                        Text("SAVE PIN", color = ObsidianBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        if (isSaving) {
+                            CircularProgressIndicator(color = ObsidianBg, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("SAVING…", color = ObsidianBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        } else {
+                            Text("SAVE PIN", color = ObsidianBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

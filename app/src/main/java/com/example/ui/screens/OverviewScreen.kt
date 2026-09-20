@@ -236,7 +236,10 @@ fun OverviewScreen(
 
         // D3 Financial Trends Analytics
         item {
-            D3FinancialTrendsDashboard(userSettings = userSettings)
+            D3FinancialTrendsDashboard(
+                userSettings = userSettings,
+                summary = summary
+            )
         }
 
         // AI Financial Resilience Index

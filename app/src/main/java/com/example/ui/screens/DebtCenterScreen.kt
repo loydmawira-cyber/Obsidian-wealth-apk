@@ -46,6 +46,7 @@ import com.example.data.models.CreditCardEntity
 import com.example.data.models.GeographicRegion
 import com.example.data.models.LoanEntity
 import com.example.data.models.SupportedCurrency
+import com.example.ui.components.DebtPayoffCalculator
 import com.example.ui.components.FinCard
 import com.example.ui.components.HeroGradientCard
 import com.example.ui.components.MetricBadge
@@ -241,6 +242,22 @@ fun DebtCenterScreen(
                     lineHeight = 16.sp
                 )
             }
+        }
+
+        // Interactive Debt Payoff Calculator & Visualizer
+        item {
+            val maxApr = creditCards.maxByOrNull { it.apr }?.apr
+                ?: (loans.maxByOrNull { it.interestRate }?.interestRate ?: 16.5)
+            val suggestedPayment = if (summary.monthlyDebtServicing > 50.0) summary.monthlyDebtServicing else 450.0
+
+            DebtPayoffCalculator(
+                initialBalance = if (aggregateDebt > 0) aggregateDebt else 15000.0,
+                initialApr = maxApr,
+                initialMonthlyPayment = suggestedPayment,
+                currencySymbol = sym,
+                formatAmount = { viewModel.formatAmount(it) },
+                totalVaultDebt = aggregateDebt
+            )
         }
 
         // Revolving Credit Cards Section Header & List

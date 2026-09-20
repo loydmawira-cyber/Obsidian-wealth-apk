@@ -154,7 +154,11 @@ fun StatementImportDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = SovereignGold)
             ) {
                 if (isParsing) {
-                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Parsing…", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
                 } else {
                     Text("Parse Statement", color = Color.Black, fontWeight = FontWeight.Bold)
                 }

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -224,20 +225,39 @@ fun PinLockScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Error / lockout message
-            val statusMessage = when {
-                isLockedOut -> "Too many incorrect attempts. Try again in ${formatLockoutDuration(lockoutRemaining)}."
-                isVerifying -> "Checking PIN…"
-                else -> errorMessage
+            // Error / lockout / verifying status
+            if (isVerifying) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = SovereignGold,
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Checking PIN…",
+                        color = TextMuted,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            } else {
+                val statusMessage = when {
+                    isLockedOut -> "Too many incorrect attempts. Try again in ${formatLockoutDuration(lockoutRemaining)}."
+                    else -> errorMessage
+                }
+                statusMessage?.let { err ->
+                    Text(
+                        text = err,
+                        color = Color(0xFFFCA5A5),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                } ?: Spacer(modifier = Modifier.height(16.dp))
             }
-            statusMessage?.let { err ->
-                Text(
-                    text = err,
-                    color = if (isVerifying) TextMuted else Color(0xFFFCA5A5),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            } ?: Spacer(modifier = Modifier.height(16.dp))
 
             Spacer(modifier = Modifier.height(16.dp))
 

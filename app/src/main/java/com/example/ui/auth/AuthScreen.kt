@@ -34,6 +34,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -85,6 +86,7 @@ fun AuthScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
     var showForgotPasswordDialog by remember { mutableStateOf(false) }
+    var isAuthenticating by remember { mutableStateOf(false) }
 
     val isPinEnabled by viewModel.isPinEnabled.collectAsState()
     val authError by viewModel.authError.collectAsState()
@@ -345,52 +347,77 @@ fun AuthScreen(
                         onClick = {
                             errorMessage = null
                             successMessage = null
+                            isAuthenticating = true
                             if (isRegisterTab) {
                                 if (emailInput.isBlank() || !emailInput.contains("@")) {
                                     errorMessage = "Please enter a valid email address."
+                                    isAuthenticating = false
                                     return@Button
                                 }
                                 if (passwordInput.length < 4) {
                                     errorMessage = "Password must be at least 4 characters long."
+                                    isAuthenticating = false
                                     return@Button
                                 }
                                 if (passwordInput != confirmPasswordInput) {
                                     errorMessage = "Passwords do not match."
+                                    isAuthenticating = false
                                     return@Button
                                 }
                                 viewModel.registerUser(emailInput, passwordInput) { ok ->
+                                    isAuthenticating = false
                                     if (ok) successMessage = "Account registered! Welcome to Obsidian Vault."
                                     else errorMessage = "Registration failed. ${viewModel.authError.value ?: "Please check your credentials."}"
                                 }
                             } else {
                                 if (emailInput.isBlank()) {
                                     errorMessage = "Please enter your email."
+                                    isAuthenticating = false
                                     return@Button
                                 }
                                 if (passwordInput.isBlank()) {
                                     errorMessage = "Please enter your password."
+                                    isAuthenticating = false
                                     return@Button
                                 }
                                 viewModel.loginWithEmail(emailInput, passwordInput) { ok ->
+                                    isAuthenticating = false
                                     if (!ok) errorMessage = viewModel.authError.value ?: "Invalid email or password. Please try again."
                                 }
                             }
                         },
+                        enabled = !isAuthenticating,
                         colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp)
                     ) {
-                        Text(
-                            text = if (isRegisterTab) "CREATE VAULT ACCOUNT" else "LOG IN TO VAULT",
-                            color = ObsidianBg,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.8.sp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = ObsidianBg, modifier = Modifier.size(16.dp))
+                        if (isAuthenticating) {
+                            CircularProgressIndicator(
+                                color = ObsidianBg,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.5.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = if (isRegisterTab) "CREATING VAULT ACCOUNT…" else "LOGGING IN TO VAULT…",
+                                color = ObsidianBg,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.8.sp
+                            )
+                        } else {
+                            Text(
+                                text = if (isRegisterTab) "CREATE VAULT ACCOUNT" else "LOG IN TO VAULT",
+                                color = ObsidianBg,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.8.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Default.ArrowForward, contentDescription = null, tint = ObsidianBg, modifier = Modifier.size(16.dp))
+                        }
                     }
 
                     // Quick PIN alternative card if PIN is configured!
@@ -454,6 +481,7 @@ fun ForgotPasswordDialog(
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -561,11 +589,19 @@ fun ForgotPasswordDialog(
                                 errorText = "Passwords do not match."
                                 return@Button
                             }
+                            isSubmitting = true
                             onReset(email.trim(), newPassword)
                         },
+                        enabled = !isSubmitting,
                         colors = ButtonDefaults.buttonColors(containerColor = SovereignGold)
                     ) {
-                        Text("RESET & UPDATE", color = ObsidianBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        if (isSubmitting) {
+                            CircularProgressIndicator(color = ObsidianBg, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("RESETTING…", color = ObsidianBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        } else {
+                            Text("RESET & UPDATE", color = ObsidianBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

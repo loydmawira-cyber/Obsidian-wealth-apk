@@ -361,12 +361,12 @@ fun AiSmartLogDialog(
                     // Quick presets
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val presets = listOf(
-                            "Paid KSh 4,500 for groceries at Carrefour via M-Pesa",
-                            "Received KSh 450,000 consulting retainer in Stanbic",
-                            "Paid KSh 12,500 for Kenya Power tokens",
-                            "Invested KSh 50,000 into CIC Money Market Fund",
-                            "Paid KSh 3,200 at Artcaffe with NCBA card",
-                            "Spent $48 on Uber airport ride"
+                            "Spent $45 on groceries at Supermarket",
+                            "Received $4,500 consulting retainer deposit",
+                            "Paid €85 for electricity bill",
+                            "Spent £65 on transport and rail ticket",
+                            "Invested $500 into Index Fund ETF",
+                            "Paid $120 for Internet & Mobile bill"
                         )
                         items(presets) { preset ->
                             Surface(
@@ -391,7 +391,7 @@ fun AiSmartLogDialog(
                     OutlinedTextField(
                         value = prompt,
                         onValueChange = { prompt = it },
-                        placeholder = { Text("e.g. Paid KSh 3,200 at Java House on M-Pesa", color = TextMuted) },
+                        placeholder = { Text("e.g. Paid $45 for groceries at Supermarket", color = TextMuted) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
@@ -435,7 +435,11 @@ fun AiSmartLogDialog(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         if (isExtracting) {
-                            CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Extracting Draft…", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
                         } else {
                             Text("Extract & Review Draft", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
@@ -1048,7 +1052,7 @@ fun AddHoldingDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Asset Name", color = TextSecondary) },
-                    placeholder = { Text("e.g. Safaricom PLC, Equity Group, IFB Bond", color = TextMuted) },
+                    placeholder = { Text("e.g. MercadoLibre (MELI), Apple (AAPL), Vanguard ETF", color = TextMuted) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,

@@ -107,6 +107,8 @@ fun D3InteractiveDonutChart(
     slices: List<D3AllocationSlice>,
     totalPortfolioValue: Double,
     modifier: Modifier = Modifier,
+    currencySymbol: String = "$",
+    formatAmount: ((Double) -> String)? = null,
     chartSize: Dp = 230.dp,
     baseStrokeWidth: Dp = 22.dp,
     selectedStrokeWidth: Dp = 32.dp,
@@ -284,8 +286,9 @@ fun D3InteractiveDonutChart(
                                 letterSpacing = 1.sp
                             )
                             Spacer(modifier = Modifier.height(2.dp))
+                            val totalText = formatAmount?.invoke(totalPortfolioValue) ?: "$currencySymbol${"%,.0f".format(totalPortfolioValue)}"
                             Text(
-                                text = "$${"%,.0f".format(totalPortfolioValue)}",
+                                text = totalText,
                                 color = TextPrimary,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.ExtraBold
@@ -298,7 +301,7 @@ fun D3InteractiveDonutChart(
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
-                                    text = "100% • 3 Asset Classes",
+                                    text = "100% • ${slices.size} Asset Classes",
                                     color = EmeraldLight,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold
@@ -316,8 +319,9 @@ fun D3InteractiveDonutChart(
                                 maxLines = 1
                             )
                             Spacer(modifier = Modifier.height(2.dp))
+                            val sliceText = formatAmount?.invoke(slice.value) ?: "$currencySymbol${"%,.0f".format(slice.value)}"
                             Text(
-                                text = "$${"%,.0f".format(slice.value)}",
+                                text = sliceText,
                                 color = TextPrimary,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.ExtraBold
@@ -428,8 +432,9 @@ fun D3InteractiveDonutChart(
                             )
                         }
 
+                        val deepDiveAmountText = formatAmount?.invoke(slice.value) ?: "$currencySymbol${"%,.2f".format(slice.value)}"
                         Text(
-                            text = "$${"%,.2f".format(slice.value)} (${"%.1f".format(percent)}%)",
+                            text = "$deepDiveAmountText (${"%.1f".format(percent)}%)",
                             color = slice.primaryColor,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.ExtraBold

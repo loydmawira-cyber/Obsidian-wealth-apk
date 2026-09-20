@@ -80,6 +80,11 @@ class PreferencesManager(context: Context) {
         val hideBalances = prefs.getBoolean(KEY_HIDE_BALANCES, false)
         val biometric = prefs.getBoolean(KEY_BIOMETRIC, true)
 
+        val enableNotifications = prefs.getBoolean(KEY_ENABLE_NOTIFICATIONS, true)
+        val enableBillDue = prefs.getBoolean(KEY_ENABLE_BILL_DUE, true)
+        val enableSip = prefs.getBoolean(KEY_ENABLE_SIP, true)
+        val enableDailyBriefing = prefs.getBoolean(KEY_ENABLE_DAILY_BRIEFING, true)
+
         return UserSettings(
             currency = currency,
             region = region,
@@ -92,7 +97,11 @@ class PreferencesManager(context: Context) {
             showFloatingAiAdvisor = showAiAdvisor,
             aiRiskProfile = aiRisk,
             hideBalances = hideBalances,
-            biometricProtection = biometric
+            biometricProtection = biometric,
+            enableNotifications = enableNotifications,
+            enableBillDueReminders = enableBillDue,
+            enableSipReminders = enableSip,
+            enableDailyBriefingReminders = enableDailyBriefing
         )
     }
 
@@ -110,6 +119,10 @@ class PreferencesManager(context: Context) {
             .putString(KEY_AI_RISK, newSettings.aiRiskProfile.name)
             .putBoolean(KEY_HIDE_BALANCES, newSettings.hideBalances)
             .putBoolean(KEY_BIOMETRIC, newSettings.biometricProtection)
+            .putBoolean(KEY_ENABLE_NOTIFICATIONS, newSettings.enableNotifications)
+            .putBoolean(KEY_ENABLE_BILL_DUE, newSettings.enableBillDueReminders)
+            .putBoolean(KEY_ENABLE_SIP, newSettings.enableSipReminders)
+            .putBoolean(KEY_ENABLE_DAILY_BRIEFING, newSettings.enableDailyBriefingReminders)
             .apply()
 
         _settings.value = newSettings
@@ -240,6 +253,10 @@ class PreferencesManager(context: Context) {
         private const val KEY_PIN_ENABLED = "pref_pin_enabled"
         private const val KEY_DEMO_SEEDED = "pref_demo_seeded"
         private const val KEY_LAST_SIGNED_IN_UID = "pref_last_signed_in_uid"
+        private const val KEY_ENABLE_NOTIFICATIONS = "pref_enable_notifications"
+        private const val KEY_ENABLE_BILL_DUE = "pref_enable_bill_due"
+        private const val KEY_ENABLE_SIP = "pref_enable_sip"
+        private const val KEY_ENABLE_DAILY_BRIEFING = "pref_enable_daily_briefing"
 
         // Retained only so purgeLegacyPlaintextSecrets() can delete what older builds wrote.
         // Never read these values; never write them again.

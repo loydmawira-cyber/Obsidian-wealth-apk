@@ -20,7 +20,9 @@ enum class SupportedCurrency(
     JPY("JPY", "¥", "Japanese Yen (¥)", "🇯🇵"),
     ZAR("ZAR", "R ", "South African Rand (R)", "🇿🇦"),
     AED("AED", "AED ", "UAE Dirham (AED)", "🇦🇪"),
-    SGD("SGD", "S$", "Singapore Dollar (S$)", "🇸🇬")
+    SGD("SGD", "S$", "Singapore Dollar (S$)", "🇸🇬"),
+    MXN("MXN", "Mex$", "Mexican Peso (Mex$)", "🇲🇽"),
+    ARS("ARS", "AR$", "Argentine Peso (AR$)", "🇦🇷")
 }
 
 enum class GeographicRegion(
@@ -31,10 +33,11 @@ enum class GeographicRegion(
     val defaultNumberStyle: NumberFormatStyle
 ) {
     NORTH_AMERICA("na", "North America (US & Canada)", SupportedCurrency.USD, FiscalCalendar.CALENDAR_YEAR, NumberFormatStyle.WESTERN_STANDARD),
-    EAST_AFRICA("ea", "Kenya & East Africa (EAC)", SupportedCurrency.KES, FiscalCalendar.MID_YEAR, NumberFormatStyle.WESTERN_STANDARD),
+    LATIN_AMERICA("latam", "Latin America (Mexico, Argentina & LATAM)", SupportedCurrency.MXN, FiscalCalendar.CALENDAR_YEAR, NumberFormatStyle.WESTERN_STANDARD),
     EUROPE("eu", "European Union & EEA", SupportedCurrency.EUR, FiscalCalendar.CALENDAR_YEAR, NumberFormatStyle.CONTINENTAL),
     UK("uk", "United Kingdom", SupportedCurrency.GBP, FiscalCalendar.UK_COMMONWEALTH, NumberFormatStyle.WESTERN_STANDARD),
     INDIA("in", "India & South Asia", SupportedCurrency.INR, FiscalCalendar.UK_COMMONWEALTH, NumberFormatStyle.SOUTH_ASIAN),
+    EAST_AFRICA("ea", "Kenya & East Africa (EAC)", SupportedCurrency.KES, FiscalCalendar.MID_YEAR, NumberFormatStyle.WESTERN_STANDARD),
     AUSTRALIA("au", "Australia & Pacific", SupportedCurrency.AUD, FiscalCalendar.MID_YEAR, NumberFormatStyle.WESTERN_STANDARD),
     MIDDLE_EAST("me", "Middle East & GCC", SupportedCurrency.AED, FiscalCalendar.CALENDAR_YEAR, NumberFormatStyle.WESTERN_STANDARD),
     SOUTH_AFRICA("za", "South Africa", SupportedCurrency.ZAR, FiscalCalendar.UK_COMMONWEALTH, NumberFormatStyle.WESTERN_STANDARD)
@@ -86,7 +89,13 @@ data class UserSettings(
 
     // Privacy & Security
     val hideBalances: Boolean = false,
-    val biometricProtection: Boolean = true
+    val biometricProtection: Boolean = true,
+
+    // Push Notifications & Reminders
+    val enableNotifications: Boolean = true,
+    val enableBillDueReminders: Boolean = true,
+    val enableSipReminders: Boolean = true,
+    val enableDailyBriefingReminders: Boolean = true
 ) {
     fun formatAmount(amount: Double, forceVisible: Boolean = false): String {
         if (hideBalances && !forceVisible) {

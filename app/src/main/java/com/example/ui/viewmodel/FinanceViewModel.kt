@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.AdvisorSnapshot
 import com.example.ai.GeminiClient
+import com.example.alerts.NotificationReminderManager
 import com.example.data.billing.BillingManager
 import com.example.data.database.AppDatabase
 import com.example.data.models.Category
@@ -210,8 +211,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         (!preferencesManager.hasAutoSeededDemoData() || isAccountSwitch)
                     ) {
                         preferencesManager.setAutoSeededDemoData(true)
-                        AppDatabase.reseedDatabase(database.financeDao())
-                        preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
+                        val targetRegion = userSettings.value.region
+                        AppDatabase.reseedDatabaseForRegion(database.financeDao(), targetRegion)
                     }
                 }
             }
@@ -412,16 +413,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             // Safety net: the shared demo/tester account must never end up blank,
             // even if this function is somehow reached for it. Immediately re-seed.
             if (_userEmail.value.equals(DEMO_SEED_EMAIL, ignoreCase = true)) {
-                AppDatabase.reseedDatabase(database.financeDao())
-                preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
+                AppDatabase.reseedDatabaseForRegion(database.financeDao(), userSettings.value.region)
             }
         }
     }
 
-    fun reseedWithKenyanData() {
+    fun reseedWithRegionData(region: GeographicRegion = userSettings.value.region) {
         viewModelScope.launch {
-            AppDatabase.reseedDatabase(database.financeDao())
-            applyRegionPreset(GeographicRegion.EAST_AFRICA)
+            preferencesManager.applyRegionPreset(region)
+            AppDatabase.reseedDatabaseForRegion(database.financeDao(), region)
+            validateSelectedTab()
         }
     }
 
@@ -440,7 +441,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun applyRegionPreset(region: GeographicRegion) {
         preferencesManager.applyRegionPreset(region)
-        validateSelectedTab()
+        viewModelScope.launch {
+            AppDatabase.reseedDatabaseForRegion(database.financeDao(), region)
+            validateSelectedTab()
+        }
     }
 
     fun updateCurrency(currency: SupportedCurrency) {
@@ -454,6 +458,29 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun toggleModule(module: String, enabled: Boolean) {
         preferencesManager.toggleModule(module, enabled)
         validateSelectedTab()
+    }
+
+    fun toggleNotificationOption(type: String, enabled: Boolean) {
+        val current = userSettings.value
+        val updated = when (type) {
+            "all" -> current.copy(enableNotifications = enabled)
+            "bills" -> current.copy(enableBillDueReminders = enabled)
+            "sips" -> current.copy(enableSipReminders = enabled)
+            "briefing" -> current.copy(enableDailyBriefingReminders = enabled)
+            else -> current
+        }
+        preferencesManager.updateSettings(updated)
+        if (type == "all") {
+            if (enabled) {
+                NotificationReminderManager.schedulePeriodicAlerts(getApplication())
+            } else {
+                NotificationReminderManager.cancelAll(getApplication())
+            }
+        }
+    }
+
+    fun triggerTestNotification() {
+        NotificationReminderManager.sendTestReminder(getApplication(), userSettings.value.currency.symbol)
     }
 
     private fun validateSelectedTab() {
