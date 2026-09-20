@@ -117,7 +117,9 @@ class FirestoreSyncManager(private val context: Context) {
 
             // 1. Vault Metadata
             val metaData = hashMapOf(
-                "vaultId" to vaultId,
+                // The authenticated uid IS the vault id — the caller-supplied `vaultId` parameter
+                // was removed in the auth-binding fix, and this was its last surviving use.
+                "vaultId" to authUser.uid,
                 "currency" to settings.currency.name,
                 "region" to settings.region.id,
                 "lastSyncMillis" to System.currentTimeMillis(),
