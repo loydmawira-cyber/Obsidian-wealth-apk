@@ -69,16 +69,6 @@ class FirestoreSyncManager(private val context: Context) {
         }
     }
 
-    private fun getAuthInstance(): FirebaseAuth? {
-        return try {
-            if (FirebaseApp.getApps(context).isEmpty()) null
-            else FirebaseAuth.getInstance()
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to get FirebaseAuth instance", e)
-            null
-        }
-    }
-
     private fun getFirestoreInstance(): FirebaseFirestore? {
         return try {
             if (FirebaseApp.getApps(context).isEmpty()) null
@@ -100,7 +90,6 @@ class FirestoreSyncManager(private val context: Context) {
      * Pushes all local Room entities and settings to Cloud Firestore.
      */
     suspend fun syncLocalVaultToCloud(
-        vaultId: String,
         dao: FinanceDao,
         settings: UserSettings
     ): CloudSyncResult = withContext(Dispatchers.IO) {
@@ -111,7 +100,7 @@ class FirestoreSyncManager(private val context: Context) {
             )
 
         try {
-            val authUser = getAuthInstance()?.currentUser
+            val authUser = FirebaseAuth.getInstance().currentUser
                 ?: return@withContext CloudSyncResult(false, "Please sign in before syncing to Firestore.")
             firestore.collection("users").document(authUser.uid).set(
                 mapOf("uid" to authUser.uid, "email" to (authUser.email ?: ""), "vaultId" to authUser.uid, "lastSeenMillis" to System.currentTimeMillis()),
@@ -275,9 +264,13 @@ class FirestoreSyncManager(private val context: Context) {
 
     /**
      * Restores all entities from Cloud Firestore down to the local Room database.
+     *
+     * The vault id is derived from the authenticated user and is NOT a parameter. Previously this
+     * function took a caller-supplied vaultId and performed no auth check at all, so any value
+     * passed in (and the id was user-editable in Settings) would read that vault's complete
+     * financial history. A signed-in user can now only ever restore their own vault.
      */
     suspend fun restoreCloudVaultToLocal(
-        vaultId: String,
         dao: FinanceDao,
         preferencesManager: PreferencesManager
     ): CloudSyncResult = withContext(Dispatchers.IO) {
@@ -288,7 +281,9 @@ class FirestoreSyncManager(private val context: Context) {
             )
 
         try {
-            val vaultRef = firestore.collection("wealth_vaults").document(vaultId)
+            val authUser = FirebaseAuth.getInstance().currentUser
+                ?: return@withContext CloudSyncResult(false, "Please sign in before restoring from Firestore.")
+            val vaultRef = firestore.collection("wealth_vaults").document(authUser.uid)
 
             // 1. Transactions
             val txSnap = vaultRef.collection("transactions").get().awaitTask()
@@ -406,14 +401,6 @@ class FirestoreSyncManager(private val context: Context) {
                     null
                 }
             }
-
-            // Wipe local Room database tables clean so old/demo data is replaced by cloud vault content (or left empty if cloud vault is empty)
-            dao.clearAllTransactions()
-            dao.clearAllHoldings()
-            dao.clearAllSips()
-            dao.clearAllCreditCards()
-            dao.clearAllLoans()
-            dao.clearAllGoals()
 
             // Insert into Room
             if (txList.isNotEmpty()) dao.insertTransactions(txList)
