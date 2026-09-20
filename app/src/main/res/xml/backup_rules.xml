@@ -1,13 +1,28 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Legacy auto-backup rules (API 30 and below).
+
+   android:allowBackup is now "false", so nothing here should ever be exercised. These excludes
+   are kept as defence in depth: if allowBackup is ever flipped back to "true", the app's
+   secrets and financial records must not silently start flowing into cloud backup the way they
+   previously did. This file used to contain nothing but commented-out sample rules, which is
+   why backup captured everything — including the (then plaintext) PIN and password.
+
+   The vault's legitimate backup path is the app's own Firestore sync, which is authenticated
+   per user and governed by firestore.rules. Android auto-backup is not a substitute for it.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- Room database: the entire financial history. -->
+    <exclude domain="database" path="." />
+
+    <!-- SharedPreferences: PIN hash + salt, session state, account email. -->
+    <exclude domain="sharedpref" path="." />
+
+    <!-- Firebase's own persisted auth/session and offline Firestore cache. -->
+    <exclude domain="file" path="firebase" />
+    <exclude domain="file" path="com.google.firebase.auth.api.Store" />
+    <exclude domain="file" path="PersistedInstallation" />
+
+    <!-- Caches never need restoring. -->
+    <exclude domain="external" path="." />
 </full-backup-content>

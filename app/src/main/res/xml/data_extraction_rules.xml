@@ -1,19 +1,40 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Backup and device-transfer rules (API 31+).
+
+   android:allowBackup is "false", so cloud-backup is already off. These rules are defence in
+   depth, and they also cover device-to-device transfer, which is governed separately from
+   allowBackup on API 31+.
+
+   This file previously contained only commented-out sample rules, so both cloud backup and
+   device transfer captured everything the app had written — at that time including the account
+   password and the unlock PIN, both in plaintext.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <!-- Room database: the entire financial history. -->
+        <exclude domain="database" path="." />
+
+        <!-- SharedPreferences: PIN hash + salt, session state, account email. -->
+        <exclude domain="sharedpref" path="." />
+
+        <!-- Firebase's own persisted auth/session and offline Firestore cache. -->
+        <exclude domain="file" path="firebase" />
+        <exclude domain="file" path="com.google.firebase.auth.api.Store" />
+        <exclude domain="file" path="PersistedInstallation" />
+
+        <exclude domain="external" path="." />
     </cloud-backup>
+
     <!--
-    <device-transfer>
-        <include .../>
-        <exclude .../>
-    </device-transfer>
+       Device transfer is a local, user-initiated migration to a new phone, so the financial
+       records may move. The credential material must not: the PIN hash and salt stay on the
+       device that minted them, and the new device prompts for Firebase sign-in and a fresh PIN.
     -->
+    <device-transfer>
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="firebase" />
+        <exclude domain="file" path="com.google.firebase.auth.api.Store" />
+        <exclude domain="file" path="PersistedInstallation" />
+    </device-transfer>
 </data-extraction-rules>
