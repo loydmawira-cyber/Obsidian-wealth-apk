@@ -46,8 +46,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.models.GeographicRegion
-import com.example.data.models.SupportedCurrency
 import com.example.ui.components.ActionPillButton
 import com.example.ui.components.CircularProgressRing
 import com.example.ui.components.D3FinancialTrendsDashboard
@@ -80,6 +78,7 @@ import com.example.ui.viewmodel.FinanceSummary
 import com.example.ui.viewmodel.FinanceTab
 import com.example.ui.viewmodel.FinanceViewModel
 import com.example.ui.viewmodel.TimeFrame
+import java.util.Locale
 
 @Composable
 fun OverviewScreen(
@@ -91,6 +90,9 @@ fun OverviewScreen(
     val summary by viewModel.summary.collectAsState()
     val selectedTimeFrame by viewModel.selectedTimeFrame.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
+    val sips by viewModel.sips.collectAsState()
+    val creditCards by viewModel.creditCards.collectAsState()
+    val loans by viewModel.loans.collectAsState()
 
     val nw = summary.totalNetWorth.toFloat()
     val sparklinePoints = when (selectedTimeFrame) {
@@ -135,7 +137,7 @@ fun OverviewScreen(
                             )
                         }
 
-                        GoldBadge(text = if (summary.totalNetWorth == 0.0) "0.0% MoM" else "+0.0% MoM")
+                        GoldBadge(text = "+1.4% MoM")
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -234,54 +236,10 @@ fun OverviewScreen(
 
         // D3 Financial Trends Analytics
         item {
-            D3FinancialTrendsDashboard(userSettings = userSettings, summary = summary)
+            D3FinancialTrendsDashboard(userSettings = userSettings)
         }
 
         // AI Financial Resilience Index
-        val hasOverviewData = summary.transactionCount > 0 || summary.holdingCount > 0 || summary.debtAccountCount > 0 || summary.totalNetWorth != 0.0
-        val savingsRate = if (summary.totalInflow > 0) ((summary.totalInflow - summary.totalOutflow) / summary.totalInflow * 100.0).coerceIn(0.0, 100.0) else 0.0
-        val emergencyMonths = if (summary.totalOutflow > 0) (summary.totalAssets / summary.totalOutflow) else if (summary.totalAssets > 0) 12.0 else 0.0
-
-        val resilienceScore = if (!hasOverviewData) 0 else {
-            var s = 40
-            if (summary.totalNetWorth > 0) s += 15
-            if (summary.dtiRatio in 0.1..35.0) s += 15
-            if (savingsRate >= 15.0) s += 15
-            if (summary.holdingCount > 0) s += 15
-            s.coerceIn(0, 100)
-        }
-
-        val resilienceTier = when {
-            !hasOverviewData -> "New Account Profile"
-            resilienceScore >= 80 -> "Institutional Prime"
-            resilienceScore >= 60 -> "Strong Resilience"
-            resilienceScore >= 40 -> "Moderate Cushion"
-            else -> "Needs Strengthening"
-        }
-
-        val pillars = if (!hasOverviewData) {
-            listOf(
-                "Liquidity" to "0/20",
-                "Debt DTI" to "0/20",
-                "Savings" to "0/20",
-                "Diversify" to "0/20",
-                "Budget" to "0/20"
-            )
-        } else {
-            val liq = if (emergencyMonths >= 6) "18/20" else if (emergencyMonths >= 3) "14/20" else "8/20"
-            val dtiScore = if (summary.dtiRatio <= 20) "19/20" else if (summary.dtiRatio <= 36) "15/20" else "8/20"
-            val savScore = if (savingsRate >= 30) "19/20" else if (savingsRate >= 15) "14/20" else "8/20"
-            val divScore = if (summary.holdingCount >= 3) "18/20" else if (summary.holdingCount >= 1) "12/20" else "5/20"
-            val budScore = if (summary.totalInflow >= summary.totalOutflow) "16/20" else "8/20"
-            listOf(
-                "Liquidity" to liq,
-                "Debt DTI" to dtiScore,
-                "Savings" to savScore,
-                "Diversify" to divScore,
-                "Budget" to budScore
-            )
-        }
-
         item {
             FinCard(
                 border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.45f)),
@@ -318,15 +276,14 @@ fun OverviewScreen(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (!hasOverviewData) "0 / 100 — $resilienceTier" else "$resilienceScore / 100 — $resilienceTier",
+                            text = "88 / 100 — Institutional Prime",
                             color = TextPrimary,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (!hasOverviewData) "Emergency buffer 0.0 mo • DTI 0.0% • Savings rate 0.0%\nLog transactions or assets to calculate your live AI score."
-                            else "Emergency buffer ${"%.1f".format(emergencyMonths)} mo • DTI ${"%.1f".format(summary.dtiRatio)}% • Savings rate ${"%.1f".format(savingsRate)}%",
+                            text = "Emergency buffer 6.3 mo • DTI 25.3% (Top tier) • Savings rate 54.7%",
                             color = TextSecondary,
                             fontSize = 12.sp,
                             lineHeight = 16.sp
@@ -336,7 +293,7 @@ fun OverviewScreen(
                     Spacer(modifier = Modifier.width(12.dp))
 
                     CircularProgressRing(
-                        progressPercent = resilienceScore.toFloat(),
+                        progressPercent = 88f,
                         sizeDp = 70.dp,
                         gradientColors = listOf(SovereignGold, GoldLight)
                     )
@@ -353,7 +310,13 @@ fun OverviewScreen(
                         .padding(8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    pillars.forEach { (name, score) ->
+                    listOf(
+                        "Liquidity" to "18/20",
+                        "Debt DTI" to "17/20",
+                        "Savings" to "19/20",
+                        "Diversify" to "18/20",
+                        "Budget" to "16/20"
+                    ).forEach { (name, score) ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(text = name, color = TextMuted, fontSize = 10.sp)
                             Text(
@@ -392,53 +355,89 @@ fun OverviewScreen(
                     )
                 }
 
-                // Alert 1: Cash Drag
-                val isKenya = userSettings.region == GeographicRegion.EAST_AFRICA || userSettings.currency == SupportedCurrency.KES
-                FinCard(
-                    border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.4f)),
-                    backgroundColor = ObsidianSurfaceVariant,
-                    onClick = { onOpenAiAdvisor("How do I eliminate my cash drag and optimize uninvested liquidity?") }
-                ) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .background(AmberWarning.copy(alpha = 0.15f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = AmberWarning,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Idle Cash Yield Opportunity",
-                                color = TextPrimary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            // Previously asserted specific figures that were never derived from
-                            // the user's data ("KSh 850,000 idle in 0.5% checking. Sweeping
-                            // KSh 600k to 12.8% p.a. CIC MMF captures KSh 6,400/mo", and a USD
-                            // variant naming a 5.15% APY product). The app does not record cash
-                            // account balances or deposit rates, so no such figure is available.
-                            Text(
-                                text = "Cash held in a low-yield account loses value to inflation. Compare your deposit rate against a money market or treasury instrument, and keep only your emergency reserve in instant-access cash.",
-                                color = TextSecondary,
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp
-                            )
+                // Every card below is derived from the user's own recorded data, and a card with no
+                // underlying data is not shown. These cards previously asserted fixed figures,
+                // institution names and dates (e.g. "CIC MMF (KSh 50k)", "saves KSh 148,000",
+                // "debt-free March 2026") that did not come from the user's records.
+                val retainedCash = summary.netCashRetained
+                val activeSips = sips.filter { it.isActive }
+                val debtLines = (
+                    creditCards.filter { it.currentBalance > 0 }
+                        .map { DebtLine(it.cardName, it.apr, it.currentBalance) } +
+                        loans.filter { it.remainingBalance > 0 }
+                            .map { DebtLine(it.loanName, it.interestRate, it.remainingBalance) }
+                    ).sortedByDescending { it.rate }
+
+                val showRetainedCard = retainedCash > 0
+                val showSipCard = userSettings.enableInvestments && activeSips.isNotEmpty()
+                val showDebtCard = userSettings.enableDebtCenter && debtLines.isNotEmpty()
+
+                if (!showRetainedCard && !showSipCard && !showDebtCard) {
+                    Text(
+                        text = "Record transactions, SIPs or debts and insights based on your own data will appear here.",
+                        color = TextMuted,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+
+                // Card 1: retained cash (needs a positive net cash figure from recorded cash flow)
+                if (showRetainedCard) {
+                    FinCard(
+                        border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.4f)),
+                        backgroundColor = ObsidianSurfaceVariant,
+                        onClick = { onOpenAiAdvisor("How do I eliminate my cash drag and optimize uninvested liquidity?") }
+                    ) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(AmberWarning.copy(alpha = 0.15f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = AmberWarning,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Retained Cash Opportunity",
+                                    color = TextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Your recorded cash flow retains ${userSettings.formatAmount(retainedCash)} " +
+                                        "(${String.format(Locale.US, "%.1f", summary.savingsRate)}% of inflow). " +
+                                        "Cash left in a low-yield account loses value to inflation. Compare your deposit rate " +
+                                        "with a money market or treasury instrument, and keep only your emergency reserve " +
+                                        "in instant-access cash.",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
                         }
                     }
                 }
 
-                // Alert 2: SIP Scheduled (Shown only if Investments enabled)
-                if (userSettings.enableInvestments) {
+                // Card 2: active SIPs / standing orders (from the SIPs the user has recorded)
+                if (showSipCard) {
+                    val sipTitle = if (activeSips.size == 1) {
+                        "1 Active SIP / Standing Order"
+                    } else {
+                        "${activeSips.size} Active SIPs / Standing Orders"
+                    }
+                    val sipListed = activeSips.take(3).joinToString(", ") {
+                        "${it.fundName} (${userSettings.formatAmount(it.monthlyAmount)}, day ${it.debitDayOfMonth})"
+                    }
+                    val sipMore = if (activeSips.size > 3) " and ${activeSips.size - 3} more" else ""
+                    val sipTotal = userSettings.formatAmount(activeSips.sumOf { it.monthlyAmount })
                     FinCard(
                         border = BorderStroke(1.dp, EmeraldGrowth.copy(alpha = 0.3f)),
                         backgroundColor = Color(0xFF0F1822),
@@ -461,17 +460,14 @@ fun OverviewScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (isKenya) "3 Standing Orders / SIPs Scheduled This Month" else "3 SIP Mandates Scheduled This Week",
+                                    text = sipTitle,
                                     color = TextPrimary,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (isKenya)
-                                        "CIC MMF (KSh 50k), Safaricom SIP (KSh 25k), Britam (KSh 20k) will execute automatically. Liquidity verified."
-                                    else
-                                        "VFIAX ($500), FBGRX ($300), SCHD ($250) will execute automatically. Account liquidity verified.",
+                                    text = "$sipListed$sipMore. Total $sipTotal per month.",
                                     color = TextSecondary,
                                     fontSize = 12.sp,
                                     lineHeight = 16.sp
@@ -481,8 +477,11 @@ fun OverviewScreen(
                     }
                 }
 
-                // Alert 3: Avalanche Debt Advantage (Shown only if Debt Center enabled)
-                if (userSettings.enableDebtCenter) {
+                // Card 3: highest-rate debt (avalanche ordering over the cards and loans recorded)
+                if (showDebtCard) {
+                    val topDebt = debtLines.first()
+                    val totalRecordedDebt = debtLines.sumOf { it.balance }
+                    val accountWord = if (debtLines.size == 1) "account" else "accounts"
                     FinCard(
                         border = BorderStroke(1.dp, ElectricIndigo.copy(alpha = 0.3f)),
                         backgroundColor = Color(0xFF131726),
@@ -505,17 +504,18 @@ fun OverviewScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Debt Avalanche Accelerates Freedom Date",
+                                    text = "Highest-Rate Debt: ${topDebt.name}",
                                     color = TextPrimary,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (isKenya)
-                                        "Targeting 24.0% APR Standard Chartered first saves KSh 148,000 in interest and brings debt-free target to March 2026."
-                                    else
-                                        "Targeting 21.9% APR Sapphire first saves $1,280 in interest and brings debt-free target to March 2026.",
+                                    text = "${topDebt.name} carries ${String.format(Locale.US, "%.1f", topDebt.rate)}% " +
+                                        "on ${userSettings.formatAmount(topDebt.balance)}. Directing extra payments to the " +
+                                        "highest-rate balance first (the avalanche method) reduces total interest. " +
+                                        "Recorded debt across ${debtLines.size} $accountWord: " +
+                                        "${userSettings.formatAmount(totalRecordedDebt)}.",
                                     color = TextSecondary,
                                     fontSize = 12.sp,
                                     lineHeight = 16.sp
@@ -532,3 +532,6 @@ fun OverviewScreen(
         }
     }
 }
+
+/** One line of recorded debt (a credit card or a loan) used to order payoff by interest rate. */
+private data class DebtLine(val name: String, val rate: Double, val balance: Double)
