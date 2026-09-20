@@ -83,50 +83,35 @@ fun GoalsAndReportsScreen(
 
     val totalGoalTarget = goals.sumOf { it.targetAmount }
     val totalGoalSaved = goals.sumOf { it.currentAmount }
-    val overallGoalProgress = if (totalGoalTarget > 0) (totalGoalSaved / totalGoalTarget) * 100.0 else 68.7
+    val overallGoalProgress = if (totalGoalTarget > 0) (totalGoalSaved / totalGoalTarget) * 100.0 else 0.0
     val contributeStep = if (isKenya) 25000.0 else 250.0
 
-    val sampleReportText = if (isKenya) """
+    // Audit statement built ONLY from recorded data.
+    //
+    // Both previous branches hardcoded figures and presented them as audited output: a fixed
+    // "MoM Growth +KSh 165,000 (+2.1%)", a fixed portfolio allocation (Equities 3,450,000 /
+    // IFB 2,600,000 / MMF 1,450,000 / Cash 800,000), a fixed "Blended Portfolio CAGR 15.4%"
+    // and "XIRR 16.8% CAGR", a split of revolving vs term debt invented as 15%/85% of the
+    // total, and an "OBSIDIAN AI RESILIENCE INDEX" of 91 or 88 out of 100. None of it derived
+    // from the user's records. A document labelled "audit statement" must not contain an
+    // invented number.
+    val hasData = summary.transactionCount > 0 || summary.holdingCount > 0 ||
+        summary.debtAccountCount > 0 || summary.goalCount > 0
+
+    val sampleReportText = if (!hasData) """
 ==================================================
-           OBSIDIAN WEALTH AUDIT STATEMENT        
-          Period: Current Month Financials (KES)
+           OBSIDIAN WEALTH AUDIT STATEMENT
 ==================================================
 
-1. NET WORTH SUMMARY
-   • Total Assets:              ${viewModel.formatAmount(summary.totalAssets)}
-   • Total Liabilities:         ${viewModel.formatAmount(summary.totalLiabilities)}
-   -------------------------------------------------
-   • NET WORTH:                 ${viewModel.formatAmount(summary.totalNetWorth)}
-   • MoM Growth:                +KSh 165,000 (+2.1%)
+No financial records in this vault.
 
-2. CASH FLOW STATEMENT
-   • Gross Inflow (Salary/Inv): ${viewModel.formatAmount(summary.totalInflow)}
-   • Gross Outflow (Exp/EMI):   ${viewModel.formatAmount(summary.totalOutflow)}
-   -------------------------------------------------
-   • Net Retained Surplus:      ${viewModel.formatAmount(summary.netCashRetained)}
-   • Savings Velocity:          ${"%.1f".format(summary.savingsRate)}%
-
-3. PORTFOLIO ALLOCATION
-   • Equities (SCOM/EQTY/EABL): ${sym} 3,450,000 (42%)
-   • Infrastructure Bonds (IFB):${sym} 2,600,000 (31%)
-   • Money Market Funds (MMF):  ${sym} 1,450,000 (17%)
-   • Liquid Cash & M-Pesa:      ${sym} 800,000   (10%)
-   • Blended Portfolio CAGR:    15.4% p.a.
-
-4. DEBT AUDIT & DTI
-   • Revolving Cards Balance:   ${viewModel.formatAmount(summary.totalDebt * 0.15)}
-   • Term Loans & Car EMI:      ${viewModel.formatAmount(summary.totalDebt * 0.85)}
-   • Debt Servicing / Mo:       ${viewModel.formatAmount(summary.monthlyDebtServicing)}/mo
-   • Blended DTI Ratio:         ${"%.1f".format(summary.dtiRatio)}% (Prime)
-
-5. OBSIDIAN AI RESILIENCE INDEX: 91/100 (Prime)
-   Generated on: System Date
+Add transactions, holdings, cards, loans or goals and regenerate this
+statement to produce an audit of your actual position.
 ==================================================
-""".trimIndent()
-    else """
+""".trimIndent() else """
 ==================================================
-           OBSIDIAN WEALTH AUDIT STATEMENT        
-          Period: Current Month Financials        
+           OBSIDIAN WEALTH AUDIT STATEMENT
+          Period: Current Month Financials
 ==================================================
 
 1. NET WORTH SUMMARY
@@ -134,28 +119,38 @@ fun GoalsAndReportsScreen(
    • Total Liabilities:         ${viewModel.formatAmount(summary.totalLiabilities)}
    -------------------------------------------------
    • NET WORTH:                 ${viewModel.formatAmount(summary.totalNetWorth)}
-   • MoM Change:                +$3,420.00 (+1.4%)
+   • MoM Change:                not available (no prior-period snapshot recorded)
 
 2. CASH FLOW STATEMENT
-   • Gross Inflow (Salary/Div): ${viewModel.formatAmount(summary.totalInflow)}
-   • Gross Outflow (Exp/EMI):   ${viewModel.formatAmount(summary.totalOutflow)}
+   • Gross Inflow:              ${viewModel.formatAmount(summary.totalInflow)}
+   • Gross Outflow:             ${viewModel.formatAmount(summary.totalOutflow)}
    -------------------------------------------------
    • Net Retained Surplus:      ${viewModel.formatAmount(summary.netCashRetained)}
-   • Savings Velocity:          ${"%.1f".format(summary.savingsRate)}%
+   • Savings Rate:              ${if (summary.totalInflow > 0) "%.1f%%".format(summary.savingsRate) else "not computable (no income recorded)"}
+   • Transactions Recorded:     ${summary.transactionCount}
 
-3. PORTFOLIO ALLOCATION
-   • Total Equities & S&P 500:  $138,240.00 (75%)
-   • Fixed Income (BND):        $23,960.00  (13%)
-   • Digital Gold / Crypto:     $22,120.45  (12%)
-   • Blended Portfolio XIRR:    16.8% CAGR
+3. PORTFOLIO
+   • Holdings Recorded:         ${summary.holdingCount}
+   • Market Value:              ${viewModel.formatAmount(summary.portfolioValue)}
+   • Cost Basis:                ${viewModel.formatAmount(summary.portfolioCost)}
+   • Unrealised Gain/Loss:      ${viewModel.formatAmount(summary.portfolioValue - summary.portfolioCost)}
+   • Return on Cost Basis:      ${if (summary.portfolioCost > 0) "%.1f%%".format(summary.portfolioReturnPercent) else "not computable (no cost basis)"}
+   • Note: simple return on cost, not XIRR/CAGR. A money-weighted return
+     requires the date and amount of every contribution, which is not recorded.
 
 4. DEBT AUDIT & DTI
-   • Revolving Cards Balance:   ${viewModel.formatAmount((summary.totalDebt - 38690.0).coerceAtLeast(0.0))}
-   • Term Amortization Loans:   $38,690.00
-   • Blended DTI Ratio:         ${"%.1f".format(summary.dtiRatio)}% (Prime)
+   • Debt Accounts Recorded:    ${summary.debtAccountCount}
+   • Total Outstanding:         ${viewModel.formatAmount(summary.totalDebt)}
+   • Debt Servicing / Mo:       ${viewModel.formatAmount(summary.monthlyDebtServicing)}
+   • DTI Ratio:                 ${if (summary.totalInflow > 0) "%.1f%%".format(summary.dtiRatio) else "not computable (no income recorded)"}
+   • Note: the revolving/term split is not itemised here because it is not
+     derivable from the recorded totals alone.
 
-5. OBSIDIAN AI RESILIENCE INDEX: 88/100 (Prime)
-   Generated on: System Date
+5. GOALS
+   • Goals Recorded:            ${summary.goalCount}
+   • Total Target:              ${viewModel.formatAmount(totalGoalTarget)}
+   • Total Saved:               ${viewModel.formatAmount(totalGoalSaved)}
+   • Overall Progress:          ${if (totalGoalTarget > 0) "%.1f%%".format(overallGoalProgress) else "not computable (no targets set)"}
 ==================================================
 """.trimIndent()
 

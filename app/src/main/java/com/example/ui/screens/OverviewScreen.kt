@@ -248,7 +248,7 @@ fun OverviewScreen(
                         ObsidianSurface
                     )
                 ),
-                onClick = { onOpenAiAdvisor("Give me a comprehensive audit of my 88/100 financial health index") }
+                onClick = { onOpenAiAdvisor("Give me a comprehensive audit of my financial position") }
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -377,17 +377,19 @@ fun OverviewScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (isKenya) "Cash Drag Yield Opportunity (+KSh 104k/yr)" else "Cash Drag Yield Opportunity (+$1,481/yr)",
+                                text = "Idle Cash Yield Opportunity",
                                 color = TextPrimary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(2.dp))
+                            // Previously asserted specific figures that were never derived from
+                            // the user's data ("KSh 850,000 idle in 0.5% checking. Sweeping
+                            // KSh 600k to 12.8% p.a. CIC MMF captures KSh 6,400/mo", and a USD
+                            // variant naming a 5.15% APY product). The app does not record cash
+                            // account balances or deposit rates, so no such figure is available.
                             Text(
-                                text = if (isKenya)
-                                    "KSh 850,000 idle in 0.5% checking. Sweeping KSh 600k to 12.8% p.a. CIC MMF captures KSh 6,400/mo passive spread."
-                                else
-                                    "$31,500 idle in 0.45% APY checking. Moving $20k to 5.15% APY Treasury/HYSA captures $123/mo passive spread.",
+                                text = "Cash held in a low-yield account loses value to inflation. Compare your deposit rate against a money market or treasury instrument, and keep only your emergency reserve in instant-access cash.",
                                 color = TextSecondary,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp

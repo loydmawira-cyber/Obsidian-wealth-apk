@@ -88,7 +88,8 @@ fun InvestmentsScreen(
 
     val totalPortfolioValue = if (holdings.isNotEmpty()) holdings.sumOf { it.totalValue } else summary.portfolioValue
     val totalUnrealizedGain = holdings.sumOf { it.unrealizedGain }
-    val totalGainPercent = if (holdings.sumOf { it.totalCost } > 0) (totalUnrealizedGain / holdings.sumOf { it.totalCost }) * 100.0 else 17.4
+    // Was `else 17.4` — an invented 17.4% gain shown whenever no cost basis existed.
+    val totalGainPercent = if (holdings.sumOf { it.totalCost } > 0) (totalUnrealizedGain / holdings.sumOf { it.totalCost }) * 100.0 else 0.0
 
     // Compute dynamic allocation across Equities, Mutual Funds, and Gold
     val equityHoldings = holdings.filter {
@@ -189,7 +190,14 @@ fun InvestmentsScreen(
                     }
 
                     GoldBadge(
-                        text = "+${"%.1f".format(summary.portfolioXirr)}% XIRR"
+                        text = if (summary.portfolioCost <= 0.0) {
+                            "No cost basis"
+                        } else {
+                            // Simple return on cost basis, not XIRR (contribution dates are not
+                            // recorded). Sign is derived, not assumed positive.
+                            val r = summary.portfolioReturnPercent
+                            "${if (r >= 0) "+" else ""}${"%.1f".format(r)}% return"
+                        }
                     )
                 }
 
