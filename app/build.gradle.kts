@@ -31,12 +31,6 @@ android {
       keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
-    }
   }
 
   buildTypes {
@@ -45,33 +39,23 @@ android {
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 
-      // A release build MUST fail when the upload keystore is absent.
-      //
-      // This previously fell back to signingConfigs["debugConfig"], which silently produced a
-      // "release" APK signed with the universally known Android debug key. It installs and looks
-      // legitimate, cannot be uploaded to Play, and can never be upgraded to a Play-signed
-      // build — a failure that is invisible until far too late. Failing loudly is the fix.
+      // Configure release signing only when the upload keystore is available. This keeps
+      // assembleDebug usable without production credentials while the signed release workflow
+      // still supplies KEYSTORE_PATH and the required passwords.
       val keystoreFile = file(System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks")
-      signingConfig = if (keystoreFile.exists()) {
-        signingConfigs.getByName("release")
-      } else {
+      if (keystoreFile.exists()) {
+        signingConfig = signingConfigs.getByName("release")
+      } else if (gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
         throw org.gradle.api.GradleException(
           """
           Release signing keystore not found: ${keystoreFile.absolutePath}
 
-          A release build will not be signed with the debug key. Provide the upload keystore:
-            KEYSTORE_PATH=/path/to/my-upload-key.jks
-            KEYSTORE_PASSWORD=...   (or STORE_PASSWORD)
-            KEY_ALIAS=upload
-            KEY_PASSWORD=...
-
-          To produce an installable unsigned-for-Play build for local testing, use
-          `./gradlew assembleDebug` instead.
+          Provide KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD for release builds.
+          For local testing without release credentials, use `./gradlew assembleDebug` instead.
           """.trimIndent()
         )
       }
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
