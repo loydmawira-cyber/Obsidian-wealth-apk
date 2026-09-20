@@ -1,107 +1,237 @@
 package com.example.ai
 
-import com.example.BuildConfig
+import com.google.firebase.Firebase
+import com.google.firebase.ai.GenerativeModel
+import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.GenerativeBackend
+import com.google.firebase.ai.type.content
+import com.google.firebase.ai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
-import org.json.JSONObject
-import java.util.concurrent.TimeUnit
+import java.util.Locale
 
+/**
+ * Advisor access to Gemini.
+ *
+ * Security: calls are routed through Firebase AI Logic, NOT the raw
+ * generativelanguage.googleapis.com endpoint. There is deliberately no API key in this class
+ * and no GEMINI_API_KEY read from BuildConfig — any key compiled into an APK is extractable and
+ * therefore public. Firebase AI Logic holds the credential server-side and is gated by App Check.
+ *
+ * Honesty contract: this object must NEVER state a financial figure that did not arrive in an
+ * [AdvisorSnapshot] built from the user's own records. When the model is unreachable, the
+ * fallback is a deterministic summary computed from that snapshot, clearly labelled as offline.
+ * It does not invent balances, rates, instruments, dates or scores.
+ */
 object GeminiClient {
-    private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
+    /**
+     * Valid Gemini Flash model id. The previous value ("gemini-3.5-flash") does not exist, so
+     * every live call 404'd and silently fell through to the fallback path.
+     */
+    private const val MODEL_NAME = "gemini-2.5-flash"
 
     private const val SYSTEM_INSTRUCTION = """
-You are "Obsidian AI", an elite autonomous wealth management and financial intelligence assistant embedded in the Obsidian Wealth personal finance app. Your mission is to provide rigorous, accurate, actionable, and empathetic financial tracking, portfolio analysis, debt optimization, and predictive insights.
+You are "Obsidian AI", a wealth management and financial intelligence assistant embedded in the Obsidian Wealth personal finance app.
 
 Core Guidelines:
-1. Precision First: State numbers with precision, compute real-time metrics (savings rate, DTI, XIRR, debt avalanche vs snowball payoff timelines).
-2. Tone: Ultra-professional, modern institutional fintech voice—concise, encouraging, data-driven, and devoid of fluff.
-3. Safety: Include a subtle standard disclosure when discussing investment adjustments ("Obsidian AI provides data analysis and quantitative modeling, not certified personal financial advice").
-4. Format: Deliver structured insights with Executive Summary, Key Breakdown, and Strategic Recommendations.
+1. Grounding: Use ONLY the figures supplied in the "User Financial Context" block. Never invent, estimate or illustrate a balance, holding, interest rate, institution name, product name or date that is not in that block. If the context marks a section as having no recorded data, say that the data is not recorded yet and explain what the user should add — do not supply an example figure in its place.
+2. Precision: Where the context provides numbers, compute honestly from them (savings rate, DTI, payoff ordering). Show your arithmetic inputs so the user can check them. If a metric cannot be computed from the supplied data, say which input is missing.
+3. Tone: Professional, concise, data-driven, free of fluff. Encouraging but never salesy.
+4. No product recommendations by name unless that instrument already appears in the user's context.
+5. Safety: Include this disclosure when discussing any adjustment: "Obsidian AI provides data analysis and quantitative modelling, not certified personal financial advice."
+6. Format: Executive Summary, Key Breakdown, Strategic Recommendations.
 """
 
-    suspend fun generateFinancialAdvice(prompt: String, contextData: String): String = withContext(Dispatchers.IO) {
-        val apiKey = try {
-            BuildConfig.GEMINI_API_KEY
-        } catch (e: Throwable) {
-            ""
-        }
+    private val model: GenerativeModel by lazy {
+        Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+            modelName = MODEL_NAME,
+            generationConfig = generationConfig {
+                temperature = 0.2f
+                topP = 0.95f
+            },
+            systemInstruction = content { text(SYSTEM_INSTRUCTION) }
+        )
+    }
 
-        if (apiKey.isNullOrBlank() || apiKey == "MY_GEMINI_API_KEY") {
-            return@withContext getOfflineSmartResponse(prompt, contextData)
-        }
-
+    /**
+     * Asks the advisor a question grounded in [snapshot].
+     *
+     * Returns live model text when available, otherwise a deterministic summary derived from
+     * [snapshot] and prefixed with an explicit offline notice. Never returns fabricated figures.
+     */
+    suspend fun generateFinancialAdvice(
+        prompt: String,
+        snapshot: AdvisorSnapshot
+    ): String = withContext(Dispatchers.IO) {
         try {
-            val requestJson = JSONObject().apply {
-                val contentsArray = JSONArray().apply {
-                    val userTurn = JSONObject().apply {
-                        put("role", "user")
-                        val partsArray = JSONArray().apply {
-                            val promptPart = JSONObject().apply {
-                                put("text", "User Financial Context:\n$contextData\n\nUser Question:\n$prompt")
-                            }
-                            put(promptPart)
-                        }
-                        put("parts", partsArray)
-                    }
-                    put(userTurn)
-                }
-                put("contents", contentsArray)
-
-                val systemInstructionObj = JSONObject().apply {
-                    val partsArray = JSONArray().apply {
-                        put(JSONObject().put("text", SYSTEM_INSTRUCTION))
-                    }
-                    put("parts", partsArray)
-                }
-                put("systemInstruction", systemInstructionObj)
-
-                val genConfig = JSONObject().apply {
-                    put("temperature", 0.2)
-                    put("topP", 0.95)
-                }
-                put("generationConfig", genConfig)
-            }
-
-            val requestBody = requestJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-            val request = Request.Builder()
-                .url("$BASE_URL?key=$apiKey")
-                .post(requestBody)
-                .build()
-
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: ""
-
-            if (!response.isSuccessful) {
-                return@withContext getOfflineSmartResponse(prompt, contextData)
-            }
-
-            val jsonResponse = JSONObject(responseBody)
-            val candidates = jsonResponse.optJSONArray("candidates")
-            val firstCandidate = candidates?.optJSONObject(0)
-            val content = firstCandidate?.optJSONObject("content")
-            val parts = content?.optJSONArray("parts")
-            val text = parts?.optJSONObject(0)?.optString("text")
-
-            if (!text.isNullOrBlank()) {
-                text
-            } else {
-                getOfflineSmartResponse(prompt, contextData)
-            }
+            val response = model.generateContent(
+                "User Financial Context:\n${snapshot.toContextBlock()}\n\nUser Question:\n$prompt"
+            )
+            val text = response.text
+            if (text.isNullOrBlank()) offlineSummary(prompt, snapshot, null) else text
         } catch (e: Exception) {
-            getOfflineSmartResponse(prompt, contextData)
+            offlineSummary(prompt, snapshot, e.message)
         }
     }
+
+    /**
+     * Deterministic, offline advisor output.
+     *
+     * Every figure here is read from [snapshot]; nothing is assumed. Replaces the previous
+     * hardcoded responses, which asserted specific balances, yields, APRs, named institutions and
+     * payoff dates that bore no relation to the user's data.
+     */
+    private fun offlineSummary(
+        prompt: String,
+        snapshot: AdvisorSnapshot,
+        failureReason: String?
+    ): String {
+        val header = buildString {
+            appendLine("> **Advisor offline.** The AI advisor could not be reached, so the summary")
+            appendLine("> below is computed directly from your recorded data — no projections or")
+            appendLine("> illustrative figures.")
+            if (!failureReason.isNullOrBlank()) {
+                appendLine("> _Reason: $failureReason_")
+            }
+        }
+
+        if (!snapshot.hasAnyData) {
+            return header + """
+
+### No financial data recorded yet
+There are no transactions, holdings, debts or goals in this vault, so no metrics can be computed.
+
+### To get a diagnostic
+1. Add your income and expenses under Cash Flow.
+2. Add holdings under Investments.
+3. Add cards and loans under the Debt Center.
+
+Once there is data, this summary reports your actual position.
+""".trimIndent()
+        }
+
+        val lower = prompt.lowercase(Locale.ROOT)
+        val body = when {
+            lower.contains("debt") || lower.contains("payoff") ||
+                lower.contains("avalanche") || lower.contains("snowball") -> debtSection(snapshot)
+
+            lower.contains("portfolio") || lower.contains("allocation") ||
+                lower.contains("sip") || lower.contains("stock") ||
+                lower.contains("invest") -> portfolioSection(snapshot)
+
+            lower.contains("cash") || lower.contains("yield") ||
+                lower.contains("saving") || lower.contains("uninvested") -> cashSection(snapshot)
+
+            else -> overviewSection(snapshot)
+        }
+
+        return header + "\n" + body + "\n\n*Obsidian AI provides data analysis and quantitative " +
+            "modelling, not certified personal financial advice.*"
+    }
+
+    private fun debtSection(s: AdvisorSnapshot): String {
+        if (s.debtAccountCount == 0 || s.totalDebt <= 0.0) {
+            return """
+### Debt position
+No cards or loans are recorded in this vault, so there is no payoff ordering to compute.
+""".trimIndent()
+        }
+        val dti = if (s.monthlyInflow > 0) {
+            "${fmtPct(s.dtiPercent)} of recorded monthly inflow"
+        } else {
+            "not computable — no income recorded"
+        }
+        return """
+### Debt position
+- **Total outstanding**: ${s.money(s.totalDebt)} across ${s.debtAccountCount} account(s)
+- **Recorded monthly servicing**: ${s.money(s.monthlyDebtServicing)}
+- **Debt-to-income**: $dti
+
+### Strategic recommendations
+1. Order repayments by interest rate, highest first (avalanche), using the rates on your own
+   recorded accounts — this minimises total interest paid.
+2. Keep contractual minimums on every other account to avoid penalties.
+3. As each balance clears, roll its payment into the next account rather than absorbing it into
+   spending.
+
+Exact interest saved and payoff dates require the per-account rate and minimum payment on each
+of your accounts; the Debt Center computes these once every account carries its rate.
+""".trimIndent()
+    }
+
+    private fun portfolioSection(s: AdvisorSnapshot): String {
+        if (s.holdingCount == 0 || s.portfolioValue <= 0.0) {
+            return """
+### Portfolio
+No holdings are recorded in this vault, so allocation and return cannot be computed.
+""".trimIndent()
+        }
+        val gain = s.portfolioValue - s.portfolioCost
+        val returnLine = if (s.portfolioCost > 0) {
+            "${s.money(gain)} (${fmtPct(gain / s.portfolioCost * 100.0)} on cost basis)"
+        } else {
+            "not computable — no cost basis recorded"
+        }
+        return """
+### Portfolio
+- **Current value**: ${s.money(s.portfolioValue)} across ${s.holdingCount} holding(s)
+- **Cost basis**: ${s.money(s.portfolioCost)}
+- **Unrealised gain/loss**: $returnLine
+
+### Strategic recommendations
+1. Review single-position concentration — any holding well above your intended weight raises
+   idiosyncratic risk.
+2. Keep scheduled contributions running rather than timing entries.
+3. Rebalance on a fixed calendar, not on market moves.
+
+Note: the figure above is simple return on cost basis, not a time-weighted or money-weighted
+return. A true XIRR needs the date and amount of every contribution.
+""".trimIndent()
+    }
+
+    private fun cashSection(s: AdvisorSnapshot): String {
+        val savings = if (s.monthlyInflow > 0) {
+            fmtPct(s.savingsRatePercent)
+        } else {
+            "not computable — no income recorded"
+        }
+        return """
+### Cash flow
+- **Recorded monthly inflow**: ${s.money(s.monthlyInflow)}
+- **Recorded monthly outflow**: ${s.money(s.monthlyOutflow)}
+- **Net retained**: ${s.money(s.monthlyInflow - s.monthlyOutflow)}
+- **Savings rate**: $savings
+
+### Strategic recommendations
+1. Size an emergency reserve against your recorded monthly outflow above, then keep it in an
+   instrument you can access without penalty.
+2. Automate the transfer of retained cash on payday so the decision is not repeated monthly.
+3. Review your largest recorded expense categories under Cash Flow for the highest-leverage cut.
+""".trimIndent()
+    }
+
+    private fun overviewSection(s: AdvisorSnapshot): String {
+        val savings = if (s.monthlyInflow > 0) fmtPct(s.savingsRatePercent) else "not computable"
+        val dti = if (s.monthlyInflow > 0) fmtPct(s.dtiPercent) else "not computable"
+        return """
+### Position summary
+- **Net worth**: ${s.money(s.netWorth)}
+- **Assets**: ${s.money(s.totalAssets)} | **Liabilities**: ${s.money(s.totalLiabilities)}
+- **Monthly inflow**: ${s.money(s.monthlyInflow)} | **Outflow**: ${s.money(s.monthlyOutflow)}
+- **Savings rate**: $savings | **Debt-to-income**: $dti
+- **Recorded**: ${s.transactionCount} transaction(s), ${s.holdingCount} holding(s),
+  ${s.debtAccountCount} debt account(s), ${s.goalCount} goal(s)
+
+### Strategic recommendations
+1. Keep every account recorded so these metrics stay accurate — gaps understate liabilities.
+2. Direct retained cash to the highest-rate debt before new investment while any high-rate
+   balance is outstanding.
+3. Attach a target date to each goal so required monthly contributions can be computed.
+""".trimIndent()
+    }
+
+    private fun fmtPct(v: Double): String = String.format(Locale.US, "%.1f%%", v)
 
     suspend fun parseNaturalLanguageTransaction(input: String): ParsedTransaction? = withContext(Dispatchers.IO) {
         // Quick regex and semantic fallback extractor for instant zero-latency or offline parsing
@@ -148,128 +278,83 @@ Core Guidelines:
             account = account
         )
     }
+}
 
-    private fun getOfflineSmartResponse(prompt: String, contextData: String): String {
-        val lower = prompt.lowercase()
-        val isKenya = contextData.contains("KES") || contextData.contains("Kenya") || contextData.contains("KSh")
+/**
+ * The user's actual financial position, assembled by FinanceViewModel from the repository.
+ *
+ * This is the ONLY channel through which figures reach the advisor. It replaces the previous
+ * free-text context string, which mixed real values with hardcoded literals (a fixed "XIRR: 16.8%"
+ * and a fixed "Health Score: 91/100") and was only ever inspected for the substring "KES".
+ */
+data class AdvisorSnapshot(
+    val currencySymbol: String,
+    val regionTitle: String,
+    val fiscalCalendar: String,
+    val riskProfile: String,
+    val netWorth: Double,
+    val totalAssets: Double,
+    val totalLiabilities: Double,
+    val monthlyInflow: Double,
+    val monthlyOutflow: Double,
+    val savingsRatePercent: Double,
+    val portfolioValue: Double,
+    val portfolioCost: Double,
+    val totalDebt: Double,
+    val monthlyDebtServicing: Double,
+    val dtiPercent: Double,
+    val transactionCount: Int,
+    val holdingCount: Int,
+    val debtAccountCount: Int,
+    val goalCount: Int
+) {
+    val hasAnyData: Boolean
+        get() = transactionCount > 0 || holdingCount > 0 || debtAccountCount > 0 || goalCount > 0
 
-        if (isKenya) {
-            return when {
-                lower.contains("cash drag") || lower.contains("yield") || lower.contains("uninvested") -> """
-### Executive Summary (East Africa & Kenya)
-You currently hold **KSh 850,000** in commercial checking accounts yielding nominal returns, resulting in an estimated **cash drag opportunity cost of ~KSh 104,000/year** compared to compounding Kenyan Money Market Funds (MMFs).
+    fun money(v: Double): String =
+        currencySymbol + String.format(Locale.US, "%,.2f", v)
 
-### Key Metrics Breakdown
-- **Unallocated Operational Cash**: KSh 850,000.00
-- **Current Checking Yield**: 0.5% p.a. (~KSh 4,250/yr)
-- **Target MMF Yield (CIC / Sanlam / Britam)**: 12.8% - 13.5% p.a. (~KSh 108,800/yr)
-- **Net Opportunity Spread**: **+KSh 104,550/year** (+KSh 8,710/mo in tax-advantaged compounding)
-
-### Strategic Recommendations
-1. **Sweep KSh 600,000** into your CIC Money Market Fund (earning ~12.8% annualized with daily compounding).
-2. Maintain KSh 250,000 in your NCBA/Stanbic operational checking to cushion against recurring EMI & standing orders.
-3. Automate monthly SIP allocations of KSh 25,000 into high-conviction dividend alpha (Safaricom PLC / Equity Group on the NSE).
-
-*Obsidian AI provides quantitative financial models, not certified financial advice.*
-""".trimIndent()
-
-                lower.contains("avalanche") || lower.contains("snowball") || lower.contains("debt") || lower.contains("payoff") -> """
-### Executive Summary (Debt Optimization)
-Applying the **Debt Avalanche Strategy** (prioritizing the Standard Chartered Infinite Card at 24.0% APR over the 14.5% Stanbic mortgage and 13.8% NCBA asset finance) saves **KSh 148,000 in total interest charges** and shortens revolving card payoff to under 4 months.
-
-### Payoff Model Comparison
-| Strategy | Total Interest | Card Freedom Date | Full Freedom Date |
-| :--- | :--- | :--- | :--- |
-| **Debt Avalanche** | **KSh 412,000** | **February 2026** | **May 2028** |
-| Debt Snowball | KSh 498,000 | April 2026 | September 2028 |
-| Minimum Payments Only | KSh 890,000 | January 2028 | October 2030 |
-
-### Strategic Next Steps
-1. Route all monthly discretionary surplus (KSh 45,000/mo) into the 24.0% Standard Chartered balance first.
-2. Maintain scheduled loan standing orders for Stanbic Home Loan (KSh 58,000) and NCBA Car Loan (KSh 46,000).
-3. Once credit card balances are cleared, redirect the servicing surplus into CBK Infrastructure Bonds (IFB).
-""".trimIndent()
-
-                lower.contains("portfolio") || lower.contains("allocation") || lower.contains("sip") || lower.contains("stocks") || lower.contains("investment") -> """
-### Executive Summary (Kenyan & Offshore Portfolio)
-Your investment portfolio stands at **KSh 9,074,750** with an aggregate **+17.4% XIRR**, demonstrating disciplined diversification across NSE blue chips, high-yielding CBK infrastructure bonds, and institutional MMFs.
-
-### Portfolio Asset Allocation
-- **NSE Blue Chip Equities**: 50.3% (SCOM, EQTY, EABL, KCB) — *High dividend alpha*
-- **Fixed Income (IFB Bond & CIC MMF)**: 38.3% — *17.9% tax-free coupon & daily liquidity*
-- **Alternative & Bullion (Physical Gold + BTC)**: 11.4% — *Currency hedge & inflation mitigation*
-
-### Quantitative Recommendations
-1. Maintain your 3 automated monthly standing orders (KSh 95,000/mo aggregate SIP).
-2. Safaricom and Equity Group generate an estimated ~KSh 185,000 in annualized tax-free dividend cash flows.
-3. Rebalance future surplus into primary CBK Infrastructure Bond (IFB) issuances to lock in peak multi-year yields.
-""".trimIndent()
-
-                else -> """
-### Executive Summary (Kenya Wealth Diagnostic)
-Your overall Financial Health Index is **91/100 (Prime Institutional Tier)**. With a **54.9% savings rate** and a manageable **18.9% Debt-to-Income (DTI)** ratio, your balance sheet is resilient and positioned for rapid wealth accumulation.
-
-### Key Financial Indicators
-- **Monthly Net Inflow**: KSh 570,000.00
-- **Monthly Outflow**: KSh 256,900.00
-- **Net Retained Capital**: KSh 313,100.00/month
-- **Liquid MMF Runway**: 8.4 Months (High Safety Margin)
-
-### Recommended Action Plan
-1. **Automate Wealth Mandates**: Keep the monthly standing orders to CIC MMF (KSh 50,000) and NSE accumulation (KSh 25,000) active.
-2. **Accelerate Land Milestone**: Your Nanyuki commercial plot goal is 62% funded; increasing monthly allocation by KSh 15,000 achieves title deed closing 4 months earlier.
-3. **Card Settlement**: Pay down the KSh 85,000 revolving card balance in the next billing cycle to optimize credit scoring.
-
-*Obsidian AI provides quantitative wealth insights, not licensed financial advice.*
-""".trimIndent()
-            }
+    /**
+     * Renders the snapshot for the model, marking empty sections explicitly so the model is told
+     * that data is absent rather than being left to fill the gap itself.
+     */
+    fun toContextBlock(): String = buildString {
+        appendLine("Geographical Region: $regionTitle")
+        appendLine("Base Currency Symbol: $currencySymbol")
+        appendLine("Fiscal Calendar: $fiscalCalendar")
+        appendLine("Advisory Risk Profile: $riskProfile")
+        appendLine()
+        if (!hasAnyData) {
+            appendLine("RECORDED DATA: none. This vault is empty — no transactions, holdings,")
+            appendLine("debts or goals. Do not state or estimate any figure for this user.")
+            return@buildString
         }
-
-        return when {
-            lower.contains("cash drag") || lower.contains("yield") || lower.contains("uninvested") -> """
-### Executive Summary
-You currently maintain standard checking/low-yield accounts resulting in an estimated annual **cash drag loss** compared to high-yield treasury reserves.
-
-### Strategic Recommendations
-1. Sweep excess operational liquidity into high-yield reserves or money market funds.
-2. Maintain 3 months of recurring obligations in operational checking.
-3. Automate recurring dollar-cost averaging into your index SIP mandates.
-
-*Obsidian AI provides quantitative financial analysis, not certified individual investment advice.*
-""".trimIndent()
-
-            lower.contains("avalanche") || lower.contains("snowball") || lower.contains("debt") || lower.contains("payoff") -> """
-### Executive Summary
-Applying the **Debt Avalanche Method** (targeting highest interest rate credit instruments first) saves significant interest charges and achieves debt freedom faster.
-
-### Strategic Next Steps
-1. Route excess monthly surplus exclusively to your highest APR card first.
-2. Pay minimum contractual installments on lower APR obligations.
-3. Upon clearance, rollover full servicing capacity to term amortizations.
-""".trimIndent()
-
-            lower.contains("portfolio") || lower.contains("allocation") || lower.contains("sip") || lower.contains("stocks") -> """
-### Executive Summary
-Your aggregate portfolio exhibits a robust return profile with healthy equity and fixed-income balance.
-
-### Optimization Steps
-1. Continue scheduled monthly SIPs without timing short-term market dips.
-2. Monitor single-asset concentration to prevent portfolio drift.
-3. Review periodic rebalancing into defensive yield tranches.
-""".trimIndent()
-
-            else -> """
-### Executive Summary
-Your financial health index is in the Prime tier. Your monthly savings velocity and disciplined debt-to-income ratio place you in the top wealth-building cohort.
-
-### Recommended Action Plan
-1. **Automate SIP Debits**: Keep your recurring mutual fund/equity mandates active.
-2. **Accelerate Debt Paydown**: Clear revolving balances to maintain prime credit utilization.
-3. **Milestone Tracking**: Maintain goal velocity across your key financial horizons.
-
-*Obsidian AI provides quantitative modeling, not certified personal financial advice.*
-""".trimIndent()
+        appendLine("Record counts: $transactionCount transactions, $holdingCount holdings, " +
+            "$debtAccountCount debt accounts, $goalCount goals.")
+        appendLine("Net Worth: ${money(netWorth)}")
+        appendLine("Assets: ${money(totalAssets)} | Liabilities: ${money(totalLiabilities)}")
+        if (transactionCount > 0) {
+            appendLine("Monthly Inflow: ${money(monthlyInflow)} | Outflow: ${money(monthlyOutflow)}")
+            appendLine("Savings Rate: ${String.format(Locale.US, "%.1f", savingsRatePercent)}%")
+        } else {
+            appendLine("Cash flow: no transactions recorded — inflow, outflow and savings rate " +
+                "are unavailable.")
         }
+        if (holdingCount > 0) {
+            appendLine("Portfolio Value: ${money(portfolioValue)} | Cost Basis: ${money(portfolioCost)}")
+            appendLine("NOTE: no time-weighted return (XIRR) is available — contribution dates " +
+                "are not recorded. Do not state an XIRR figure.")
+        } else {
+            appendLine("Portfolio: no holdings recorded.")
+        }
+        if (debtAccountCount > 0) {
+            appendLine("Total Debt: ${money(totalDebt)} | Monthly Servicing: ${money(monthlyDebtServicing)}")
+            appendLine("Debt-to-Income: ${String.format(Locale.US, "%.1f", dtiPercent)}%")
+        } else {
+            appendLine("Debt: no cards or loans recorded.")
+        }
+        appendLine()
+        appendLine("Report all amounts in $currencySymbol. State only the figures above.")
     }
 }
 
