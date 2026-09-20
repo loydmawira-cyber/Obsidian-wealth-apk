@@ -6,6 +6,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.ai.AdvisorSnapshot
 import com.example.ai.GeminiClient
 import com.example.data.billing.BillingManager
 import com.example.data.database.AppDatabase
@@ -53,6 +54,18 @@ data class ChatMessage(
     val isThinking: Boolean = false
 )
 
+/**
+ * Derived view of the user's position.
+ *
+ * Every default is zero on purpose. These fields previously defaulted to a demo dataset
+ * (net worth 11,877,250 / inflow 570,000 / savings rate 54.9% / "XIRR" 17.4 / health score 91),
+ * and the summary builder substituted those same literals whenever a real total came out at 0.0.
+ * The effect was that an empty or partly-filled vault displayed fabricated figures as if they
+ * were the user's own. An empty vault must read as empty.
+ *
+ * `portfolioReturnPercent` is simple return on cost basis — NOT XIRR. A money-weighted return
+ * needs the date and amount of every contribution, which the schema does not record.
+ */
 data class FinanceSummary(
     val totalNetWorth: Double = 0.0,
     val totalAssets: Double = 0.0,
@@ -62,40 +75,23 @@ data class FinanceSummary(
     val netCashRetained: Double = 0.0,
     val savingsRate: Double = 0.0,
     val portfolioValue: Double = 0.0,
+    val portfolioCost: Double = 0.0,
     val portfolioDayGain: Double = 0.0,
     val portfolioDayGainPercent: Double = 0.0,
-    val portfolioXirr: Double = 0.0,
+    val portfolioReturnPercent: Double = 0.0,
     val totalDebt: Double = 0.0,
     val monthlyDebtServicing: Double = 0.0,
     val dtiRatio: Double = 0.0,
-    val healthScore: Int = 0
+    val transactionCount: Int = 0,
+    val holdingCount: Int = 0,
+    val debtAccountCount: Int = 0,
+    val goalCount: Int = 0
 )
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val billingManager = BillingManager(application)
-    private val firebaseAuth: FirebaseAuth? by lazy {
-        try {
-            if (com.google.firebase.FirebaseApp.getApps(application).isEmpty()) {
-                com.google.firebase.FirebaseApp.initializeApp(application)
-            }
-            FirebaseAuth.getInstance()
-        } catch (e: Exception) {
-            android.util.Log.e("FinanceViewModel", "FirebaseAuth init error", e)
-            null
-        }
-    }
-
-    private val firestore: FirebaseFirestore? by lazy {
-        try {
-            if (com.google.firebase.FirebaseApp.getApps(application).isEmpty()) {
-                com.google.firebase.FirebaseApp.initializeApp(application)
-            }
-            FirebaseFirestore.getInstance()
-        } catch (e: Exception) {
-            android.util.Log.e("FinanceViewModel", "FirebaseFirestore init error", e)
-            null
-        }
-    }
+    private val firebaseAuth = FirebaseAuth.getInstance()
+    private val firestore = FirebaseFirestore.getInstance()
 
     val isPremium: StateFlow<Boolean> = billingManager.isPremium
     val billingMessage: StateFlow<String?> = billingManager.message
@@ -121,6 +117,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _cloudSyncResult = MutableStateFlow<CloudSyncResult?>(null)
     val cloudSyncResult: StateFlow<CloudSyncResult?> = _cloudSyncResult
 
+    // Read-only. The vault id IS the Firebase Auth uid — it is never user-settable, because a
+    // settable vault id let any signed-in user point the restore path at another user's vault.
     private val _cloudVaultId = MutableStateFlow("")
     val cloudVaultId: StateFlow<String> = _cloudVaultId
 
@@ -128,10 +126,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val lastCloudSyncTime: StateFlow<Long> = _lastCloudSyncTime
 
     // AUTH & QUICK 4-PIN LOCK STATES
-    private val _isLoggedIn = MutableStateFlow(firebaseAuth?.currentUser != null)
+    private val _isLoggedIn = MutableStateFlow(firebaseAuth.currentUser != null)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn
 
-    private val _userEmail: MutableStateFlow<String> = MutableStateFlow(firebaseAuth?.currentUser?.email.orEmpty())
+    private val _userEmail: MutableStateFlow<String> = MutableStateFlow(firebaseAuth.currentUser?.email.orEmpty())
     private val _authError = MutableStateFlow<String?>(null)
     val authError: StateFlow<String?> = _authError
     val userEmail: StateFlow<String> = _userEmail
@@ -151,11 +149,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         preferencesManager = PreferencesManager(application)
         userSettings = preferencesManager.settings
         firestoreSyncManager = FirestoreSyncManager(application)
-        _cloudVaultId.value = preferencesManager.getCloudVaultId()
+        // Vault id is derived from the authenticated uid by the auth listener below, never from
+        // a locally generated/persisted value.
+        _cloudVaultId.value = firebaseAuth.currentUser?.uid.orEmpty()
         _lastCloudSyncTime.value = preferencesManager.getLastCloudSyncTime()
 
-        // Firebase Auth is the source of truth for login state when available.
-        firebaseAuth?.addAuthStateListener { auth ->
+        // Firebase Auth is the source of truth for login state.
+        firebaseAuth.addAuthStateListener { auth ->
             val currentUser = auth.currentUser
             _isLoggedIn.value = currentUser != null
             _userEmail.value = currentUser?.email.orEmpty()
@@ -163,31 +163,30 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val lastUid = preferencesManager.getLastSignedInUid()
                 val isAccountSwitch = lastUid.isNotBlank() && lastUid != currentUser.uid
 
-                preferencesManager.setCloudVaultId(currentUser.uid)
                 _cloudVaultId.value = currentUser.uid
                 preferencesManager.setLastSignedInUid(currentUser.uid)
 
                 viewModelScope.launch {
-                    val isDemoAccount = currentUser.email.equals(DEMO_SEED_EMAIL, ignoreCase = true)
-                    if (isDemoAccount) {
-                        // Demo account always receives auto-seeded showcase data
-                        if (!preferencesManager.hasAutoSeededDemoData() || isAccountSwitch) {
-                            preferencesManager.setAutoSeededDemoData(true)
-                            AppDatabase.reseedDatabase(database.financeDao())
-                            preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
-                        }
-                    } else {
-                        // Regular users MUST NEVER inherit demo data or leftover data from another session.
-                        // Wipe local Room database tables clean.
+                    if (isAccountSwitch) {
+                        // A different account was last active on this device.
+                        // Its local data must not leak into this account's session.
                         database.financeDao().clearAllTransactions()
                         database.financeDao().clearAllHoldings()
                         database.financeDao().clearAllSips()
                         database.financeDao().clearAllCreditCards()
                         database.financeDao().clearAllLoans()
                         database.financeDao().clearAllGoals()
+                    }
 
-                        // Restore this user's personal vault from Firestore if available
-                        restoreVaultFromCloud()
+                    // Auto-seed demo data for the single designated demo/review account.
+                    // Runs on first-ever login on this device, or again after switching
+                    // back into this account from a different one (local was just wiped).
+                    if (currentUser.email.equals(DEMO_SEED_EMAIL, ignoreCase = true) &&
+                        (!preferencesManager.hasAutoSeededDemoData() || isAccountSwitch)
+                    ) {
+                        preferencesManager.setAutoSeededDemoData(true)
+                        AppDatabase.reseedDatabase(database.financeDao())
+                        preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
                     }
                 }
             }
@@ -204,36 +203,17 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun loginWithEmail(email: String, pass: String, onResult: (Boolean) -> Unit = {}) {
         _authError.value = null
-        val auth = firebaseAuth
-        if (auth == null) {
-            _authError.value = "Firebase Authentication is unavailable."
-            onResult(false)
-            return
-        }
-        val targetEmail = email.trim()
-        auth.signInWithEmailAndPassword(targetEmail, pass)
+        firebaseAuth.signInWithEmailAndPassword(email.trim(), pass)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
-                    val uid = auth.currentUser?.uid
+                    val uid = firebaseAuth.currentUser?.uid
                     if (uid != null) {
-                        preferencesManager.setCloudVaultId(uid)
                         _cloudVaultId.value = uid
                         _isLoggedIn.value = true
-                        _userEmail.value = targetEmail
+                        _userEmail.value = email.trim()
                         viewModelScope.launch {
-                            firestore?.collection("users")?.document(uid)?.set(mapOf("email" to targetEmail, "uid" to uid), com.google.firebase.firestore.SetOptions.merge())
-                            if (targetEmail.equals(DEMO_SEED_EMAIL, ignoreCase = true)) {
-                                AppDatabase.reseedDatabase(database.financeDao())
-                                preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
-                            } else {
-                                database.financeDao().clearAllTransactions()
-                                database.financeDao().clearAllHoldings()
-                                database.financeDao().clearAllSips()
-                                database.financeDao().clearAllCreditCards()
-                                database.financeDao().clearAllLoans()
-                                database.financeDao().clearAllGoals()
-                                restoreVaultFromCloud()
-                            }
+                            firestore.collection("users").document(uid).set(mapOf("email" to email.trim(), "uid" to uid), com.google.firebase.firestore.SetOptions.merge())
+                            restoreVaultFromCloud()
                         }
                     }
                     onResult(true)
@@ -246,39 +226,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun registerUser(email: String, pass: String, onResult: (Boolean) -> Unit = {}) {
         _authError.value = null
-        val auth = firebaseAuth
-        if (auth == null) {
-            _authError.value = "Firebase Authentication is unavailable."
-            onResult(false)
-            return
-        }
-        val targetEmail = email.trim()
-        auth.createUserWithEmailAndPassword(targetEmail, pass)
+        firebaseAuth.createUserWithEmailAndPassword(email.trim(), pass)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
-                    val user = auth.currentUser
+                    val user = firebaseAuth.currentUser
                     if (user != null) {
-                        preferencesManager.setCloudVaultId(user.uid)
                         _cloudVaultId.value = user.uid
                         _isLoggedIn.value = true
-                        _userEmail.value = targetEmail
+                        _userEmail.value = email.trim()
                         viewModelScope.launch {
-                            if (targetEmail.equals(DEMO_SEED_EMAIL, ignoreCase = true)) {
-                                AppDatabase.reseedDatabase(database.financeDao())
-                                preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
-                            } else {
-                                // New user registration starts completely blank ($0 / KSh 0)
-                                database.financeDao().clearAllTransactions()
-                                database.financeDao().clearAllHoldings()
-                                database.financeDao().clearAllSips()
-                                database.financeDao().clearAllCreditCards()
-                                database.financeDao().clearAllLoans()
-                                database.financeDao().clearAllGoals()
-                            }
-                            firestore?.collection("users")?.document(user.uid)?.set(
-                                mapOf("email" to targetEmail, "uid" to user.uid, "createdAt" to System.currentTimeMillis()),
-                                com.google.firebase.firestore.SetOptions.merge()
-                            )
+                            firestore.collection("users").document(user.uid).set(mapOf("email" to email.trim(), "uid" to user.uid, "createdAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
                             syncVaultToCloud()
                         }
                     }
@@ -292,13 +249,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun resetPassword(email: String, newPass: String, onResult: (Boolean) -> Unit = {}) {
         _authError.value = null
-        val auth = firebaseAuth
-        if (auth == null) {
-            _authError.value = "Firebase Authentication is unavailable."
-            onResult(false)
-            return
-        }
-        auth.sendPasswordResetEmail(email.trim()).addOnCompleteListener { task ->
+        firebaseAuth.sendPasswordResetEmail(email.trim()).addOnCompleteListener { task ->
             if (!task.isSuccessful) _authError.value = task.exception?.localizedMessage ?: "Password reset failed."
             onResult(task.isSuccessful)
         }
@@ -332,19 +283,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun logout() {
-        firebaseAuth?.signOut()
+        firebaseAuth.signOut()
         preferencesManager.setLoggedIn(false)
         _isLoggedIn.value = false
         _isPinLocked.value = false
-        _userEmail.value = ""
-        viewModelScope.launch {
-            database.financeDao().clearAllTransactions()
-            database.financeDao().clearAllHoldings()
-            database.financeDao().clearAllSips()
-            database.financeDao().clearAllCreditCards()
-            database.financeDao().clearAllLoans()
-            database.financeDao().clearAllGoals()
-        }
     }
 
     fun openPinLock() {
@@ -368,16 +310,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         return firestoreSyncManager.checkStatus()
     }
 
-    fun setCloudVaultId(id: String) {
-        preferencesManager.setCloudVaultId(id)
-        _cloudVaultId.value = id
-    }
-
     fun syncVaultToCloud(onComplete: (CloudSyncResult) -> Unit = {}) {
         viewModelScope.launch {
             _isSyncingCloud.value = true
             val res = firestoreSyncManager.syncLocalVaultToCloud(
-                vaultId = _cloudVaultId.value,
                 dao = database.financeDao(),
                 settings = userSettings.value
             )
@@ -396,7 +332,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _isSyncingCloud.value = true
             val res = firestoreSyncManager.restoreCloudVaultToLocal(
-                vaultId = _cloudVaultId.value,
                 dao = database.financeDao(),
                 preferencesManager = preferencesManager
             )
@@ -536,19 +471,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
-    // Summary calculation based strictly on actual database records
+    // Summary calculation
     val summary: StateFlow<FinanceSummary> = combine(
         transactions, holdings, creditCards, loans, goals
     ) { txList, hList, cList, lList, gList ->
+        // No demo-value substitution. A zero total means the user has recorded nothing, and that
+        // is what the UI and the advisor must both be told.
         val inflow = txList.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
         val outflow = txList.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
         val netCash = inflow - outflow
-        val savingsRate = if (inflow > 0) ((netCash / inflow) * 100.0).coerceIn(0.0, 100.0) else 0.0
+        val savingsRate = if (inflow > 0) (netCash / inflow) * 100.0 else 0.0
 
         val portVal = hList.sumOf { it.totalValue }
         val portCost = hList.sumOf { it.totalCost }
         val dayGain = hList.sumOf { it.totalValue * (it.dailyChangePercent / 100.0) }
         val dayGainPct = if (portVal > 0) (dayGain / portVal) * 100.0 else 0.0
+        // Simple return on cost basis. Not XIRR — contribution dates are not recorded.
+        val portReturnPct = if (portCost > 0) ((portVal - portCost) / portCost) * 100.0 else 0.0
 
         val cardDebt = cList.sumOf { it.currentBalance }
         val loanDebt = lList.sumOf { it.remainingBalance }
@@ -557,12 +496,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val dti = if (inflow > 0) (monthlyDebt / inflow) * 100.0 else 0.0
 
         val goalsSum = gList.sumOf { it.currentAmount }
-        val liquidCash = 0.0
+        // Liquid cash was previously a hardcoded 850,000. Until a cash-account entity exists,
+        // net cash retained from recorded transactions is the only defensible figure.
+        val liquidCash = if (netCash > 0) netCash else 0.0
         val totalAssetsVal = portVal + goalsSum + liquidCash
         val totalLiabilitiesVal = totalDebtVal
         val netWorthVal = totalAssetsVal - totalLiabilitiesVal
-
-        val hasAnyData = txList.isNotEmpty() || hList.isNotEmpty() || cList.isNotEmpty() || lList.isNotEmpty() || gList.isNotEmpty()
 
         FinanceSummary(
             totalNetWorth = netWorthVal,
@@ -573,13 +512,17 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             netCashRetained = netCash,
             savingsRate = savingsRate,
             portfolioValue = portVal,
+            portfolioCost = portCost,
             portfolioDayGain = dayGain,
             portfolioDayGainPercent = dayGainPct,
-            portfolioXirr = if (portVal > 0) 17.4 else 0.0,
+            portfolioReturnPercent = portReturnPct,
             totalDebt = totalDebtVal,
             monthlyDebtServicing = monthlyDebt,
             dtiRatio = dti,
-            healthScore = if (hasAnyData) 91 else 0
+            transactionCount = txList.size,
+            holdingCount = hList.size,
+            debtAccountCount = cList.size + lList.size,
+            goalCount = gList.size
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FinanceSummary())
 
@@ -604,24 +547,34 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _isAiThinking.value = true
 
         viewModelScope.launch {
-            val curr = userSettings.value.currency.symbol
-            val reg = userSettings.value.region.title
-            val contextData = """
-Geographical Region: $reg
-Base Currency: ${userSettings.value.currency.displayName} (Symbol: $curr)
-Fiscal Calendar: ${userSettings.value.fiscalCalendar.title}
-Advisory Risk Profile: ${userSettings.value.aiRiskProfile.title}
-Net Worth: $curr${"%.2f".format(summary.value.totalNetWorth)}
-Assets: $curr${"%.2f".format(summary.value.totalAssets)} | Liabilities: $curr${"%.2f".format(summary.value.totalLiabilities)}
-Monthly Inflow: $curr${"%.2f".format(summary.value.totalInflow)} | Outflow: $curr${"%.2f".format(summary.value.totalOutflow)}
-Savings Velocity: ${"%.1f".format(summary.value.savingsRate)}%
-Investments: $curr${"%.2f".format(summary.value.portfolioValue)} (XIRR: 16.8%)
-Total Debt: $curr${"%.2f".format(summary.value.totalDebt)} (DTI: ${"%.1f".format(summary.value.dtiRatio)}%)
-Health Score: ${summary.value.healthScore}/100
-Note: Provide financial calculations and strategic recommendations in $curr and respect the regional economic environment.
-""".trimIndent()
+            // The advisor receives a structured snapshot of real recorded values only.
+            // The previous free-text context embedded a fixed "XIRR: 16.8%" and a fixed
+            // "Health Score: 91/100" — neither was derived from the user's data.
+            val s = summary.value
+            val settings = userSettings.value
+            val snapshot = AdvisorSnapshot(
+                currencySymbol = settings.currency.symbol,
+                regionTitle = settings.region.title,
+                fiscalCalendar = settings.fiscalCalendar.title,
+                riskProfile = settings.aiRiskProfile.title,
+                netWorth = s.totalNetWorth,
+                totalAssets = s.totalAssets,
+                totalLiabilities = s.totalLiabilities,
+                monthlyInflow = s.totalInflow,
+                monthlyOutflow = s.totalOutflow,
+                savingsRatePercent = s.savingsRate,
+                portfolioValue = s.portfolioValue,
+                portfolioCost = s.portfolioCost,
+                totalDebt = s.totalDebt,
+                monthlyDebtServicing = s.monthlyDebtServicing,
+                dtiPercent = s.dtiRatio,
+                transactionCount = s.transactionCount,
+                holdingCount = s.holdingCount,
+                debtAccountCount = s.debtAccountCount,
+                goalCount = s.goalCount
+            )
 
-            val aiResponseText = GeminiClient.generateFinancialAdvice(question, contextData)
+            val aiResponseText = GeminiClient.generateFinancialAdvice(question, snapshot)
             _isAiThinking.value = false
             _chatMessages.value = _chatMessages.value + ChatMessage(sender = "AI", text = aiResponseText)
         }
