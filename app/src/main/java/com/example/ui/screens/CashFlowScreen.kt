@@ -153,25 +153,8 @@ fun CashFlowScreen(
                 )
             }
             .sortedByDescending { it.value }
-    } else if (isKenya) {
-        listOf(
-            DonutSlice("Housing & Rent", 85000.0, ElectricIndigo),
-            DonutSlice("Investment & SIP", 95000.0, Color(0xFF34D399)),
-            DonutSlice("Food & Dining", 28500.0, EmeraldGrowth),
-            DonutSlice("Transport & Fuel", 24000.0, CyanAccent),
-            DonutSlice("Utilities & Power", 12500.0, Color(0xFFEC4899)),
-            DonutSlice("Shopping", 11900.0, Color(0xFFF59E0B))
-        )
     } else {
-        listOf(
-            DonutSlice("Housing", 1450.0, ElectricIndigo),
-            DonutSlice("Food & Dining", 480.80, EmeraldGrowth),
-            DonutSlice("Auto & Transport", 480.0, CyanAccent),
-            DonutSlice("Shopping", 320.0, Color(0xFFF59E0B)),
-            DonutSlice("SIP & Wealth", 500.0, Color(0xFF34D399)),
-            DonutSlice("Utilities & Subs", 330.50, Color(0xFFEC4899)),
-            DonutSlice("Wellness", 259.20, Color(0xFFA855F7))
-        )
+        emptyList()
     }
 
     val budgetCap = if (isKenya) 350000.0 else 5000.0
@@ -359,44 +342,59 @@ fun CashFlowScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    DonutChart(
-                        slices = donutSlices,
-                        sizeDp = 120.dp,
-                        centerTitle = "Total Spent",
-                        centerSubtitle = viewModel.formatCompact(summary.totalOutflow)
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                if (donutSlices.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        donutSlices.take(4).forEach { slice ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .background(slice.color, CircleShape)
+                        Text(
+                            text = "No outflow transactions recorded yet.",
+                            color = TextMuted,
+                            fontSize = 12.sp
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        DonutChart(
+                            slices = donutSlices,
+                            sizeDp = 120.dp,
+                            centerTitle = "Total Spent",
+                            centerSubtitle = viewModel.formatCompact(summary.totalOutflow)
+                        )
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            donutSlices.take(4).forEach { slice ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(slice.color, CircleShape)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(slice.label, color = TextPrimary, fontSize = 12.sp)
+                                    }
+                                    Text(
+                                        viewModel.formatCompact(slice.value),
+                                        color = TextSecondary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(slice.label, color = TextPrimary, fontSize = 12.sp)
                                 }
-                                Text(
-                                    viewModel.formatCompact(slice.value),
-                                    color = TextSecondary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
                             }
                         }
                     }

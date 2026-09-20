@@ -88,9 +88,9 @@ fun DebtCenterScreen(
 
     val totalCardBalance = creditCards.sumOf { it.currentBalance }
     val totalLoanBalance = loans.sumOf { it.remainingBalance }
-    val aggregateDebt = (totalCardBalance + totalLoanBalance).takeIf { it > 0 } ?: summary.totalDebt
+    val aggregateDebt = totalCardBalance + totalLoanBalance
     val totalLimit = creditCards.sumOf { it.creditLimit }
-    val overallUtilization = if (totalLimit > 0) (totalCardBalance / totalLimit) * 100.0 else 11.8
+    val overallUtilization = if (totalLimit > 0) (totalCardBalance / totalLimit) * 100.0 else 0.0
 
     LazyColumn(
         modifier = modifier
@@ -149,7 +149,13 @@ fun DebtCenterScreen(
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Freedom Projection", color = TextMuted, fontSize = 11.sp)
-                        Text(if (strategy == PayoffStrategy.AVALANCHE) "Mar 2026" else "Aug 2026", color = GoldLight, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(
+                            if (creditCards.isEmpty() && loans.isEmpty()) "Debt Free"
+                            else if (strategy == PayoffStrategy.AVALANCHE) "Mar 2026" else "Aug 2026",
+                            color = GoldLight,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
                     }
                 }
             }
@@ -217,16 +223,18 @@ fun DebtCenterScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = if (strategy == PayoffStrategy.AVALANCHE) {
+                    text = if (creditCards.isEmpty() && loans.isEmpty()) {
+                        "✨ Freedom: No active debt accounts or credit liabilities recorded. You are currently 100% debt-free!"
+                    } else if (strategy == PayoffStrategy.AVALANCHE) {
                         if (isKenya)
-                            "⚡ Strategy: Target Standard Chartered Infinite (24.0% APR) first. Saves KSh 148,000 in lifetime interest charges."
+                            "⚡ Strategy: Target highest APR card first to save on interest charges."
                         else
-                            "⚡ Strategy: Target Chase Sapphire Reserve (21.9% APR) first. Saves $1,280 in total lifetime interest charges."
+                            "⚡ Strategy: Target highest APR card first to save on interest charges."
                     } else {
                         if (isKenya)
-                            "🎯 Strategy: Clear KCB Platinum Card first for an immediate psychological momentum win, then rollover to Standard Chartered."
+                            "🎯 Strategy: Clear smallest card balance first for an immediate psychological momentum win."
                         else
-                            "🎯 Strategy: Clear Apple Card ($320) first for an immediate psychological momentum win, then rollover to Amex Gold."
+                            "🎯 Strategy: Clear smallest card balance first for an immediate psychological momentum win."
                     },
                     color = GoldLight,
                     fontSize = 12.sp,

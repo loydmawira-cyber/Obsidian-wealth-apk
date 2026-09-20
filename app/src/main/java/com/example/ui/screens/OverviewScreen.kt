@@ -234,10 +234,54 @@ fun OverviewScreen(
 
         // D3 Financial Trends Analytics
         item {
-            D3FinancialTrendsDashboard(userSettings = userSettings)
+            D3FinancialTrendsDashboard(userSettings = userSettings, summary = summary)
         }
 
         // AI Financial Resilience Index
+        val hasOverviewData = summary.transactionCount > 0 || summary.holdingCount > 0 || summary.debtAccountCount > 0 || summary.totalNetWorth != 0.0
+        val savingsRate = if (summary.totalInflow > 0) ((summary.totalInflow - summary.totalOutflow) / summary.totalInflow * 100.0).coerceIn(0.0, 100.0) else 0.0
+        val emergencyMonths = if (summary.totalOutflow > 0) (summary.totalAssets / summary.totalOutflow) else if (summary.totalAssets > 0) 12.0 else 0.0
+
+        val resilienceScore = if (!hasOverviewData) 0 else {
+            var s = 40
+            if (summary.totalNetWorth > 0) s += 15
+            if (summary.dtiRatio in 0.1..35.0) s += 15
+            if (savingsRate >= 15.0) s += 15
+            if (summary.holdingCount > 0) s += 15
+            s.coerceIn(0, 100)
+        }
+
+        val resilienceTier = when {
+            !hasOverviewData -> "New Account Profile"
+            resilienceScore >= 80 -> "Institutional Prime"
+            resilienceScore >= 60 -> "Strong Resilience"
+            resilienceScore >= 40 -> "Moderate Cushion"
+            else -> "Needs Strengthening"
+        }
+
+        val pillars = if (!hasOverviewData) {
+            listOf(
+                "Liquidity" to "0/20",
+                "Debt DTI" to "0/20",
+                "Savings" to "0/20",
+                "Diversify" to "0/20",
+                "Budget" to "0/20"
+            )
+        } else {
+            val liq = if (emergencyMonths >= 6) "18/20" else if (emergencyMonths >= 3) "14/20" else "8/20"
+            val dtiScore = if (summary.dtiRatio <= 20) "19/20" else if (summary.dtiRatio <= 36) "15/20" else "8/20"
+            val savScore = if (savingsRate >= 30) "19/20" else if (savingsRate >= 15) "14/20" else "8/20"
+            val divScore = if (summary.holdingCount >= 3) "18/20" else if (summary.holdingCount >= 1) "12/20" else "5/20"
+            val budScore = if (summary.totalInflow >= summary.totalOutflow) "16/20" else "8/20"
+            listOf(
+                "Liquidity" to liq,
+                "Debt DTI" to dtiScore,
+                "Savings" to savScore,
+                "Diversify" to divScore,
+                "Budget" to budScore
+            )
+        }
+
         item {
             FinCard(
                 border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.45f)),
@@ -274,14 +318,15 @@ fun OverviewScreen(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "88 / 100 — Institutional Prime",
+                            text = if (!hasOverviewData) "0 / 100 — $resilienceTier" else "$resilienceScore / 100 — $resilienceTier",
                             color = TextPrimary,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Emergency buffer 6.3 mo • DTI 25.3% (Top tier) • Savings rate 54.7%",
+                            text = if (!hasOverviewData) "Emergency buffer 0.0 mo • DTI 0.0% • Savings rate 0.0%\nLog transactions or assets to calculate your live AI score."
+                            else "Emergency buffer ${"%.1f".format(emergencyMonths)} mo • DTI ${"%.1f".format(summary.dtiRatio)}% • Savings rate ${"%.1f".format(savingsRate)}%",
                             color = TextSecondary,
                             fontSize = 12.sp,
                             lineHeight = 16.sp
@@ -291,7 +336,7 @@ fun OverviewScreen(
                     Spacer(modifier = Modifier.width(12.dp))
 
                     CircularProgressRing(
-                        progressPercent = 88f,
+                        progressPercent = resilienceScore.toFloat(),
                         sizeDp = 70.dp,
                         gradientColors = listOf(SovereignGold, GoldLight)
                     )
@@ -308,13 +353,7 @@ fun OverviewScreen(
                         .padding(8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    listOf(
-                        "Liquidity" to "18/20",
-                        "Debt DTI" to "17/20",
-                        "Savings" to "19/20",
-                        "Diversify" to "18/20",
-                        "Budget" to "16/20"
-                    ).forEach { (name, score) ->
+                    pillars.forEach { (name, score) ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(text = name, color = TextMuted, fontSize = 10.sp)
                             Text(

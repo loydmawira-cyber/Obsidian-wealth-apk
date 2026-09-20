@@ -86,77 +86,92 @@ fun InvestmentsScreen(
     val userSettings by viewModel.userSettings.collectAsState()
     val sym = userSettings.currency.symbol
 
-    val totalPortfolioValue = if (holdings.isNotEmpty()) holdings.sumOf { it.totalValue } else summary.portfolioValue
+    val totalPortfolioValue = holdings.sumOf { it.totalValue }
     val totalUnrealizedGain = holdings.sumOf { it.unrealizedGain }
-    // Was `else 17.4` — an invented 17.4% gain shown whenever no cost basis existed.
     val totalGainPercent = if (holdings.sumOf { it.totalCost } > 0) (totalUnrealizedGain / holdings.sumOf { it.totalCost }) * 100.0 else 0.0
 
     // Compute dynamic allocation across Equities, Mutual Funds, and Gold
     val equityHoldings = holdings.filter {
         it.type == HoldingType.STOCK || (it.type == HoldingType.ETF && it.symbol != "GLD" && it.symbol != "BND" && !it.symbol.startsWith("IFB"))
     }
-    val equityVal = if (equityHoldings.isNotEmpty()) equityHoldings.sumOf { it.totalValue } else 4567250.0
+    val equityVal = equityHoldings.sumOf { it.totalValue }
 
     val mutualFundHoldings = holdings.filter {
         it.type == HoldingType.MUTUAL_FUND || it.symbol == "BND" || it.symbol.startsWith("IFB")
     }
-    val sipsTotalInvested = sips.sumOf { it.totalInvested }.takeIf { it > 0 } ?: 1475000.0
-    val mutualFundVal = (if (mutualFundHoldings.isNotEmpty()) mutualFundHoldings.sumOf { it.totalValue } else 2000000.0) + sipsTotalInvested
+    val sipsTotalInvested = sips.sumOf { it.totalInvested }
+    val mutualFundVal = mutualFundHoldings.sumOf { it.totalValue } + sipsTotalInvested
 
     val goldHoldings = holdings.filter {
         it.type == HoldingType.GOLD || it.symbol == "GLD"
     }
-    val goldVal = if (goldHoldings.isNotEmpty()) goldHoldings.sumOf { it.totalValue } else 525000.0
+    val goldVal = goldHoldings.sumOf { it.totalValue }
 
     val cryptoHoldings = holdings.filter { it.type == HoldingType.CRYPTO }
-    val cryptoVal = if (cryptoHoldings.isNotEmpty()) cryptoHoldings.sumOf { it.totalValue } else 507500.0
+    val cryptoVal = cryptoHoldings.sumOf { it.totalValue }
 
-    val allocationSlices = listOf(
-        D3AllocationSlice(
-            key = "EQUITIES",
-            name = "Equities",
-            value = equityVal,
-            primaryColor = EmeraldGrowth,
-            gradientColors = listOf(EmeraldGrowth, CyanAccent),
-            holdingsCount = equityHoldings.size.takeIf { it > 0 } ?: 4,
-            xirrReturnPercent = 18.4,
-            description = "High-conviction direct equities and index positions with long-term capital growth and dividend yield.",
-            underlyingAssets = if (equityHoldings.isNotEmpty()) equityHoldings.map { "${it.symbol} (${viewModel.formatCompact(it.totalValue)})" } else listOf("SCOM (${viewModel.formatCompact(1875000.0)})", "EQTY (${viewModel.formatCompact(1292250.0)})", "EABL (${viewModel.formatCompact(775000.0)})", "KCB (${viewModel.formatCompact(625000.0)})")
-        ),
-        D3AllocationSlice(
-            key = "MUTUAL_FUNDS",
-            name = "Funds & Bonds",
-            value = mutualFundVal,
-            primaryColor = ElectricIndigo,
-            gradientColors = listOf(ElectricIndigo, IndigoLight),
-            holdingsCount = (mutualFundHoldings.size + sips.size).takeIf { it > 0 } ?: 4,
-            xirrReturnPercent = 15.8,
-            description = "Recurring SIP standing orders, institutional MMFs, and tax-free Treasury Infrastructure Bonds.",
-            underlyingAssets = if (sips.isNotEmpty()) sips.map { "${it.fundName.take(16)}... (${viewModel.formatCompact(it.totalInvested)})" } else listOf("CIC MMF (${viewModel.formatCompact(720000.0)})", "IFB Bond (${viewModel.formatCompact(2000000.0)})", "Britam Balanced (${viewModel.formatCompact(455000.0)})")
-        ),
-        D3AllocationSlice(
-            key = "GOLD",
-            name = "Gold & Bullion",
-            value = goldVal,
-            primaryColor = Color(0xFFF59E0B),
-            gradientColors = listOf(Color(0xFFF59E0B), Color(0xFFFDE68A)),
-            holdingsCount = goldHoldings.size.takeIf { it > 0 } ?: 1,
-            xirrReturnPercent = 12.8,
-            description = "Macroeconomic inflation mitigation reserve allocated in vaulted physical bullion and sovereign gold shares.",
-            underlyingAssets = if (goldHoldings.isNotEmpty()) goldHoldings.map { "${it.symbol} (${viewModel.formatCompact(it.totalValue)})" } else listOf("GLD Gold (${viewModel.formatCompact(525000.0)})")
-        ),
-        D3AllocationSlice(
-            key = "CRYPTO",
-            name = "Crypto Reserve",
-            value = cryptoVal,
-            primaryColor = CyanAccent,
-            gradientColors = listOf(CyanAccent, Color(0xFF38BDF8)),
-            holdingsCount = cryptoHoldings.size.takeIf { it > 0 } ?: 1,
-            xirrReturnPercent = 24.6,
-            description = "Asymmetric digital store-of-value exposure held in institutional cold-storage custody.",
-            underlyingAssets = if (cryptoHoldings.isNotEmpty()) cryptoHoldings.map { "${it.symbol} (${viewModel.formatCompact(it.totalValue)})" } else listOf("BTC Reserve (${viewModel.formatCompact(507500.0)})")
-        )
-    )
+    val allocationSlices = buildList {
+        if (equityVal > 0) {
+            add(
+                D3AllocationSlice(
+                    key = "EQUITIES",
+                    name = "Equities",
+                    value = equityVal,
+                    primaryColor = EmeraldGrowth,
+                    gradientColors = listOf(EmeraldGrowth, CyanAccent),
+                    holdingsCount = equityHoldings.size,
+                    xirrReturnPercent = 0.0,
+                    description = "High-conviction direct equities and index positions.",
+                    underlyingAssets = equityHoldings.map { "${it.symbol} (${viewModel.formatCompact(it.totalValue)})" }
+                )
+            )
+        }
+        if (mutualFundVal > 0) {
+            add(
+                D3AllocationSlice(
+                    key = "MUTUAL_FUNDS",
+                    name = "Funds & Bonds",
+                    value = mutualFundVal,
+                    primaryColor = ElectricIndigo,
+                    gradientColors = listOf(ElectricIndigo, IndigoLight),
+                    holdingsCount = mutualFundHoldings.size + sips.size,
+                    xirrReturnPercent = 0.0,
+                    description = "Recurring SIP standing orders and money market funds.",
+                    underlyingAssets = sips.map { "${it.fundName.take(16)}... (${viewModel.formatCompact(it.totalInvested)})" }
+                )
+            )
+        }
+        if (goldVal > 0) {
+            add(
+                D3AllocationSlice(
+                    key = "GOLD",
+                    name = "Gold & Bullion",
+                    value = goldVal,
+                    primaryColor = Color(0xFFF59E0B),
+                    gradientColors = listOf(Color(0xFFF59E0B), Color(0xFFFDE68A)),
+                    holdingsCount = goldHoldings.size,
+                    xirrReturnPercent = 0.0,
+                    description = "Macroeconomic inflation mitigation reserve.",
+                    underlyingAssets = goldHoldings.map { "${it.symbol} (${viewModel.formatCompact(it.totalValue)})" }
+                )
+            )
+        }
+        if (cryptoVal > 0) {
+            add(
+                D3AllocationSlice(
+                    key = "CRYPTO",
+                    name = "Crypto Reserve",
+                    value = cryptoVal,
+                    primaryColor = CyanAccent,
+                    gradientColors = listOf(CyanAccent, Color(0xFF38BDF8)),
+                    holdingsCount = cryptoHoldings.size,
+                    xirrReturnPercent = 0.0,
+                    description = "Digital asset holdings.",
+                    underlyingAssets = cryptoHoldings.map { "${it.symbol} (${viewModel.formatCompact(it.totalValue)})" }
+                )
+            )
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -289,11 +304,26 @@ fun InvestmentsScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                D3InteractiveDonutChart(
-                    slices = allocationSlices,
-                    totalPortfolioValue = totalPortfolioValue,
-                    chartSize = 220.dp
-                )
+                if (allocationSlices.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No asset holdings found. Tap + Asset to build your portfolio.",
+                            color = TextMuted,
+                            fontSize = 12.sp
+                        )
+                    }
+                } else {
+                    D3InteractiveDonutChart(
+                        slices = allocationSlices,
+                        totalPortfolioValue = totalPortfolioValue,
+                        chartSize = 220.dp
+                    )
+                }
             }
         }
 

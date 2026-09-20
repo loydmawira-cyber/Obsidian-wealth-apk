@@ -212,14 +212,14 @@ statement to produce an audit of your actual position.
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Next Milestone", color = TextMuted, fontSize = 11.sp)
-                        Text(if (isKenya) "Diani Holiday (78%)" else "Japan Tour (90%)", color = GoldLight, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(if (goals.isEmpty()) "No Goals Set" else "${goals.maxByOrNull { it.currentAmount / it.targetAmount.coerceAtLeast(1.0) }?.title ?: "Goal"} (${"%.0f".format((goals.maxByOrNull { it.currentAmount / it.targetAmount.coerceAtLeast(1.0) }?.let { it.currentAmount / it.targetAmount } ?: 0.0) * 100)}%)", color = GoldLight, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }
         }
 
         item {
-            D3FinancialTrendsDashboard(userSettings = userSettings)
+            D3FinancialTrendsDashboard(userSettings = userSettings, summary = summary)
         }
 
         // Savings Goals Section Header & List
