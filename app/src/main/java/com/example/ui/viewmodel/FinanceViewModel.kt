@@ -27,6 +27,7 @@ import com.example.data.firebase.FirestoreConnectionStatus
 import com.example.data.firebase.FirestoreSyncManager
 import com.example.data.repository.FinanceRepository
 import com.example.data.repository.PreferencesManager
+import com.example.data.security.PinCredentialStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -137,8 +138,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _isPinEnabled = MutableStateFlow(false)
     val isPinEnabled: StateFlow<Boolean> = _isPinEnabled
 
-    private val _quickPin = MutableStateFlow("")
-    val quickPin: StateFlow<String> = _quickPin
+    // The plaintext `quickPin` StateFlow was removed. It held the PIN in memory for the whole
+    // ViewModel lifetime and exposed it to any composable that collected it — the UI never needs
+    // the PIN's value, only whether one is set.
 
     private val _isPinLocked = MutableStateFlow(false)
     val isPinLocked: StateFlow<Boolean> = _isPinLocked
@@ -194,7 +196,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
         // Firebase Auth is authoritative. Do not restore the old local-only login state.
         _isPinEnabled.value = preferencesManager.isPinEnabled()
-        _quickPin.value = preferencesManager.getQuickPin()
         _isPinLocked.value = preferencesManager.isPinEnabled() && preferencesManager.isLoggedIn()
     }
 
@@ -255,32 +256,39 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun verifyAndUnlockPin(pinInput: String): Boolean {
-        val saved = preferencesManager.getQuickPin()
-        if (pinInput == saved && saved.length == 4) {
+    /**
+     * Verifies the PIN against the stored hash and unlocks on success.
+     *
+     * Suspends because PBKDF2 derivation is deliberately slow and must not run on the main
+     * thread. The old version compared plaintext with `==` and returned a bare Boolean, so the
+     * UI had no way to show attempts remaining or a lockout.
+     */
+    suspend fun verifyAndUnlockPin(pinInput: String): PinCredentialStore.Verification {
+        val result = preferencesManager.pinStore.verify(pinInput)
+        if (result is PinCredentialStore.Verification.Success) {
             _isPinLocked.value = false
-            return true
         }
-        return false
+        return result
     }
 
-    fun saveQuickPin(pin: String) {
-        if (pin.length == 4) {
-            preferencesManager.setQuickPin(pin)
-            preferencesManager.setPinEnabled(true)
-            _quickPin.value = pin
-            _isPinEnabled.value = true
-            _isPinLocked.value = false
-        }
+    /** Stores a new PIN as a salted hash. Returns false when the PIN is not 4 digits. */
+    suspend fun saveQuickPin(pin: String): Boolean {
+        if (!preferencesManager.pinStore.setPin(pin)) return false
+        preferencesManager.setPinEnabled(true)
+        _isPinEnabled.value = true
+        _isPinLocked.value = false
+        return true
     }
 
     fun disableQuickPin() {
-        preferencesManager.setQuickPin("")
+        preferencesManager.pinStore.clear()
         preferencesManager.setPinEnabled(false)
-        _quickPin.value = ""
         _isPinEnabled.value = false
         _isPinLocked.value = false
     }
+
+    /** Milliseconds left on an active PIN lockout; 0 when not locked out. */
+    fun pinLockoutRemainingMillis(): Long = preferencesManager.pinStore.lockoutRemainingMillis()
 
     fun logout() {
         firebaseAuth.signOut()
