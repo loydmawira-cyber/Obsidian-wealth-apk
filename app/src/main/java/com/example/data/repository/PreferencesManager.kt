@@ -110,17 +110,13 @@ class PreferencesManager(context: Context) {
         updateSettings(updated)
     }
 
-    fun getCloudVaultId(): String {
-        val saved = prefs.getString(KEY_CLOUD_VAULT_ID, "") ?: ""
-        if (saved.isNotBlank()) return saved
-        val generated = "obsidian_vault_" + (1000..9999).random()
-        setCloudVaultId(generated)
-        return generated
-    }
-
-    fun setCloudVaultId(id: String) {
-        prefs.edit().putString(KEY_CLOUD_VAULT_ID, id).apply()
-    }
+    // getCloudVaultId()/setCloudVaultId() were removed deliberately.
+    //
+    // The old getter minted an id as "obsidian_vault_" + (1000..9999).random() — a 9,000-value
+    // guessable namespace — and persisted it. Combined with a restore path that accepted any
+    // vault id, that was a direct route to reading another user's financial records.
+    // The vault id is now always the Firebase Auth uid, derived at read time by
+    // FirestoreSyncManager from the signed-in user. It is not persisted and not settable.
 
     fun getLastCloudSyncTime(): Long {
         return prefs.getLong(KEY_LAST_CLOUD_SYNC, 0L)
@@ -204,7 +200,6 @@ class PreferencesManager(context: Context) {
         private const val KEY_AI_RISK = "pref_ai_risk"
         private const val KEY_HIDE_BALANCES = "pref_hide_balances"
         private const val KEY_BIOMETRIC = "pref_biometric"
-        private const val KEY_CLOUD_VAULT_ID = "pref_cloud_vault_id"
         private const val KEY_LAST_CLOUD_SYNC = "pref_last_cloud_sync"
         private const val KEY_IS_LOGGED_IN = "pref_is_logged_in"
         private const val KEY_USER_EMAIL = "pref_user_email"
