@@ -8,6 +8,7 @@ import com.example.data.models.GeographicRegion
 import com.example.data.models.NumberFormatStyle
 import com.example.data.models.SupportedCurrency
 import com.example.data.models.UserSettings
+import com.example.data.security.PinCredentialStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -15,8 +16,44 @@ class PreferencesManager(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("obsidian_wealth_prefs_v3", Context.MODE_PRIVATE)
 
+    /** Hashed PIN storage with attempt limiting. See [PinCredentialStore]. */
+    val pinStore: PinCredentialStore = PinCredentialStore(prefs)
+
     private val _settings = MutableStateFlow(loadSettings())
     val settings: StateFlow<UserSettings> = _settings
+
+    init {
+        purgeLegacyPlaintextSecrets()
+    }
+
+    /**
+     * Deletes plaintext secrets written by earlier versions.
+     *
+     * Removing the accessor code is not enough: every device that already ran a previous build
+     * still has `pref_user_password` (the account password in cleartext) and `pref_quick_pin`
+     * (the unlock PIN in cleartext) sitting in the prefs XML. They would stay there forever,
+     * readable on a rooted device or through any backup, long after the code that wrote them
+     * was gone. This runs on every construction so the values are gone on first launch after
+     * upgrade, and is cheap enough to leave in place permanently.
+     *
+     * A legacy plaintext PIN is NOT migrated into the hashed store. Re-deriving it would mean
+     * reading the cleartext value to re-encode it, and the user is prompted to set a new PIN
+     * instead — a one-time inconvenience that avoids handling the plaintext at all.
+     */
+    private fun purgeLegacyPlaintextSecrets() {
+        val hadLegacyPin = !prefs.getString(LEGACY_KEY_QUICK_PIN, null).isNullOrBlank()
+        val editor = prefs.edit()
+            .remove(LEGACY_KEY_USER_PASSWORD)
+            .remove(LEGACY_KEY_QUICK_PIN)
+
+        // A legacy PIN was enabled but its plaintext is now gone and nothing was migrated, so
+        // the enabled flag would point at an unverifiable PIN. Turn it off rather than leave a
+        // lock the user cannot satisfy.
+        if (hadLegacyPin && !pinStore.isPinSet()) {
+            editor.putBoolean(KEY_PIN_ENABLED, false)
+        }
+        editor.apply()
+    }
 
     private fun loadSettings(): UserSettings {
         val currencyCode = prefs.getString(KEY_CURRENCY, SupportedCurrency.KES.name) ?: SupportedCurrency.KES.name
@@ -143,24 +180,21 @@ class PreferencesManager(context: Context) {
         prefs.edit().putString(KEY_USER_EMAIL, email).apply()
     }
 
-    fun getUserPassword(): String {
-        return prefs.getString(KEY_USER_PASSWORD, "") ?: ""
-    }
+    // Account password is NEVER persisted locally.
+    //
+    // getUserPassword()/setUserPassword() and the `pref_user_password` key were removed. They
+    // wrote the account password to SharedPreferences in cleartext. Firebase Auth already holds
+    // the session — it issues and refreshes its own tokens, so the app has no reason to keep the
+    // password at all. Anything that appears to need it wants a re-authentication prompt
+    // (`FirebaseUser.reauthenticate`) instead.
+    // Existing cleartext values are deleted by purgeLegacyPlaintextSecrets().
 
-    fun setUserPassword(password: String) {
-        prefs.edit().putString(KEY_USER_PASSWORD, password).apply()
-    }
-
-    fun getQuickPin(): String {
-        return prefs.getString(KEY_QUICK_PIN, "") ?: ""
-    }
-
-    fun setQuickPin(pin: String) {
-        prefs.edit().putString(KEY_QUICK_PIN, pin).apply()
-    }
+    // PIN is stored hashed via `pinStore`, never in plaintext.
+    // getQuickPin()/setQuickPin() and the `pref_quick_pin` key were removed; use
+    // pinStore.setPin() / pinStore.verify() / pinStore.clear().
 
     fun isPinEnabled(): Boolean {
-        return prefs.getBoolean(KEY_PIN_ENABLED, false) && getQuickPin().length == 4
+        return prefs.getBoolean(KEY_PIN_ENABLED, false) && pinStore.isPinSet()
     }
 
     fun setPinEnabled(enabled: Boolean) {
@@ -203,10 +237,13 @@ class PreferencesManager(context: Context) {
         private const val KEY_LAST_CLOUD_SYNC = "pref_last_cloud_sync"
         private const val KEY_IS_LOGGED_IN = "pref_is_logged_in"
         private const val KEY_USER_EMAIL = "pref_user_email"
-        private const val KEY_USER_PASSWORD = "pref_user_password"
-        private const val KEY_QUICK_PIN = "pref_quick_pin"
         private const val KEY_PIN_ENABLED = "pref_pin_enabled"
         private const val KEY_DEMO_SEEDED = "pref_demo_seeded"
         private const val KEY_LAST_SIGNED_IN_UID = "pref_last_signed_in_uid"
+
+        // Retained only so purgeLegacyPlaintextSecrets() can delete what older builds wrote.
+        // Never read these values; never write them again.
+        private const val LEGACY_KEY_USER_PASSWORD = "pref_user_password"
+        private const val LEGACY_KEY_QUICK_PIN = "pref_quick_pin"
     }
 }
