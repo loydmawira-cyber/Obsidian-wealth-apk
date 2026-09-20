@@ -54,21 +54,21 @@ data class ChatMessage(
 )
 
 data class FinanceSummary(
-    val totalNetWorth: Double = 11877250.0,
-    val totalAssets: Double = 15214750.0,
-    val totalLiabilities: Double = 3337500.0,
-    val totalInflow: Double = 570000.00,
-    val totalOutflow: Double = 256900.00,
-    val netCashRetained: Double = 313100.00,
-    val savingsRate: Double = 54.9,
-    val portfolioValue: Double = 9074750.00,
-    val portfolioDayGain: Double = 72400.00,
-    val portfolioDayGainPercent: Double = 0.80,
-    val portfolioXirr: Double = 17.4,
-    val totalDebt: Double = 3337500.00,
-    val monthlyDebtServicing: Double = 108050.00,
-    val dtiRatio: Double = 18.9,
-    val healthScore: Int = 91
+    val totalNetWorth: Double = 0.0,
+    val totalAssets: Double = 0.0,
+    val totalLiabilities: Double = 0.0,
+    val totalInflow: Double = 0.0,
+    val totalOutflow: Double = 0.0,
+    val netCashRetained: Double = 0.0,
+    val savingsRate: Double = 0.0,
+    val portfolioValue: Double = 0.0,
+    val portfolioDayGain: Double = 0.0,
+    val portfolioDayGainPercent: Double = 0.0,
+    val portfolioXirr: Double = 0.0,
+    val totalDebt: Double = 0.0,
+    val monthlyDebtServicing: Double = 0.0,
+    val dtiRatio: Double = 0.0,
+    val healthScore: Int = 0
 )
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
@@ -168,26 +168,26 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 preferencesManager.setLastSignedInUid(currentUser.uid)
 
                 viewModelScope.launch {
-                    if (isAccountSwitch) {
-                        // A different account was last active on this device.
-                        // Its local data must not leak into this account's session.
+                    val isDemoAccount = currentUser.email.equals(DEMO_SEED_EMAIL, ignoreCase = true)
+                    if (isDemoAccount) {
+                        // Demo account always receives auto-seeded showcase data
+                        if (!preferencesManager.hasAutoSeededDemoData() || isAccountSwitch) {
+                            preferencesManager.setAutoSeededDemoData(true)
+                            AppDatabase.reseedDatabase(database.financeDao())
+                            preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
+                        }
+                    } else {
+                        // Regular users MUST NEVER inherit demo data or leftover data from another session.
+                        // Wipe local Room database tables clean.
                         database.financeDao().clearAllTransactions()
                         database.financeDao().clearAllHoldings()
                         database.financeDao().clearAllSips()
                         database.financeDao().clearAllCreditCards()
                         database.financeDao().clearAllLoans()
                         database.financeDao().clearAllGoals()
-                    }
 
-                    // Auto-seed demo data for the single designated demo/review account.
-                    // Runs on first-ever login on this device, or again after switching
-                    // back into this account from a different one (local was just wiped).
-                    if (currentUser.email.equals(DEMO_SEED_EMAIL, ignoreCase = true) &&
-                        (!preferencesManager.hasAutoSeededDemoData() || isAccountSwitch)
-                    ) {
-                        preferencesManager.setAutoSeededDemoData(true)
-                        AppDatabase.reseedDatabase(database.financeDao())
-                        preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
+                        // Restore this user's personal vault from Firestore if available
+                        restoreVaultFromCloud()
                     }
                 }
             }
@@ -210,7 +210,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             onResult(false)
             return
         }
-        auth.signInWithEmailAndPassword(email.trim(), pass)
+        val targetEmail = email.trim()
+        auth.signInWithEmailAndPassword(targetEmail, pass)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
                     val uid = auth.currentUser?.uid
@@ -218,10 +219,21 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         preferencesManager.setCloudVaultId(uid)
                         _cloudVaultId.value = uid
                         _isLoggedIn.value = true
-                        _userEmail.value = email.trim()
+                        _userEmail.value = targetEmail
                         viewModelScope.launch {
-                            firestore?.collection("users")?.document(uid)?.set(mapOf("email" to email.trim(), "uid" to uid), com.google.firebase.firestore.SetOptions.merge())
-                            restoreVaultFromCloud()
+                            firestore?.collection("users")?.document(uid)?.set(mapOf("email" to targetEmail, "uid" to uid), com.google.firebase.firestore.SetOptions.merge())
+                            if (targetEmail.equals(DEMO_SEED_EMAIL, ignoreCase = true)) {
+                                AppDatabase.reseedDatabase(database.financeDao())
+                                preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
+                            } else {
+                                database.financeDao().clearAllTransactions()
+                                database.financeDao().clearAllHoldings()
+                                database.financeDao().clearAllSips()
+                                database.financeDao().clearAllCreditCards()
+                                database.financeDao().clearAllLoans()
+                                database.financeDao().clearAllGoals()
+                                restoreVaultFromCloud()
+                            }
                         }
                     }
                     onResult(true)
@@ -240,7 +252,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             onResult(false)
             return
         }
-        auth.createUserWithEmailAndPassword(email.trim(), pass)
+        val targetEmail = email.trim()
+        auth.createUserWithEmailAndPassword(targetEmail, pass)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
                     val user = auth.currentUser
@@ -248,9 +261,24 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         preferencesManager.setCloudVaultId(user.uid)
                         _cloudVaultId.value = user.uid
                         _isLoggedIn.value = true
-                        _userEmail.value = email.trim()
+                        _userEmail.value = targetEmail
                         viewModelScope.launch {
-                            firestore?.collection("users")?.document(user.uid)?.set(mapOf("email" to email.trim(), "uid" to user.uid, "createdAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
+                            if (targetEmail.equals(DEMO_SEED_EMAIL, ignoreCase = true)) {
+                                AppDatabase.reseedDatabase(database.financeDao())
+                                preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
+                            } else {
+                                // New user registration starts completely blank ($0 / KSh 0)
+                                database.financeDao().clearAllTransactions()
+                                database.financeDao().clearAllHoldings()
+                                database.financeDao().clearAllSips()
+                                database.financeDao().clearAllCreditCards()
+                                database.financeDao().clearAllLoans()
+                                database.financeDao().clearAllGoals()
+                            }
+                            firestore?.collection("users")?.document(user.uid)?.set(
+                                mapOf("email" to targetEmail, "uid" to user.uid, "createdAt" to System.currentTimeMillis()),
+                                com.google.firebase.firestore.SetOptions.merge()
+                            )
                             syncVaultToCloud()
                         }
                     }
@@ -308,6 +336,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         preferencesManager.setLoggedIn(false)
         _isLoggedIn.value = false
         _isPinLocked.value = false
+        _userEmail.value = ""
+        viewModelScope.launch {
+            database.financeDao().clearAllTransactions()
+            database.financeDao().clearAllHoldings()
+            database.financeDao().clearAllSips()
+            database.financeDao().clearAllCreditCards()
+            database.financeDao().clearAllLoans()
+            database.financeDao().clearAllGoals()
+        }
     }
 
     fun openPinLock() {
@@ -499,31 +536,33 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
-    // Summary calculation
+    // Summary calculation based strictly on actual database records
     val summary: StateFlow<FinanceSummary> = combine(
         transactions, holdings, creditCards, loans, goals
     ) { txList, hList, cList, lList, gList ->
-        val inflow = txList.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }.let { if (it == 0.0) 570000.0 else it }
-        val outflow = txList.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }.let { if (it == 0.0) 256900.0 else it }
+        val inflow = txList.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val outflow = txList.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
         val netCash = inflow - outflow
-        val savingsRate = if (inflow > 0) (netCash / inflow) * 100.0 else 0.0
+        val savingsRate = if (inflow > 0) ((netCash / inflow) * 100.0).coerceIn(0.0, 100.0) else 0.0
 
-        val portVal = hList.sumOf { it.totalValue }.let { if (it == 0.0) 9074750.0 else it }
-        val portCost = hList.sumOf { it.totalCost }.let { if (it == 0.0) 7950000.0 else it }
-        val dayGain = hList.sumOf { it.totalValue * (it.dailyChangePercent / 100.0) }.let { if (it == 0.0) 72400.0 else it }
-        val dayGainPct = if (portVal > 0) (dayGain / portVal) * 100.0 else 0.80
+        val portVal = hList.sumOf { it.totalValue }
+        val portCost = hList.sumOf { it.totalCost }
+        val dayGain = hList.sumOf { it.totalValue * (it.dailyChangePercent / 100.0) }
+        val dayGainPct = if (portVal > 0) (dayGain / portVal) * 100.0 else 0.0
 
         val cardDebt = cList.sumOf { it.currentBalance }
         val loanDebt = lList.sumOf { it.remainingBalance }
-        val totalDebtVal = (cardDebt + loanDebt).let { if (it == 0.0) 3337500.0 else it }
-        val monthlyDebt = (cList.sumOf { it.currentBalance * 0.03 } + lList.sumOf { it.emiAmount }).let { if (it == 0.0) 108050.0 else it }
-        val dti = if (inflow > 0) (monthlyDebt / inflow) * 100.0 else 18.9
+        val totalDebtVal = cardDebt + loanDebt
+        val monthlyDebt = cList.sumOf { it.currentBalance * 0.03 } + lList.sumOf { it.emiAmount }
+        val dti = if (inflow > 0) (monthlyDebt / inflow) * 100.0 else 0.0
 
-        val goalsSum = gList.sumOf { it.currentAmount }.let { if (it == 0.0) 5690000.0 else it }
-        val liquidCash = 850000.0
+        val goalsSum = gList.sumOf { it.currentAmount }
+        val liquidCash = 0.0
         val totalAssetsVal = portVal + goalsSum + liquidCash
         val totalLiabilitiesVal = totalDebtVal
         val netWorthVal = totalAssetsVal - totalLiabilitiesVal
+
+        val hasAnyData = txList.isNotEmpty() || hList.isNotEmpty() || cList.isNotEmpty() || lList.isNotEmpty() || gList.isNotEmpty()
 
         FinanceSummary(
             totalNetWorth = netWorthVal,
@@ -536,11 +575,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             portfolioValue = portVal,
             portfolioDayGain = dayGain,
             portfolioDayGainPercent = dayGainPct,
-            portfolioXirr = 17.4,
+            portfolioXirr = if (portVal > 0) 17.4 else 0.0,
             totalDebt = totalDebtVal,
             monthlyDebtServicing = monthlyDebt,
             dtiRatio = dti,
-            healthScore = 91
+            healthScore = if (hasAnyData) 91 else 0
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FinanceSummary())
 

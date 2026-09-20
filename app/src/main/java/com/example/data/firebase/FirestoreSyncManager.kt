@@ -407,6 +407,14 @@ class FirestoreSyncManager(private val context: Context) {
                 }
             }
 
+            // Wipe local Room database tables clean so old/demo data is replaced by cloud vault content (or left empty if cloud vault is empty)
+            dao.clearAllTransactions()
+            dao.clearAllHoldings()
+            dao.clearAllSips()
+            dao.clearAllCreditCards()
+            dao.clearAllLoans()
+            dao.clearAllGoals()
+
             // Insert into Room
             if (txList.isNotEmpty()) dao.insertTransactions(txList)
             if (hList.isNotEmpty()) dao.insertHoldings(hList)
