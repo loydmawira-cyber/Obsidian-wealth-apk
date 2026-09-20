@@ -120,6 +120,7 @@ fun ObsidianSettingsSheet(
     val lastSyncTime by viewModel.lastCloudSyncTime.collectAsState()
     val isPinEnabled by viewModel.isPinEnabled.collectAsState()
     val userEmail by viewModel.userEmail.collectAsState()
+    val isDemoAccount = userEmail.equals(FinanceViewModel.DEMO_SEED_EMAIL, ignoreCase = true)
     val isPremium by viewModel.isPremium.collectAsState()
     val billingMessage by viewModel.billingMessage.collectAsState()
     val context = LocalContext.current
@@ -879,39 +880,41 @@ fun ObsidianSettingsSheet(
                         }
                     }
 
-                    item {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0x11F43F5E),
-                            border = BorderStroke(1.dp, Color(0xFFF43F5E).copy(alpha = 0.35f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                    if (!isDemoAccount) {
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0x11F43F5E),
+                                border = BorderStroke(1.dp, Color(0xFFF43F5E).copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Danger Zone",
-                                        color = Color(0xFFFB7185),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Permanently erase all local vault data",
-                                        color = TextMuted,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                                Button(
-                                    onClick = { onRequestClearAllData() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF43F5E)),
-                                    shape = RoundedCornerShape(8.dp)
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("CLEAR ALL DATA", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Danger Zone",
+                                            color = Color(0xFFFB7185),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Permanently erase all local vault data",
+                                            color = TextMuted,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                    Button(
+                                        onClick = { onRequestClearAllData() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF43F5E)),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("CLEAR ALL DATA", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
