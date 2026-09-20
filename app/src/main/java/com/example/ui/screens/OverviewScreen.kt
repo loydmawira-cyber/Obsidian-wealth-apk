@@ -135,7 +135,7 @@ fun OverviewScreen(
                             )
                         }
 
-                        GoldBadge(text = "+1.4% MoM")
+                        GoldBadge(text = if (summary.totalNetWorth == 0.0) "0.0% MoM" else "+0.0% MoM")
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))

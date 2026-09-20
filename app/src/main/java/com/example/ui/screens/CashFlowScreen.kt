@@ -157,11 +157,12 @@ fun CashFlowScreen(
         emptyList()
     }
 
-    val budgetCap = if (isKenya) 350000.0 else 5000.0
+    val hasCashFlowData = summary.totalInflow > 0 || summary.totalOutflow > 0 || summary.transactionCount > 0
+    val budgetCap = if (hasCashFlowData) (if (isKenya) 350000.0 else 5000.0) else 0.0
     val budgetSpent = summary.totalOutflow
-    val budgetProgress = (budgetSpent / budgetCap).toFloat().coerceIn(0f, 1f)
-    val bufferRemaining = (budgetCap - budgetSpent).coerceAtLeast(0.0)
-    val dailyPace = bufferRemaining / 12.0
+    val budgetProgress = if (budgetCap > 0) (budgetSpent / budgetCap).toFloat().coerceIn(0f, 1f) else 0f
+    val bufferRemaining = if (budgetCap > 0) (budgetCap - budgetSpent).coerceAtLeast(0.0) else 0.0
+    val dailyPace = if (budgetCap > 0) bufferRemaining / 12.0 else 0.0
 
     LazyColumn(
         modifier = modifier
@@ -289,7 +290,7 @@ fun CashFlowScreen(
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = "${viewModel.formatCompact(budgetSpent)} / ${viewModel.formatCompact(budgetCap)}",
+                        text = if (budgetCap > 0) "${viewModel.formatCompact(budgetSpent)} / ${viewModel.formatCompact(budgetCap)}" else "${viewModel.formatCompact(0.0)} / ${viewModel.formatCompact(0.0)}",
                         color = TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -315,13 +316,13 @@ fun CashFlowScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "12 days left in billing cycle",
+                        text = if (hasCashFlowData) "12 days left in billing cycle" else "Billing cycle active",
                         color = TextMuted,
                         fontSize = 11.sp
                     )
                     Text(
-                        text = "${viewModel.formatCompact(bufferRemaining)} buffer remaining (${viewModel.formatCompact(dailyPace)}/day pace)",
-                        color = EmeraldLight,
+                        text = if (budgetCap > 0) "${viewModel.formatCompact(bufferRemaining)} buffer remaining (${viewModel.formatCompact(dailyPace)}/day pace)" else "No active expense cap",
+                        color = if (budgetCap > 0) EmeraldLight else TextMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )

@@ -313,10 +313,31 @@ fun D3FinancialTrendsDashboard(
                             ) {
                                 Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = null, tint = EmeraldGrowth, modifier = Modifier.size(12.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                val pct = when (selectedMetric) {
-                                    TrendMetricType.DEBT_REDUCTION -> "-66.2% Debt"
-                                    TrendMetricType.INVESTMENTS -> "+70.4% Assets"
-                                    else -> "+27.5% Growth"
+                                val startVal = when (selectedMetric) {
+                                    TrendMetricType.DEBT_REDUCTION -> dataPoints.firstOrNull()?.debt ?: 0.0
+                                    TrendMetricType.INVESTMENTS -> dataPoints.firstOrNull()?.investments ?: 0.0
+                                    else -> dataPoints.firstOrNull()?.netWorth ?: 0.0
+                                }
+                                val currentVal = when (selectedMetric) {
+                                    TrendMetricType.DEBT_REDUCTION -> activePoint.debt
+                                    TrendMetricType.INVESTMENTS -> activePoint.investments
+                                    else -> activePoint.netWorth
+                                }
+                                val pct = if (!hasRealData || startVal == 0.0) {
+                                    when (selectedMetric) {
+                                        TrendMetricType.DEBT_REDUCTION -> "0.0% Debt"
+                                        TrendMetricType.INVESTMENTS -> "0.0% Assets"
+                                        else -> "0.0% Growth"
+                                    }
+                                } else {
+                                    val diffPct = ((currentVal - startVal) / startVal) * 100.0
+                                    val sign = if (diffPct >= 0) "+" else ""
+                                    val formatted = "$sign${"%.1f".format(diffPct)}%"
+                                    when (selectedMetric) {
+                                        TrendMetricType.DEBT_REDUCTION -> "$formatted Debt"
+                                        TrendMetricType.INVESTMENTS -> "$formatted Assets"
+                                        else -> "$formatted Growth"
+                                    }
                                 }
                                 Text(
                                     text = pct,

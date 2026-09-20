@@ -330,7 +330,7 @@ fun D3InteractiveDonutChart(
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
-                                    text = "${"%.1f".format(percent)}% • +${slice.xirrReturnPercent}% XIRR",
+                                    text = if (slice.xirrReturnPercent != 0.0) "${"%.1f".format(percent)}% • +${slice.xirrReturnPercent}% XIRR" else "${"%.1f".format(percent)}% Allocation",
                                     color = slice.primaryColor,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold
