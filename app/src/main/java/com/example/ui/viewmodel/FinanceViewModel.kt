@@ -141,6 +141,18 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             if (currentUser != null) {
                 preferencesManager.setCloudVaultId(currentUser.uid)
                 _cloudVaultId.value = currentUser.uid
+
+                // Auto-seed demo data for the single designated demo/review account,
+                // only once (first login on this device), never for any other account.
+                if (currentUser.email.equals(DEMO_SEED_EMAIL, ignoreCase = true) &&
+                    !preferencesManager.hasAutoSeededDemoData()
+                ) {
+                    preferencesManager.setAutoSeededDemoData(true)
+                    viewModelScope.launch {
+                        AppDatabase.reseedDatabase(database.financeDao())
+                        preferencesManager.applyRegionPreset(GeographicRegion.EAST_AFRICA)
+                    }
+                }
             }
         }
 
@@ -765,5 +777,11 @@ Note: Provide financial calculations and strategic recommendations in $curr and 
             )
             syncVaultToCloud()
         }
+    }
+
+    companion object {
+        // Only this account receives auto-seeded Kenyan demo/sample data on first login
+        // (used for Play Store review / demo purposes). All other accounts start blank.
+        private const val DEMO_SEED_EMAIL = "smarttechlab.apps@gmail.com"
     }
 }
