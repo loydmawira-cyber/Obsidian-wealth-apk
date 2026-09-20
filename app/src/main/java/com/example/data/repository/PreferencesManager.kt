@@ -171,6 +171,15 @@ class PreferencesManager(context: Context) {
         prefs.edit().putBoolean(KEY_PIN_ENABLED, enabled).apply()
     }
 
+    // DEMO/SEED DATA (restricted to a single designated account)
+    fun hasAutoSeededDemoData(): Boolean {
+        return prefs.getBoolean(KEY_DEMO_SEEDED, false)
+    }
+
+    fun setAutoSeededDemoData(seeded: Boolean) {
+        prefs.edit().putBoolean(KEY_DEMO_SEEDED, seeded).apply()
+    }
+
     companion object {
         private const val KEY_CURRENCY = "pref_currency"
         private const val KEY_REGION = "pref_region"
@@ -191,5 +200,6 @@ class PreferencesManager(context: Context) {
         private const val KEY_USER_PASSWORD = "pref_user_password"
         private const val KEY_QUICK_PIN = "pref_quick_pin"
         private const val KEY_PIN_ENABLED = "pref_pin_enabled"
+        private const val KEY_DEMO_SEEDED = "pref_demo_seeded"
     }
 }
