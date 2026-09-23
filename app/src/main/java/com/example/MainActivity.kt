@@ -172,6 +172,7 @@ class MainActivity : ComponentActivity() {
         try {
             com.example.alerts.NotificationReminderManager.initChannels(this)
             com.example.alerts.NotificationReminderManager.schedulePeriodicAlerts(this)
+            com.example.alerts.NotificationReminderManager.scheduleSipDebitEngine(this)
         } catch (e: Exception) {
             android.util.Log.e("ObsidianAlerts", "Notification init notice", e)
         }
