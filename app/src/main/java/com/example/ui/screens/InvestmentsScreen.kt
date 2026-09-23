@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,11 +74,14 @@ import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.FinanceViewModel
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun InvestmentsScreen(
     viewModel: FinanceViewModel,
     onAddHolding: () -> Unit,
+    onHoldingLongPress: (HoldingEntity) -> Unit = {},
     onAddSip: () -> Unit,
+    onSipLongPress: (SipEntity) -> Unit = {},
     onOpenAiAdvisor: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -367,7 +372,7 @@ fun InvestmentsScreen(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, tint = EmeraldLight, modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("+ New SIP", color = EmeraldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Add sip", color = EmeraldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -376,7 +381,12 @@ fun InvestmentsScreen(
 
         // SIP Items
         items(sips, key = { "sip_${it.id}" }) { sip ->
-            FinCard {
+            FinCard(
+                modifier = Modifier.combinedClickable(
+                    onClick = {},
+                    onLongClick = { onSipLongPress(sip) }
+                )
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -480,7 +490,7 @@ fun InvestmentsScreen(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("+ Holding", color = CyanAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Add investment", color = CyanAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -491,7 +501,12 @@ fun InvestmentsScreen(
         items(holdings, key = { "holding_${it.id}" }) { h ->
             val isPositive = h.unrealizedGain >= 0
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = { onHoldingLongPress(h) }
+                    ),
                 shape = RoundedCornerShape(14.dp),
                 color = ObsidianSurface,
                 border = BorderStroke(1.dp, ObsidianBorderSubtle)
@@ -564,13 +579,6 @@ fun InvestmentsScreen(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
-                    }
-
-                    IconButton(
-                        onClick = { viewModel.deleteHolding(h) },
-                        modifier = Modifier.size(28.dp).padding(start = 4.dp)
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = TextMuted, modifier = Modifier.size(15.dp))
                     }
                 }
             }
