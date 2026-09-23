@@ -124,9 +124,22 @@ fun DebtCenterScreen(
                         )
                     }
 
+                    // DTI value is real, but the old code labeled it "(Prime)" and forced the
+                    // green/positive badge style unconditionally — a 60% DTI would still say
+                    // "Prime" in green. Threshold is standard debt-to-income guidance: <=36%
+                    // prime, 36-43% caution, >43% high risk. Also skip the label when there's no
+                    // income recorded, since dtiRatio collapses to 0 in that case too (see
+                    // FinanceViewModel) and "0% Prime" would misrepresent "no data" as "no debt".
+                    val hasIncomeData = summary.totalInflow > 0
+                    val dtiTier = when {
+                        !hasIncomeData -> null
+                        summary.dtiRatio <= 36.0 -> "Prime"
+                        summary.dtiRatio <= 43.0 -> "Caution"
+                        else -> "High Risk"
+                    }
                     MetricBadge(
-                        text = "DTI: ${"%.1f".format(summary.dtiRatio)}% (Prime)",
-                        isPositive = true
+                        text = if (dtiTier == null) "DTI: N/A" else "DTI: ${"%.1f".format(summary.dtiRatio)}% ($dtiTier)",
+                        isPositive = dtiTier == "Prime"
                     )
                 }
 
