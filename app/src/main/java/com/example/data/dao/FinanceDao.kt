@@ -30,6 +30,12 @@ interface FinanceDao {
     @Query("SELECT COUNT(*) FROM transactions WHERE statementFingerprint = :fingerprint")
     suspend fun hasTransactionWithFingerprint(fingerprint: String): Int
 
+    @Query("SELECT COUNT(*) FROM transactions WHERE sourceReference = :reference")
+    suspend fun hasTransactionWithSourceReference(reference: String): Int
+
+    @Query("UPDATE transactions SET importStatus = :status WHERE id = :id")
+    suspend fun updateImportStatus(id: Long, status: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: TransactionEntity): Long
 
