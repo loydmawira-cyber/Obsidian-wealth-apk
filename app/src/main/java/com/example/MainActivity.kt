@@ -93,7 +93,13 @@ import com.example.data.models.UserSettings
 import com.example.ui.auth.AuthScreen
 import com.example.ui.auth.PinLockScreen
 import com.example.ui.components.AddHoldingDialog
+import com.example.ui.components.ConfirmDeleteHoldingDialog
+import com.example.ui.components.EditHoldingDialog
+import com.example.ui.components.HoldingActionDialog
 import com.example.ui.components.AddSipDialog
+import com.example.ui.components.ConfirmDeleteSipDialog
+import com.example.ui.components.EditSipDialog
+import com.example.ui.components.SipActionDialog
 import com.example.ui.components.AddTransactionDialog
 import com.example.ui.components.AiSmartLogDialog
 import com.example.ui.components.ExportReportDialog
@@ -237,6 +243,12 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     var exportReportContent by remember { mutableStateOf("") }
     var cardToPay by remember { mutableStateOf<CreditCardEntity?>(null) }
     var loanToPay by remember { mutableStateOf<com.example.data.models.LoanEntity?>(null) }
+    var sipActionTarget by remember { mutableStateOf<com.example.data.models.SipEntity?>(null) }
+    var sipToEdit by remember { mutableStateOf<com.example.data.models.SipEntity?>(null) }
+    var sipToDelete by remember { mutableStateOf<com.example.data.models.SipEntity?>(null) }
+    var holdingActionTarget by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
+    var holdingToEdit by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
+    var holdingToDelete by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -297,7 +309,9 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
                     FinanceTab.INVEST -> InvestmentsScreen(
                         viewModel = viewModel,
                         onAddHolding = { showAddHoldingDialog = true },
+                        onHoldingLongPress = { holdingActionTarget = it },
                         onAddSip = { showAddSipDialog = true },
+                        onSipLongPress = { sipActionTarget = it },
                         onOpenAiAdvisor = { prompt ->
                             viewModel.askAi(prompt)
                             showAiAdvisorSheet = true
@@ -368,6 +382,83 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
             onAdd = { fund, cat, amt, day, returnPercent ->
                 viewModel.addSip(fund, cat, amt, day, returnPercent)
             }
+        )
+    }
+
+    if (holdingActionTarget != null) {
+        val holding = holdingActionTarget!!
+        HoldingActionDialog(
+            holding = holding,
+            onDismiss = { holdingActionTarget = null },
+            onEdit = { holdingToEdit = holding },
+            onDelete = { holdingToDelete = holding }
+        )
+    }
+
+    if (holdingToEdit != null) {
+        val holding = holdingToEdit!!
+        EditHoldingDialog(
+            holding = holding,
+            onDismiss = { holdingToEdit = null },
+            onSave = { symbol, name, type, shares, avgBuy, current ->
+                viewModel.updateHolding(
+                    holding.copy(
+                        symbol = symbol,
+                        name = name,
+                        type = type,
+                        shares = shares,
+                        avgBuyPrice = avgBuy,
+                        currentPrice = current
+                    )
+                )
+            }
+        )
+    }
+
+    if (holdingToDelete != null) {
+        val holding = holdingToDelete!!
+        ConfirmDeleteHoldingDialog(
+            holdingName = holding.name,
+            onDismiss = { holdingToDelete = null },
+            onConfirm = { viewModel.deleteHolding(holding) }
+        )
+    }
+
+    if (sipActionTarget != null) {
+        val sip = sipActionTarget!!
+        SipActionDialog(
+            sip = sip,
+            onDismiss = { sipActionTarget = null },
+            onEdit = { sipToEdit = sip },
+            onDelete = { sipToDelete = sip }
+        )
+    }
+
+    if (sipToEdit != null) {
+        val sip = sipToEdit!!
+        EditSipDialog(
+            sip = sip,
+            onDismiss = { sipToEdit = null },
+            onSave = { fund, cat, amt, day, returnPercent ->
+                viewModel.updateSip(
+                    sip.copy(
+                        fundName = fund,
+                        category = cat,
+                        monthlyAmount = amt,
+                        debitDayOfMonth = day,
+                        annualizedReturnPercent = returnPercent
+                    )
+                )
+            }
+        )
+    }
+
+    if (sipToDelete != null) {
+        val sip = sipToDelete!!
+        ConfirmDeleteSipDialog(
+            fundName = sip.fundName,
+            onDismiss = { sipToDelete = null },
+            onConfirm = { viewModel.deleteSip(sip) }
         )
     }
 
