@@ -137,6 +137,7 @@ fun ObsidianSettingsSheet(
 
     var activeTab by remember { mutableStateOf(0) } // 0: Regional, 1: Modules, 2: AI & Privacy, 3: Cloud Vault
     var showSetPinDialog by remember { mutableStateOf(false) }
+    var showNotificationAppPicker by remember { mutableStateOf(false) }
     // Saving a PIN derives a salted hash off the main thread, so it needs a scope.
     val pinScope = rememberCoroutineScope()
 
@@ -620,6 +621,9 @@ fun ObsidianSettingsSheet(
                 } else if (activeTab == 2) {
                     // PUSH NOTIFICATIONS & REMINDERS
                     item {
+                        val trustedPackages by viewModel.trustedNotificationPackages.collectAsState()
+                        val selectedLabels = trustedPackages
+
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = ObsidianSurfaceVariant,
@@ -629,13 +633,36 @@ fun ObsidianSettingsSheet(
                             Column(modifier = Modifier.padding(14.dp)) {
                                 Text("AUTOMATIC TRANSACTION DETECTION", color = SovereignGold, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text("Read financial notifications locally and place detected salary, payment, and transfer entries in review. Raw notification text is not uploaded.", color = TextMuted, fontSize = 11.sp)
+                                Text(
+                                    "Reads transaction notifications locally, only from apps you choose below, and places detected salary, payment, and transfer entries in review. Raw notification text is not uploaded, and notifications from apps you haven't selected are never read.",
+                                    color = TextMuted,
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    if (selectedLabels.isEmpty()) "No apps selected yet" else "${selectedLabels.size} app(s) selected",
+                                    color = if (selectedLabels.isEmpty()) TextMuted else SovereignGold,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Button(
-                                    onClick = onOpenNotificationAccess,
+                                    onClick = { showNotificationAppPicker = true },
                                     colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
                                     modifier = Modifier.fillMaxWidth()
-                                ) { Text("Enable notification access") }
+                                ) { Text(if (selectedLabels.isEmpty()) "Choose apps to monitor" else "Change apps to monitor") }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        if (selectedLabels.isEmpty()) {
+                                            showNotificationAppPicker = true
+                                        } else {
+                                            onOpenNotificationAccess()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianSurface),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("Enable notification access", color = TextPrimary) }
                             }
                         }
                     }
@@ -1502,6 +1529,20 @@ fun ObsidianSettingsSheet(
                 onSavePin = { pin ->
                     pinScope.launch { viewModel.saveQuickPin(pin) }
                     showSetPinDialog = false
+                }
+            )
+        }
+
+        if (showNotificationAppPicker) {
+            val currentlyTrusted by viewModel.trustedNotificationPackages.collectAsState()
+            NotificationSourceAppsDialog(
+                apps = remember { viewModel.getLaunchableApps() },
+                initiallySelected = currentlyTrusted,
+                onDismiss = { showNotificationAppPicker = false },
+                onConfirm = { picked ->
+                    viewModel.setTrustedNotificationPackages(picked)
+                    showNotificationAppPicker = false
+                    onOpenNotificationAccess()
                 }
             )
         }
