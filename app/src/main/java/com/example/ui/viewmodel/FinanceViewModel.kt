@@ -254,6 +254,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         // Firebase Auth is authoritative. Do not restore the old local-only login state.
         _isPinEnabled.value = preferencesManager.isPinEnabled()
         _isPinLocked.value = preferencesManager.isPinEnabled() && preferencesManager.isLoggedIn()
+
+        // Catch up any recurring SIP debits that have come due since this ViewModel was last
+        // alive (the background worker in SipDebitScheduler covers gaps while the app is
+        // closed; this covers the moment the app is opened, without waiting on WorkManager).
+        viewModelScope.launch {
+            val debited = com.example.alerts.SipDebitEngine.processDueDebits(database.financeDao())
+            if (debited > 0) {
+                syncVaultToCloud()
+            }
+        }
     }
 
     /**
