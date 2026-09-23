@@ -571,8 +571,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     ) { txList, hList, cList, lList, gList ->
         // No demo-value substitution. A zero total means the user has recorded nothing, and that
         // is what the UI and the advisor must both be told.
-        val inflow = txList.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-        val outflow = txList.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        val confirmedTransactions = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
+        val inflow = confirmedTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val outflow = confirmedTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
         val netCash = inflow - outflow
         val savingsRate = if (inflow > 0) (netCash / inflow) * 100.0 else 0.0
 
@@ -613,7 +614,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             totalDebt = totalDebtVal,
             monthlyDebtServicing = monthlyDebt,
             dtiRatio = dti,
-            transactionCount = txList.size,
+            transactionCount = confirmedTransactions.size,
             holdingCount = hList.size,
             debtAccountCount = cList.size + lList.size,
             goalCount = gList.size
@@ -743,6 +744,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.addTransaction(transaction)
             syncVaultToCloud()
+        }
+    }
+
+    fun confirmImportedTransaction(transaction: TransactionEntity) {
+        viewModelScope.launch {
+            repository.updateImportStatus(transaction.id, "CONFIRMED")
+            syncVaultToCloud()
+        }
+    }
+
+    fun ignoreImportedTransaction(transaction: TransactionEntity) {
+        viewModelScope.launch {
+            repository.updateImportStatus(transaction.id, "IGNORED")
         }
     }
 
