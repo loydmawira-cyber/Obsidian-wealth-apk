@@ -117,17 +117,20 @@ data class DebtPayoffCalculation(
  */
 @Composable
 fun DebtPayoffCalculator(
-    initialBalance: Double = 15000.0,
-    initialApr: Double = 16.5,
-    initialMonthlyPayment: Double = 500.0,
+    // Zero, not a fabricated demo debt. A user with no debt accounts must see blank inputs and
+    // an "enter your numbers" prompt, never a pre-filled $15,000 balance / 16.5% APR / $500
+    // payment that looks like it came from their own vault.
+    initialBalance: Double = 0.0,
+    initialApr: Double = 0.0,
+    initialMonthlyPayment: Double = 0.0,
     currencySymbol: String = "$",
     formatAmount: (Double) -> String = { "$currencySymbol${"%,.0f".format(it)}" },
     totalVaultDebt: Double = 0.0,
     modifier: Modifier = Modifier
 ) {
-    var balanceInput by remember { mutableStateOf(if (initialBalance > 0) initialBalance.toInt().toString() else "15000") }
-    var aprInput by remember { mutableStateOf(initialApr.toString()) }
-    var monthlyPaymentInput by remember { mutableStateOf(if (initialMonthlyPayment > 0) initialMonthlyPayment.toInt().toString() else "500") }
+    var balanceInput by remember { mutableStateOf(if (initialBalance > 0) initialBalance.toInt().toString() else "") }
+    var aprInput by remember { mutableStateOf(if (initialApr > 0) initialApr.toString() else "") }
+    var monthlyPaymentInput by remember { mutableStateOf(if (initialMonthlyPayment > 0) initialMonthlyPayment.toInt().toString() else "") }
     var extraMonthlyPayment by remember { mutableFloatStateOf(100f) }
     var isExpanded by remember { mutableStateOf(true) }
 
