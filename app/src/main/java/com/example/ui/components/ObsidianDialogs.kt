@@ -75,7 +75,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.example.data.models.CreditCardEntity
+import com.example.data.models.HoldingEntity
 import com.example.data.models.HoldingType
+import com.example.data.models.SipEntity
 import com.example.data.models.TransactionType
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.ElectricIndigo
@@ -1153,6 +1155,247 @@ fun AddHoldingDialog(
 }
 
 @Composable
+fun HoldingActionDialog(
+    holding: HoldingEntity,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = ObsidianSurface,
+            border = BorderStroke(1.dp, ObsidianBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(holding.name, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text("${holding.symbol} • ${if (holding.shares % 1.0 == 0.0) holding.shares.toInt() else holding.shares} units", color = TextSecondary, fontSize = 13.sp)
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = { onEdit(); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Edit Holding", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { onDelete(); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Delete Holding", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                    Text("Cancel")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EditHoldingDialog(
+    holding: HoldingEntity,
+    onDismiss: () -> Unit,
+    onSave: (symbol: String, name: String, type: HoldingType, shares: Double, avgBuy: Double, current: Double) -> Unit
+) {
+    var symbol by remember { mutableStateOf(holding.symbol) }
+    var name by remember { mutableStateOf(holding.name) }
+    var selectedType by remember { mutableStateOf(holding.type) }
+    var sharesText by remember { mutableStateOf(holding.shares.toString()) }
+    var avgBuyText by remember { mutableStateOf(holding.avgBuyPrice.toString()) }
+    var currentPriceText by remember { mutableStateOf(holding.currentPrice.toString()) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = ObsidianSurface,
+            border = BorderStroke(1.dp, ObsidianBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Edit Investment Holding",
+                        color = TextPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = symbol,
+                    onValueChange = { symbol = it },
+                    label = { Text("Ticker / Symbol", color = TextSecondary) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = EmeraldGrowth,
+                        unfocusedBorderColor = ObsidianBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Asset Name", color = TextSecondary) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = EmeraldGrowth,
+                        unfocusedBorderColor = ObsidianBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("Asset Class Category", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val types = listOf(
+                        HoldingType.STOCK to "Equity Stock",
+                        HoldingType.ETF to "Equity ETF",
+                        HoldingType.MUTUAL_FUND to "Mutual Fund",
+                        HoldingType.GOLD to "Gold / Bullion",
+                        HoldingType.CRYPTO to "Crypto"
+                    )
+                    items(types) { (type, label) ->
+                        val isSelected = selectedType == type
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { selectedType = type },
+                            color = if (isSelected) EmeraldGrowth.copy(alpha = 0.2f) else ObsidianSurfaceVariant,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) EmeraldGrowth else ObsidianBorderSubtle
+                            )
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (isSelected) EmeraldLight else TextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = sharesText,
+                        onValueChange = { sharesText = it },
+                        label = { Text("Units / Shares", color = TextSecondary) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = EmeraldGrowth,
+                            unfocusedBorderColor = ObsidianBorder
+                        ),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = avgBuyText,
+                        onValueChange = { avgBuyText = it },
+                        label = { Text("Avg Buy Price", color = TextSecondary) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = EmeraldGrowth,
+                            unfocusedBorderColor = ObsidianBorder
+                        ),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = currentPriceText,
+                    onValueChange = { currentPriceText = it },
+                    label = { Text("Current Price", color = TextSecondary) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = EmeraldGrowth,
+                        unfocusedBorderColor = ObsidianBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = {
+                        val shares = sharesText.toDoubleOrNull() ?: holding.shares
+                        val current = currentPriceText.toDoubleOrNull() ?: holding.currentPrice
+                        val avg = avgBuyText.toDoubleOrNull() ?: holding.avgBuyPrice
+                        if (symbol.isNotBlank() && shares > 0) {
+                            onSave(symbol.uppercase(), name.ifBlank { symbol }, selectedType, shares, avg, current)
+                            onDismiss()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Save Changes", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ConfirmDeleteHoldingDialog(
+    holdingName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(18.dp), color = ObsidianSurface, border = BorderStroke(1.dp, Color(0xFFFF7185)), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Delete this holding?", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text("This permanently removes \"$holdingName\" from your portfolio.", color = TextSecondary, fontSize = 13.sp)
+                Spacer(Modifier.height(16.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                    Button(onClick = { onConfirm(); onDismiss() }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))) { Text("Delete", color = Color.White) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun AddSipDialog(
     onDismiss: () -> Unit,
     onAdd: (fundName: String, category: String, amount: Double, debitDay: Int, annualizedReturnPercent: Double) -> Unit
@@ -1269,6 +1512,195 @@ fun AddSipDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Activate SIP Mandate", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SipActionDialog(
+    sip: SipEntity,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = ObsidianSurface,
+            border = BorderStroke(1.dp, ObsidianBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(sip.fundName, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text("${sip.category} • ${sip.monthlyAmount.let { "%,.2f".format(it) }}/mo", color = TextSecondary, fontSize = 13.sp)
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = { onEdit(); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Edit SIP", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { onDelete(); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Delete SIP", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                    Text("Cancel")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EditSipDialog(
+    sip: SipEntity,
+    onDismiss: () -> Unit,
+    onSave: (fundName: String, category: String, amount: Double, debitDay: Int, annualizedReturnPercent: Double) -> Unit
+) {
+    var fundName by remember { mutableStateOf(sip.fundName) }
+    var category by remember { mutableStateOf(sip.category) }
+    var amountText by remember { mutableStateOf(sip.monthlyAmount.toString()) }
+    var debitDayText by remember { mutableStateOf(sip.debitDayOfMonth.toString()) }
+    var returnPercentText by remember { mutableStateOf(sip.annualizedReturnPercent.toString()) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = ObsidianSurface,
+            border = BorderStroke(1.dp, ObsidianBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Edit SIP Mandate",
+                        color = TextPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = fundName,
+                    onValueChange = { fundName = it },
+                    label = { Text("Fund / Mandate Name", color = TextSecondary) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = EmeraldGrowth,
+                        unfocusedBorderColor = ObsidianBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = { amountText = it },
+                        label = { Text("Monthly Amount", color = TextSecondary) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = EmeraldGrowth,
+                            unfocusedBorderColor = ObsidianBorder
+                        ),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = debitDayText,
+                        onValueChange = { debitDayText = it },
+                        label = { Text("Debit Day", color = TextSecondary) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = EmeraldGrowth,
+                            unfocusedBorderColor = ObsidianBorder
+                        ),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = returnPercentText,
+                    onValueChange = { returnPercentText = it },
+                    label = { Text("Expected Annual Return %", color = TextSecondary) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = EmeraldGrowth,
+                        unfocusedBorderColor = ObsidianBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = {
+                        val amount = amountText.toDoubleOrNull() ?: sip.monthlyAmount
+                        val day = debitDayText.toIntOrNull() ?: sip.debitDayOfMonth
+                        val returnPercent = returnPercentText.toDoubleOrNull() ?: sip.annualizedReturnPercent
+                        if (fundName.isNotBlank() && amount > 0) {
+                            onSave(fundName, category, amount, day, returnPercent)
+                            onDismiss()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Save Changes", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ConfirmDeleteSipDialog(
+    fundName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(18.dp), color = ObsidianSurface, border = BorderStroke(1.dp, Color(0xFFFF7185)), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Delete this SIP?", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text("This permanently removes the \"$fundName\" SIP mandate. This does not undo any past cash flow entries it already created.", color = TextSecondary, fontSize = 13.sp)
+                Spacer(Modifier.height(16.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                    Button(onClick = { onConfirm(); onDismiss() }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))) { Text("Delete", color = Color.White) }
                 }
             }
         }
