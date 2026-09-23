@@ -1155,12 +1155,13 @@ fun AddHoldingDialog(
 @Composable
 fun AddSipDialog(
     onDismiss: () -> Unit,
-    onAdd: (fundName: String, category: String, amount: Double, debitDay: Int) -> Unit
+    onAdd: (fundName: String, category: String, amount: Double, debitDay: Int, annualizedReturnPercent: Double) -> Unit
 ) {
     var fundName by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Index Fund") }
     var amountText by remember { mutableStateOf("") }
     var debitDayText by remember { mutableStateOf("1") }
+    var returnPercentText by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1234,14 +1235,32 @@ fun AddSipDialog(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = returnPercentText,
+                    onValueChange = { returnPercentText = it },
+                    label = { Text("Expected Annual Return %", color = TextSecondary) },
+                    placeholder = { Text("e.g. 12.5", color = TextMuted) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = EmeraldGrowth,
+                        unfocusedBorderColor = ObsidianBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
                     onClick = {
                         val amount = amountText.toDoubleOrNull() ?: 0.0
                         val day = debitDayText.toIntOrNull() ?: 1
+                        val returnPercent = returnPercentText.toDoubleOrNull() ?: 0.0
                         if (fundName.isNotBlank() && amount > 0) {
-                            onAdd(fundName, category, amount, day)
+                            onAdd(fundName, category, amount, day, returnPercent)
                             onDismiss()
                         }
                     },
