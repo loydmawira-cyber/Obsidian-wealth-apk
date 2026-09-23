@@ -54,7 +54,6 @@ import com.example.ui.components.FinCard
 import com.example.ui.components.GoldBadge
 import com.example.ui.components.HeroGradientCard
 import com.example.ui.components.MetricBadge
-import com.example.ui.components.SparklineChart
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CardGradientStart
 import com.example.ui.theme.CrimsonDebt
@@ -78,7 +77,6 @@ import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.FinanceSummary
 import com.example.ui.viewmodel.FinanceTab
 import com.example.ui.viewmodel.FinanceViewModel
-import com.example.ui.viewmodel.TimeFrame
 import java.util.Locale
 
 @Composable
@@ -89,20 +87,11 @@ fun OverviewScreen(
     modifier: Modifier = Modifier
 ) {
     val summary by viewModel.summary.collectAsState()
-    val selectedTimeFrame by viewModel.selectedTimeFrame.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val sips by viewModel.sips.collectAsState()
     val creditCards by viewModel.creditCards.collectAsState()
     val loans by viewModel.loans.collectAsState()
     val holdings by viewModel.holdings.collectAsState()
-
-    val nw = summary.totalNetWorth.toFloat()
-    val sparklinePoints = when (selectedTimeFrame) {
-        TimeFrame.ONE_MONTH -> listOf(nw * 0.97f, nw * 0.98f, nw * 0.975f, nw * 0.985f, nw * 0.992f, nw)
-        TimeFrame.SIX_MONTHS -> listOf(nw * 0.85f, nw * 0.88f, nw * 0.90f, nw * 0.93f, nw * 0.96f, nw)
-        TimeFrame.ONE_YEAR -> listOf(nw * 0.73f, nw * 0.78f, nw * 0.82f, nw * 0.88f, nw * 0.94f, nw)
-        TimeFrame.ALL -> listOf(nw * 0.48f, nw * 0.58f, nw * 0.71f, nw * 0.84f, nw * 0.93f, nw)
-    }
 
     LazyColumn(
         modifier = modifier
