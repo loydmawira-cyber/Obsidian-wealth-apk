@@ -365,8 +365,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     if (showAddSipDialog) {
         AddSipDialog(
             onDismiss = { showAddSipDialog = false },
-            onAdd = { fund, cat, amt, day ->
-                viewModel.addSip(fund, cat, amt, day)
+            onAdd = { fund, cat, amt, day, returnPercent ->
+                viewModel.addSip(fund, cat, amt, day, returnPercent)
             }
         )
     }
