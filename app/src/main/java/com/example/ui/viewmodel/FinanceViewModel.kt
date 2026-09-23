@@ -196,12 +196,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     if (isAccountSwitch) {
                         // A different account was last active on this device.
                         // Its local data must not leak into this account's session.
-                        database.financeDao().clearAllTransactions()
-                        database.financeDao().clearAllHoldings()
-                        database.financeDao().clearAllSips()
-                        database.financeDao().clearAllCreditCards()
-                        database.financeDao().clearAllLoans()
-                        database.financeDao().clearAllGoals()
+                        clearLocalVaultTables()
                     }
 
                     // Auto-seed demo data for the single designated demo/review account.
@@ -221,6 +216,21 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         // Firebase Auth is authoritative. Do not restore the old local-only login state.
         _isPinEnabled.value = preferencesManager.isPinEnabled()
         _isPinLocked.value = preferencesManager.isPinEnabled() && preferencesManager.isLoggedIn()
+    }
+
+    /**
+     * Wipes every local vault table. Shared by the account-switch path in the auth-state
+     * listener above and by [registerUser] below, which awaits this directly rather than relying
+     * on the listener's own (differently-timed) coroutine — see the comment in registerUser for
+     * why that race mattered.
+     */
+    private suspend fun clearLocalVaultTables() {
+        database.financeDao().clearAllTransactions()
+        database.financeDao().clearAllHoldings()
+        database.financeDao().clearAllSips()
+        database.financeDao().clearAllCreditCards()
+        database.financeDao().clearAllLoans()
+        database.financeDao().clearAllGoals()
     }
 
     // AUTH & PIN ACTIONS
@@ -272,6 +282,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         _isLoggedIn.value = true
                         _userEmail.value = email.trim()
                         viewModelScope.launch {
+                            // A brand-new account must start from an empty vault. The
+                            // auth-state listener above also clears local data on an account
+                            // switch, but it runs in its own, separately-scheduled coroutine —
+                            // there's no guarantee it finishes before this one. If it hadn't,
+                            // syncVaultToCloud() below would push whatever the *previous*
+                            // account left in the local database straight into this brand-new
+                            // user's cloud vault. Clearing here directly removes that race.
+                            clearLocalVaultTables()
                             firestore?.collection("users")?.document(user.uid)?.set(mapOf("email" to email.trim(), "uid" to user.uid, "createdAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
                             syncVaultToCloud()
                         }
