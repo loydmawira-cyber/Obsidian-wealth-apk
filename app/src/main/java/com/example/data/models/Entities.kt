@@ -61,7 +61,10 @@ data class SipEntity(
     val debitDayOfMonth: Int,
     val isActive: Boolean = true,
     val totalInvested: Double = 0.0,
-    val annualizedReturnPercent: Double = 14.5
+    val annualizedReturnPercent: Double = 14.5,
+    // "yyyy-MM" of the last calendar month this SIP's automatic debit was recorded for.
+    // Prevents the recurring debit engine from double-charging the same month.
+    val lastDebitedYearMonth: String? = null
 )
 
 @Entity(tableName = "credit_cards")
