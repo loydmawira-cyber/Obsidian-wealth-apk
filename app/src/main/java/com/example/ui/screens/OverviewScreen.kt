@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.models.HoldingType
 import com.example.ui.components.ActionPillButton
 import com.example.ui.components.CircularProgressRing
 import com.example.ui.components.D3FinancialTrendsDashboard
@@ -93,6 +94,7 @@ fun OverviewScreen(
     val sips by viewModel.sips.collectAsState()
     val creditCards by viewModel.creditCards.collectAsState()
     val loans by viewModel.loans.collectAsState()
+    val holdings by viewModel.holdings.collectAsState()
 
     val nw = summary.totalNetWorth.toFloat()
     val sparklinePoints = when (selectedTimeFrame) {
@@ -137,7 +139,13 @@ fun OverviewScreen(
                             )
                         }
 
-                        GoldBadge(text = "+1.4% MoM")
+                        // No prior-period snapshot is recorded, so a real MoM % cannot be
+                        // computed (same reasoning as the Reports screen's MoM line). Showing a
+                        // fixed "+1.4%" made every vault, including an empty new one, look like
+                        // it had a month of real gains.
+                        if (summary.transactionCount > 0 || summary.holdingCount > 0) {
+                            GoldBadge(text = "MoM: N/A")
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -242,8 +250,26 @@ fun OverviewScreen(
             )
         }
 
-        // AI Financial Resilience Index
+        // AI Financial Resilience Index — built only from pillars we can actually measure.
+        // Liquidity (emergency-fund months) and Budget adherence have no backing data model
+        // yet (no cash-account or budget entity), so they are left out rather than faked.
+        // DTI and Savings need real income transactions to mean anything; Diversify needs at
+        // least one holding. When none of the three have real data, the card shows a prompt
+        // instead of a score.
         item {
+            val dtiScore = if (summary.totalInflow > 0) (100.0 - summary.dtiRatio).coerceIn(0.0, 100.0) else null
+            val savingsScore = if (summary.totalInflow > 0) summary.savingsRate.coerceIn(0.0, 100.0) else null
+            val distinctHoldingTypes = holdings.map { it.type }.distinct().size
+            val diversifyScore = if (holdings.isNotEmpty()) {
+                (distinctHoldingTypes.toDouble() / HoldingType.entries.size * 100.0).coerceIn(0.0, 100.0)
+            } else null
+
+            val pillars = listOfNotNull(
+                dtiScore?.let { "DTI" to it },
+                savingsScore?.let { "Savings" to it },
+                diversifyScore?.let { "Diversify" to it }
+            )
+
             FinCard(
                 border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.45f)),
                 gradient = Brush.linearGradient(
@@ -255,20 +281,16 @@ fun OverviewScreen(
                 ),
                 onClick = { onOpenAiAdvisor("Give me a comprehensive audit of my financial position") }
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.AutoAwesome,
-                                contentDescription = "AI",
-                                tint = SovereignGold,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                if (pillars.isEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.AutoAwesome,
+                            contentDescription = "AI",
+                            tint = SovereignGold,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
                             Text(
                                 text = "AI FINANCIAL RESILIENCE INDEX",
                                 color = GoldLight,
@@ -276,58 +298,92 @@ fun OverviewScreen(
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.5.sp
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Add income, expenses, or holdings to unlock your score.",
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "88 / 100 — Institutional Prime",
-                            color = TextPrimary,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Emergency buffer 6.3 mo • DTI 25.3% (Top tier) • Savings rate 54.7%",
-                            color = TextSecondary,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp
+                    }
+                } else {
+                    val overallScore = pillars.map { it.second }.average()
+                    val tier = when {
+                        overallScore >= 80 -> "Strong"
+                        overallScore >= 60 -> "Moderate"
+                        overallScore >= 40 -> "Building"
+                        else -> "Needs Attention"
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.AutoAwesome,
+                                    contentDescription = "AI",
+                                    tint = SovereignGold,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "AI FINANCIAL RESILIENCE INDEX",
+                                    color = GoldLight,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${overallScore.toInt()} / 100 — $tier",
+                                color = TextPrimary,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Based on ${pillars.joinToString(", ") { it.first }} — based only on what's recorded so far.",
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        CircularProgressRing(
+                            progressPercent = overallScore.toFloat(),
+                            sizeDp = 70.dp,
+                            gradientColors = listOf(SovereignGold, GoldLight)
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    CircularProgressRing(
-                        progressPercent = 88f,
-                        sizeDp = 70.dp,
-                        gradientColors = listOf(SovereignGold, GoldLight)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // 5 Sub-Pillars Horizontal Breakdown
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(ObsidianSurfaceVariant, RoundedCornerShape(10.dp))
-                        .border(1.dp, ObsidianBorderSubtle, RoundedCornerShape(10.dp))
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    listOf(
-                        "Liquidity" to "18/20",
-                        "Debt DTI" to "17/20",
-                        "Savings" to "19/20",
-                        "Diversify" to "18/20",
-                        "Budget" to "16/20"
-                    ).forEach { (name, score) ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(text = name, color = TextMuted, fontSize = 10.sp)
-                            Text(
-                                text = score,
-                                color = SovereignGold,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                    // Only the pillars we can actually compute are shown — no placeholder
+                    // tiles for Liquidity or Budget, which this app doesn't track yet.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(ObsidianSurfaceVariant, RoundedCornerShape(10.dp))
+                            .border(1.dp, ObsidianBorderSubtle, RoundedCornerShape(10.dp))
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        pillars.forEach { (name, score) ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = name, color = TextMuted, fontSize = 10.sp)
+                                Text(
+                                    text = "${score.toInt()}/100",
+                                    color = SovereignGold,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
