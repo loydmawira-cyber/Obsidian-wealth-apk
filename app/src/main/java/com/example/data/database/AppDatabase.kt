@@ -28,6 +28,14 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE transactions ADD COLUMN importStatus TEXT NOT NULL DEFAULT 'MANUAL'")
+        db.execSQL("ALTER TABLE transactions ADD COLUMN importSource TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE transactions ADD COLUMN sourceReference TEXT DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [
         TransactionEntity::class,
@@ -37,7 +45,7 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         LoanEntity::class,
         GoalEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -53,7 +61,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "obsidian_wealth_v3.db"
-                ).addMigrations(MIGRATION_1_2)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance
