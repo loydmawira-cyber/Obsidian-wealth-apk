@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ShowChart
@@ -180,6 +181,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun ObsidianApp(viewModel: FinanceViewModel) {
+    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -440,7 +442,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
             onDismiss = { showSettingsSheet = false },
             onRequestClearAllData = { showClearDataDialog = true },
             onOpenNotificationAccess = {
-                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }
         )
     }
