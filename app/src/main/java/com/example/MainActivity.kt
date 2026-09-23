@@ -1,9 +1,11 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -96,6 +98,7 @@ import com.example.ui.components.AiSmartLogDialog
 import com.example.ui.components.ExportReportDialog
 import com.example.ui.components.ObsidianAiAdvisorSheet
 import com.example.ui.components.ObsidianSettingsSheet
+import com.example.ui.components.ImportedTransactionsDialog
 import com.example.ui.components.PayCreditCardDialog
 import com.example.ui.screens.CashFlowScreen
 import com.example.ui.screens.DebtCenterScreen
@@ -214,6 +217,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     val chatMessages by viewModel.chatMessages.collectAsState()
     val isAiThinking by viewModel.isAiThinking.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
+    val transactions by viewModel.transactions.collectAsState()
 
     // Dialog & Sheet States
     var showAddTransactionDialog by remember { mutableStateOf(false) }
@@ -227,6 +231,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     var showAiAdvisorSheet by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showExportReportDialog by remember { mutableStateOf(false) }
+    var showImportedTransactionsDialog by remember { mutableStateOf(false) }
     var exportReportContent by remember { mutableStateOf("") }
     var cardToPay by remember { mutableStateOf<CreditCardEntity?>(null) }
     var loanToPay by remember { mutableStateOf<com.example.data.models.LoanEntity?>(null) }
@@ -283,7 +288,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
                     FinanceTab.CASH_FLOW -> CashFlowScreen(
                         viewModel = viewModel,
                         onQuickAdd = { showAddTransactionDialog = true },
-                        onAiSmartLog = { showAiSmartLogDialog = true }
+                        onAiSmartLog = { showAiSmartLogDialog = true },
+                        onReviewImported = { showImportedTransactionsDialog = true }
                     )
 
                     FinanceTab.INVEST -> InvestmentsScreen(
@@ -432,7 +438,19 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         ObsidianSettingsSheet(
             viewModel = viewModel,
             onDismiss = { showSettingsSheet = false },
-            onRequestClearAllData = { showClearDataDialog = true }
+            onRequestClearAllData = { showClearDataDialog = true },
+            onOpenNotificationAccess = {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+        )
+    }
+    if (showImportedTransactionsDialog) {
+        ImportedTransactionsDialog(
+            transactions = transactions.filter { it.importStatus == "PENDING_REVIEW" },
+            formatAmount = { viewModel.formatAmount(it) },
+            onConfirm = viewModel::confirmImportedTransaction,
+            onIgnore = viewModel::ignoreImportedTransaction,
+            onDismiss = { showImportedTransactionsDialog = false }
         )
     }
 }
