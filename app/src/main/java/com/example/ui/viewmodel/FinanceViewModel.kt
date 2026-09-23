@@ -873,7 +873,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         fundName: String,
         category: String,
         monthlyAmount: Double,
-        debitDayOfMonth: Int
+        debitDayOfMonth: Int,
+        annualizedReturnPercent: Double
     ) {
         viewModelScope.launch {
             repository.addSip(
@@ -883,7 +884,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     monthlyAmount = monthlyAmount,
                     debitDayOfMonth = debitDayOfMonth,
                     isActive = true,
-                    totalInvested = monthlyAmount * 6
+                    // A brand-new SIP has had exactly one debit so far: the one that starts it.
+                    // (Previously this was `monthlyAmount * 6`, pre-aging every new SIP by six
+                    // months it never actually had.)
+                    totalInvested = monthlyAmount,
+                    annualizedReturnPercent = annualizedReturnPercent
                 )
             )
             syncVaultToCloud()
