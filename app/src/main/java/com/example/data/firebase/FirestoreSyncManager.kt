@@ -316,7 +316,10 @@ class FirestoreSyncManager(private val context: Context) {
                         dateMillis = doc.getLong("dateMillis") ?: System.currentTimeMillis(),
                         note = doc.getString("note") ?: "",
                         isRecurring = doc.getBoolean("isRecurring") ?: false,
-                        statementFingerprint = doc.getString("statementFingerprint")
+                        statementFingerprint = doc.getString("statementFingerprint"),
+                        importStatus = doc.getString("importStatus") ?: "MANUAL",
+                        importSource = doc.getString("importSource"),
+                        sourceReference = doc.getString("sourceReference")
                     )
                 } catch (e: Exception) {
                     null
