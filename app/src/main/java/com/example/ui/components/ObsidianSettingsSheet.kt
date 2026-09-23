@@ -119,7 +119,8 @@ import kotlinx.coroutines.launch
 fun ObsidianSettingsSheet(
     viewModel: FinanceViewModel,
     onDismiss: () -> Unit,
-    onRequestClearAllData: () -> Unit = {}
+    onRequestClearAllData: () -> Unit = {},
+    onOpenNotificationAccess: () -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val settings by viewModel.userSettings.collectAsState()
@@ -618,6 +619,26 @@ fun ObsidianSettingsSheet(
                     }
                 } else if (activeTab == 2) {
                     // PUSH NOTIFICATIONS & REMINDERS
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = ObsidianSurfaceVariant,
+                            border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text("AUTOMATIC TRANSACTION DETECTION", color = SovereignGold, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Read financial notifications locally and place detected salary, payment, and transfer entries in review. Raw notification text is not uploaded.", color = TextMuted, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(
+                                    onClick = onOpenNotificationAccess,
+                                    colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("Enable notification access") }
+                            }
+                        }
+                    }
                     item {
                         val hasNotificationPermission = NotificationReminderManager.hasPermission(context)
 
