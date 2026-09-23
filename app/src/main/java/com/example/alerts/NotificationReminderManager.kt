@@ -30,6 +30,7 @@ object NotificationReminderManager {
     const val CHANNEL_BRIEFINGS = "obsidian_briefings_channel"
 
     private const val WORK_NAME_PERIODIC_ALERTS = "obsidian_proactive_alerts"
+    private const val WORK_NAME_SIP_DEBITS = "obsidian_sip_debit_engine"
 
     /**
      * Initializes all required notification channels.
@@ -186,6 +187,28 @@ object NotificationReminderManager {
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME_PERIODIC_ALERTS)
         } catch (e: Exception) {
             android.util.Log.e("NotificationManager", "Error cancelling alert work", e)
+        }
+    }
+
+    /**
+     * Schedules the recurring SIP debit engine (see [SipDebitWorker] / [SipDebitEngine]) to run
+     * periodically in the background, so monthly SIP debits still record as cash-flow outflows
+     * even on days the app is never opened. Unlike alert notifications, this is not gated by the
+     * user's notification preference - it is financial record-keeping, not a notification.
+     */
+    fun scheduleSipDebitEngine(context: Context) {
+        try {
+            val sipDebitWork = PeriodicWorkRequestBuilder<SipDebitWorker>(12, TimeUnit.HOURS)
+                .setInitialDelay(1, TimeUnit.MINUTES)
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                WORK_NAME_SIP_DEBITS,
+                ExistingPeriodicWorkPolicy.KEEP,
+                sipDebitWork
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("NotificationManager", "Error scheduling SIP debit engine", e)
         }
     }
 }
