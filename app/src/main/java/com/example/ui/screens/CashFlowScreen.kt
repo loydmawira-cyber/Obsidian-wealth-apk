@@ -98,6 +98,7 @@ fun CashFlowScreen(
     viewModel: FinanceViewModel,
     onQuickAdd: () -> Unit,
     onAiSmartLog: () -> Unit,
+    onReviewImported: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val summary by viewModel.summary.collectAsState()
@@ -125,7 +126,9 @@ fun CashFlowScreen(
     }
 
     // Dynamic Donut chart slices for expenses
-    val expenseTransactions = transactions.filter { it.type == TransactionType.EXPENSE }
+    val expenseTransactions = transactions.filter {
+        it.type == TransactionType.EXPENSE && it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED"
+    }
     val donutSlices = if (expenseTransactions.isNotEmpty()) {
         val categoryColors = mapOf(
             Category.HOUSING to ElectricIndigo,
@@ -168,6 +171,7 @@ fun CashFlowScreen(
     val budgetProgress = if (budgetCap > 0) (budgetSpent / budgetCap).toFloat().coerceIn(0f, 1f) else 0f
     val bufferRemaining = if (budgetCap > 0) (budgetCap - budgetSpent).coerceAtLeast(0.0) else 0.0
     val dailyPace = if (budgetCap > 0) bufferRemaining / 12.0 else 0.0
+    val pendingImportedCount = transactions.count { it.importStatus == "PENDING_REVIEW" }
 
     LazyColumn(
         modifier = modifier
@@ -175,6 +179,17 @@ fun CashFlowScreen(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (pendingImportedCount > 0) {
+            item {
+                Button(
+                    onClick = onReviewImported,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = SovereignGold)
+                ) {
+                    Text("Review $pendingImportedCount detected transaction${if (pendingImportedCount == 1) "" else "s"}")
+                }
+            }
+        }
         // Cash Flow Hero Waterfall Summary
         item {
             FinCard(
