@@ -862,6 +862,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateHolding(holding: HoldingEntity) {
+        viewModelScope.launch {
+            repository.updateHolding(holding)
+            syncVaultToCloud()
+        }
+    }
+
     fun deleteHolding(holding: HoldingEntity) {
         viewModelScope.launch {
             repository.deleteHolding(holding)
@@ -891,6 +898,27 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     annualizedReturnPercent = annualizedReturnPercent
                 )
             )
+            // The SIP's first debit happens immediately, so record it as a cash outflow
+            // right away — it should hit the Cash Flow tab and reduce available cash,
+            // just like any other expense.
+            repository.addTransaction(
+                TransactionEntity(
+                    title = "SIP: $fundName",
+                    amount = monthlyAmount,
+                    type = TransactionType.EXPENSE,
+                    category = Category.INVESTMENT_SIP,
+                    account = "Cash / selected account",
+                    note = "Automated SIP investment recorded in Obsidian Wealth",
+                    isRecurring = true
+                )
+            )
+            syncVaultToCloud()
+        }
+    }
+
+    fun updateSip(sip: SipEntity) {
+        viewModelScope.launch {
+            repository.updateSip(sip)
             syncVaultToCloud()
         }
     }
