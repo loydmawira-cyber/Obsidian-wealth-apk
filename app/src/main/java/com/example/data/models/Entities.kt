@@ -29,7 +29,10 @@ data class TransactionEntity(
     val dateMillis: Long = System.currentTimeMillis(),
     val note: String = "",
     val isRecurring: Boolean = false,
-    val statementFingerprint: String? = null
+    val statementFingerprint: String? = null,
+    val importStatus: String = "MANUAL",
+    val importSource: String? = null,
+    val sourceReference: String? = null
 )
 
 @Entity(tableName = "holdings")
