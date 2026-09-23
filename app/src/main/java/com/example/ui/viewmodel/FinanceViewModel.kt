@@ -90,6 +90,12 @@ data class FinanceSummary(
     val goalCount: Int = 0
 )
 
+/** A launchable app the user can opt into for notification-based transaction detection. */
+data class InstalledAppInfo(
+    val packageName: String,
+    val label: String
+)
+
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val billingManager = BillingManager(application)
     private val firebaseAuth: FirebaseAuth? by lazy {
@@ -134,6 +140,38 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     val userSettings: StateFlow<UserSettings>
     private val firestoreSyncManager: FirestoreSyncManager
+
+    /** Packages the user has explicitly opted in to let the notification listener read. */
+    val trustedNotificationPackages: StateFlow<Set<String>>
+        get() = preferencesManager.trustedNotificationPackages
+
+    fun setTrustedNotificationPackages(packages: Set<String>) {
+        preferencesManager.setTrustedNotificationPackages(packages)
+    }
+
+    /**
+     * Installed, user-facing apps (i.e. apps with a launcher icon) the user can pick from when
+     * choosing which apps' notifications to read for transaction detection. Excludes this app
+     * itself. Cheap enough to compute on demand; not cached since the install set rarely changes
+     * during a session and this is only called when the picker UI is opened.
+     */
+    fun getLaunchableApps(): List<InstalledAppInfo> {
+        val context = getApplication<Application>()
+        val pm = context.packageManager
+        val launcherIntent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+            .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        return pm.queryIntentActivities(launcherIntent, 0)
+            .map { it.activityInfo.applicationInfo }
+            .filter { it.packageName != context.packageName }
+            .distinctBy { it.packageName }
+            .map { appInfo ->
+                InstalledAppInfo(
+                    packageName = appInfo.packageName,
+                    label = pm.getApplicationLabel(appInfo).toString()
+                )
+            }
+            .sortedBy { it.label.lowercase() }
+    }
 
     private val _isSyncingCloud = MutableStateFlow(false)
     val isSyncingCloud: StateFlow<Boolean> = _isSyncingCloud
