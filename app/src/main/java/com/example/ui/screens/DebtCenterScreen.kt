@@ -246,12 +246,14 @@ fun DebtCenterScreen(
 
         // Interactive Debt Payoff Calculator & Visualizer
         item {
+            // No fallback demo numbers: a debt-free/new vault must show blank inputs, not a
+            // fabricated $15,000 balance / 16.5% APR / $450 payment as if it were the user's own.
             val maxApr = creditCards.maxByOrNull { it.apr }?.apr
-                ?: (loans.maxByOrNull { it.interestRate }?.interestRate ?: 16.5)
-            val suggestedPayment = if (summary.monthlyDebtServicing > 50.0) summary.monthlyDebtServicing else 450.0
+                ?: (loans.maxByOrNull { it.interestRate }?.interestRate ?: 0.0)
+            val suggestedPayment = if (summary.monthlyDebtServicing > 50.0) summary.monthlyDebtServicing else 0.0
 
             DebtPayoffCalculator(
-                initialBalance = if (aggregateDebt > 0) aggregateDebt else 15000.0,
+                initialBalance = aggregateDebt,
                 initialApr = maxApr,
                 initialMonthlyPayment = suggestedPayment,
                 currencySymbol = sym,
