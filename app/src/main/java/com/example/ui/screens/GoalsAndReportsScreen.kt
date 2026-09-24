@@ -91,7 +91,20 @@ fun GoalsAndReportsScreen(
     val totalGoalTarget = goals.sumOf { it.targetAmount }
     val totalGoalSaved = goals.sumOf { it.currentAmount }
     val overallGoalProgress = if (totalGoalTarget > 0) (totalGoalSaved / totalGoalTarget) * 100.0 else 0.0
-    val contributeStep = if (isKenya) 25000.0 else 250.0
+    // Which goal the deposit / withdraw dialog is open for (second value: true = deposit).
+    var goalMoneyTarget by remember { mutableStateOf<Pair<com.example.data.models.GoalEntity, Boolean>?>(null) }
+    goalMoneyTarget?.let { (targetGoal, isDeposit) ->
+        com.example.ui.components.GoalMoneyDialog(
+            goalTitle = targetGoal.title,
+            isDeposit = isDeposit,
+            maxAmount = if (isDeposit) null else targetGoal.currentAmount,
+            formatAmount = { viewModel.formatAmount(it) },
+            onDismiss = { goalMoneyTarget = null },
+            onConfirm = { amt ->
+                if (isDeposit) viewModel.contributeGoal(targetGoal, amt) else viewModel.withdrawFromGoal(targetGoal, amt)
+            }
+        )
+    }
 
     // Audit statement built ONLY from recorded data.
     //
@@ -301,13 +314,25 @@ statement to produce an audit of your actual position.
                         }
                     }
 
-                    Button(
-                        onClick = { viewModel.contributeGoal(goal, contributeStep) },
-                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Text("+${viewModel.formatCompact(contributeStep)}", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { goalMoneyTarget = goal to false },
+                            enabled = goal.currentAmount > 0,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text("Withdraw", fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = { goalMoneyTarget = goal to true },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text("Deposit", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 
