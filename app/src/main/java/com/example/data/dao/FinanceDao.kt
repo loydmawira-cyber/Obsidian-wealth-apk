@@ -10,6 +10,7 @@ import com.example.data.models.CreditCardEntity
 import com.example.data.models.GoalEntity
 import com.example.data.models.HoldingEntity
 import com.example.data.models.LoanEntity
+import com.example.data.models.NetWorthSnapshotEntity
 import com.example.data.models.SipEntity
 import com.example.data.models.TransactionEntity
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +33,18 @@ interface FinanceDao {
 
     @Query("SELECT COUNT(*) FROM transactions WHERE sourceReference = :reference")
     suspend fun hasTransactionWithSourceReference(reference: String): Int
+
+    @Query("DELETE FROM transactions WHERE sourceReference = :reference")
+    suspend fun deleteTransactionsBySourceReference(reference: String)
+
+    @Query("SELECT * FROM net_worth_snapshots ORDER BY dayKey ASC")
+    fun getAllSnapshots(): Flow<List<NetWorthSnapshotEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSnapshot(snapshot: NetWorthSnapshotEntity)
+
+    @Query("DELETE FROM net_worth_snapshots")
+    suspend fun clearAllSnapshots()
 
     @Query("UPDATE transactions SET importStatus = :status WHERE id = :id")
     suspend fun updateImportStatus(id: Long, status: String)
