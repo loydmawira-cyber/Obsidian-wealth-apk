@@ -123,6 +123,7 @@ fun ObsidianSettingsSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val settings by viewModel.userSettings.collectAsState()
+    val previewSummary by viewModel.summary.collectAsState()
     val isSyncing by viewModel.isSyncingCloud.collectAsState()
     val syncResult by viewModel.cloudSyncResult.collectAsState()
     val cloudVaultId by viewModel.cloudVaultId.collectAsState()
@@ -212,7 +213,12 @@ fun ObsidianSettingsSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Live Format Preview Card
+            // Live Format Preview Card: shows the user's own net worth in the chosen regional format.
+            // With no data yet, or when balances are hidden, a labelled sample amount is used so the
+            // format can still be seen and a hidden balance is never revealed here.
+            val previewUsesRealData = !settings.hideBalances &&
+                (previewSummary.transactionCount > 0 || previewSummary.holdingCount > 0 ||
+                    previewSummary.debtAccountCount > 0 || previewSummary.totalNetWorth != 0.0)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -236,13 +242,14 @@ fun ObsidianSettingsSheet(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = settings.formatAmount(248650.80, forceVisible = true),
+                            text = if (previewUsesRealData) settings.formatAmount(previewSummary.totalNetWorth)
+                            else settings.formatAmount(1234567.89, forceVisible = true),
                             color = GoldBright,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
                         Text(
-                            text = "Region: ${settings.region.title} · ${settings.currency.code}",
+                            text = "${if (previewUsesRealData) "Your net worth" else "Sample amount"} · ${settings.region.title} · ${settings.currency.code}",
                             color = TextMuted,
                             fontSize = 10.sp
                         )
