@@ -187,7 +187,8 @@ class FirestoreSyncManager(private val context: Context) {
                     "debitDayOfMonth" to s.debitDayOfMonth,
                     "isActive" to s.isActive,
                     "totalInvested" to s.totalInvested,
-                    "annualizedReturnPercent" to s.annualizedReturnPercent
+                    "annualizedReturnPercent" to s.annualizedReturnPercent,
+                    "lastDebitedYearMonth" to s.lastDebitedYearMonth
                 )
                 sipsCollection.document(s.id.toString()).set(sMap, SetOptions.merge()).awaitTask()
             }
@@ -357,7 +358,8 @@ class FirestoreSyncManager(private val context: Context) {
                         debitDayOfMonth = doc.getLong("debitDayOfMonth")?.toInt() ?: 1,
                         isActive = doc.getBoolean("isActive") ?: true,
                         totalInvested = doc.getDouble("totalInvested") ?: 0.0,
-                        annualizedReturnPercent = doc.getDouble("annualizedReturnPercent") ?: 12.0
+                        annualizedReturnPercent = doc.getDouble("annualizedReturnPercent") ?: 12.0,
+                        lastDebitedYearMonth = doc.getString("lastDebitedYearMonth")
                     )
                 } catch (e: Exception) {
                     null
