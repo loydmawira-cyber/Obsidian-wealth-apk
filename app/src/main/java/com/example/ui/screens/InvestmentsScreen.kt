@@ -229,7 +229,7 @@ fun InvestmentsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (summary.portfolioDayGain == 0.0) "Day Gain: ${viewModel.formatAmount(0.0)} (0.00%)"
+                        text = if (summary.portfolioDayGain == 0.0) "Edit a holding's price to update gains"
                                else "Day Gain: ${if (summary.portfolioDayGain > 0) "+" else ""}${viewModel.formatAmount(summary.portfolioDayGain)} (${if (summary.portfolioDayGainPercent > 0) "+" else ""}${"%.2f".format(summary.portfolioDayGainPercent)}%)",
                         color = if (summary.portfolioDayGain >= 0) EmeraldLight else Color(0xFFFB7185),
                         fontSize = 13.sp,
