@@ -95,6 +95,7 @@ import com.example.ui.auth.PinLockScreen
 import com.example.ui.components.AddHoldingDialog
 import com.example.ui.components.ConfirmDeleteHoldingDialog
 import com.example.ui.components.EditHoldingDialog
+import com.example.ui.components.SellHoldingDialog
 import com.example.ui.components.HoldingActionDialog
 import com.example.ui.components.AddSipDialog
 import com.example.ui.components.ConfirmDeleteSipDialog
@@ -248,6 +249,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     var sipToEdit by remember { mutableStateOf<com.example.data.models.SipEntity?>(null) }
     var sipToDelete by remember { mutableStateOf<com.example.data.models.SipEntity?>(null) }
     var holdingActionTarget by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
+    var holdingToSell by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
     var holdingToEdit by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
     var holdingToDelete by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
 
@@ -392,7 +394,18 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
             holding = holding,
             onDismiss = { holdingActionTarget = null },
             onEdit = { holdingToEdit = holding },
-            onDelete = { holdingToDelete = holding }
+            onDelete = { holdingToDelete = holding },
+            onSell = { holdingToSell = holding }
+        )
+    }
+
+    if (holdingToSell != null) {
+        val holding = holdingToSell!!
+        SellHoldingDialog(
+            holding = holding,
+            formatAmount = { viewModel.formatAmount(it) },
+            onDismiss = { holdingToSell = null },
+            onSell = { qty, price -> viewModel.sellHolding(holding, qty, price) }
         )
     }
 
