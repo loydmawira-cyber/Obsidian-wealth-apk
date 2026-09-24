@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Button
@@ -74,11 +75,14 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.data.models.AccentColor
 import com.example.data.models.CreditCardEntity
 import com.example.data.models.HoldingEntity
 import com.example.data.models.HoldingType
 import com.example.data.models.SipEntity
+import com.example.data.models.ThemeMode
 import com.example.data.models.TransactionType
+import androidx.compose.material3.MaterialTheme
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.ElectricIndigo
 import com.example.ui.theme.EmeraldGrowth
@@ -365,8 +369,8 @@ fun AiSmartLogDialog(
                         val presets = listOf(
                             "Spent $45 on groceries at Supermarket",
                             "Received $4,500 consulting retainer deposit",
-                            "Paid â‚¬85 for electricity bill",
-                            "Spent Â£65 on transport and rail ticket",
+                            "Paid Ã¢â€šÂ¬85 for electricity bill",
+                            "Spent Ã‚Â£65 on transport and rail ticket",
                             "Invested $500 into Index Fund ETF",
                             "Paid $120 for Internet & Mobile bill"
                         )
@@ -440,7 +444,7 @@ fun AiSmartLogDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Extracting Draftâ€¦", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("Extracting DraftÃ¢â‚¬Â¦", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                         } else {
                             Text("Extract & Review Draft", color = Color.Black, fontWeight = FontWeight.Bold)
@@ -807,7 +811,7 @@ fun ObsidianAiAdvisorSheet(
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("ðŸŽ¯ Create Goal (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("Ã°Å¸Å½Â¯ Create Goal (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -824,7 +828,7 @@ fun ObsidianAiAdvisorSheet(
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("âž• Log Transaction (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("Ã¢Å¾â€¢ Log Transaction (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1172,7 +1176,7 @@ fun HoldingActionDialog(
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(holding.name, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("${holding.symbol} â€¢ ${if (holding.shares % 1.0 == 0.0) holding.shares.toInt() else holding.shares} units", color = TextSecondary, fontSize = 13.sp)
+                Text("${holding.symbol} Ã¢â‚¬Â¢ ${if (holding.shares % 1.0 == 0.0) holding.shares.toInt() else holding.shares} units", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = { onEdit(); onDismiss() },
@@ -1545,7 +1549,7 @@ fun SipActionDialog(
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(sip.fundName, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("${sip.category} â€¢ ${sip.monthlyAmount.let { "%,.2f".format(it) }}/mo", color = TextSecondary, fontSize = 13.sp)
+                Text("${sip.category} Ã¢â‚¬Â¢ ${sip.monthlyAmount.let { "%,.2f".format(it) }}/mo", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = { onEdit(); onDismiss() },
@@ -2047,6 +2051,110 @@ fun SellHoldingDialog(
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                     Text("Cancel")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ThemePickerDialog(
+    currentMode: ThemeMode,
+    currentAccent: AccentColor,
+    onDismiss: () -> Unit,
+    onModeChange: (ThemeMode) -> Unit,
+    onAccentChange: (AccentColor) -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = ObsidianSurface,
+            border = BorderStroke(1.dp, ObsidianBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Appearance", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary)
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Text("Theme", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ThemeMode.values().forEach { mode ->
+                        val selected = mode == currentMode
+                        Surface(
+                            onClick = { onModeChange(mode) },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else ObsidianSurfaceVariant,
+                            border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else ObsidianBorder),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = mode.title,
+                                color = if (selected) MaterialTheme.colorScheme.primary else TextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier
+                                    .padding(vertical = 10.dp)
+                                    .fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+                Text("Accent color", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    AccentColor.values().forEach { accent ->
+                        val selected = accent == currentAccent
+                        val swatch = Color(accent.argb)
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(swatch)
+                                .then(
+                                    if (selected) Modifier.border(2.dp, TextPrimary, CircleShape)
+                                    else Modifier.border(1.dp, ObsidianBorder, CircleShape)
+                                )
+                                .clickable { onAccentChange(accent) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (selected) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = "${accent.title} selected",
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(currentAccent.title, color = TextMuted, fontSize = 11.sp)
+
+                Spacer(Modifier.height(20.dp))
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Done", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             }
         }
