@@ -1188,6 +1188,32 @@ fun ObsidianSettingsSheet(
                         )
                     }
 
+                    // CSV export (independent of cloud sync)
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = ObsidianSurfaceVariant,
+                            border = BorderStroke(1.dp, ObsidianBorderSubtle),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text("EXPORT DATA (CSV)", color = SovereignGold, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Save your transactions, holdings and SIPs as CSV files to email, Drive or your files app.",
+                                    color = TextMuted,
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(
+                                    onClick = { viewModel.exportCsv() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("Export CSV files") }
+                            }
+                        }
+                    }
+
                     // Connection Status
                     item {
                         val status = remember { viewModel.getFirestoreConnectionStatus() }
