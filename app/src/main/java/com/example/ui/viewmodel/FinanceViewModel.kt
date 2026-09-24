@@ -615,8 +615,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     // Summary calculation
     val summary: StateFlow<FinanceSummary> = combine(
-        transactions, holdings, creditCards, loans, goals
-    ) { txList, hList, cList, lList, gList ->
+        transactions, combine(holdings, sips) { h, sp -> h to sp }, creditCards, loans, goals
+    ) { txList, holdingsAndSips, cList, lList, gList ->
+        val hList = holdingsAndSips.first
+        val sList = holdingsAndSips.second
         // No demo-value substitution. A zero total means the user has recorded nothing, and that
         // is what the UI and the advisor must both be told.
         val confirmedTransactions = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
@@ -625,8 +627,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val netCash = inflow - outflow
         val savingsRate = if (inflow > 0) (netCash / inflow) * 100.0 else 0.0
 
-        val portVal = hList.sumOf { it.totalValue }
-        val portCost = hList.sumOf { it.totalCost }
+        // SIPs count toward the portfolio at the amount invested so far (both value and cost).
+        val sipInvested = sList.sumOf { it.totalInvested }
+        val portVal = hList.sumOf { it.totalValue } + sipInvested
+        val portCost = hList.sumOf { it.totalCost } + sipInvested
         val dayGain = hList.sumOf { it.totalValue * (it.dailyChangePercent / 100.0) }
         val dayGainPct = if (portVal > 0) (dayGain / portVal) * 100.0 else 0.0
         // Simple return on cost basis. Not XIRR — contribution dates are not recorded.
@@ -663,7 +667,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             monthlyDebtServicing = monthlyDebt,
             dtiRatio = dti,
             transactionCount = confirmedTransactions.size,
-            holdingCount = hList.size,
+            holdingCount = hList.size + sList.size,
             debtAccountCount = cList.size + lList.size,
             goalCount = gList.size
         )
@@ -868,6 +872,21 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     dailyChangePercent = 0.5
                 )
             )
+            // Buying an investment spends cash: record the purchase cost as an expense so it
+            // shows on the Cash Flow tab and reduces available cash.
+            val purchaseCost = shares * avgBuyPrice
+            if (purchaseCost > 0) {
+                repository.addTransaction(
+                    TransactionEntity(
+                        title = "Investment: ${symbol.uppercase()}",
+                        amount = purchaseCost,
+                        type = TransactionType.EXPENSE,
+                        category = Category.INVESTMENT_SIP,
+                        account = "Cash / selected account",
+                        note = "Purchase of $shares x ${symbol.uppercase()} recorded in Obsidian Wealth"
+                    )
+                )
+            }
             syncVaultToCloud()
         }
     }
@@ -905,7 +924,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     // (Previously this was `monthlyAmount * 6`, pre-aging every new SIP by six
                     // months it never actually had.)
                     totalInvested = monthlyAmount,
-                    annualizedReturnPercent = annualizedReturnPercent
+                    annualizedReturnPercent = annualizedReturnPercent,
+                    // First debit is recorded below, so mark this month as already charged.
+                    lastDebitedYearMonth = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US)
+                        .format(java.util.Date())
                 )
             )
             // The SIP's first debit happens immediately, so record it as a cash outflow
