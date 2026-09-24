@@ -271,7 +271,6 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
                 userSettings = userSettings,
                 onOpenSettings = { showSettingsSheet = true },
                 onToggleHideBalances = { viewModel.toggleHideBalances() },
-                onProfileClick = { showSettingsSheet = true },
                 onOpenThemePicker = { showThemePickerDialog = true }
             )
         },
@@ -585,7 +584,6 @@ fun ObsidianTopBar(
     userSettings: UserSettings,
     onOpenSettings: () -> Unit = {},
     onToggleHideBalances: () -> Unit = {},
-    onProfileClick: () -> Unit = {},
     onOpenThemePicker: () -> Unit = {}
 ) {
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
@@ -676,7 +674,7 @@ fun ObsidianTopBar(
                     }
                 }
 
-                // Right: Regional Badge, Privacy Toggle, Settings & Profile Avatar
+                // Right: Regional Badge, Privacy Toggle, Theme Picker & Settings menu
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -756,30 +754,6 @@ fun ObsidianTopBar(
                             contentDescription = "Menu & Settings",
                             tint = accent,
                             modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // Profile Monogram Avatar
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(Color(0xFF2A2012), ObsidianSurfaceVariant)
-                                )
-                            )
-                            .border(1.2.dp, accent, CircleShape)
-                            .clickable { onProfileClick() }
-                            .testTag("profile_avatar_button"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "OW",
-                            color = accent,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.5.sp
                         )
                     }
                 }
