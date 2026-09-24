@@ -45,6 +45,8 @@ class PreferencesManager(context: Context) {
         val editor = prefs.edit()
             .remove(LEGACY_KEY_USER_PASSWORD)
             .remove(LEGACY_KEY_QUICK_PIN)
+            // Notification-reading feature was removed; drop its stored app list.
+            .remove("pref_trusted_notification_packages")
 
         // A legacy PIN was enabled but its plaintext is now gone and nothing was migrated, so
         // the enabled flag would point at an unverifiable PIN. Turn it off rather than leave a
@@ -234,26 +236,6 @@ class PreferencesManager(context: Context) {
         prefs.edit().putString(KEY_LAST_SIGNED_IN_UID, uid).apply()
     }
 
-    // NOTIFICATION LISTENER SCOPE
-    //
-    // The notification listener must only ever read notifications from apps the user has
-    // explicitly opted in (e.g. their mobile money or banking apps). Everything else is
-    // ignored before its content is ever inspected. This is both a privacy requirement and
-    // what Play Store review expects to see backing a NotificationListenerService.
-    private val _trustedNotificationPackages =
-        MutableStateFlow(prefs.getStringSet(KEY_TRUSTED_NOTIFICATION_PACKAGES, emptySet()) ?: emptySet())
-    val trustedNotificationPackages: StateFlow<Set<String>> = _trustedNotificationPackages
-
-    fun setTrustedNotificationPackages(packages: Set<String>) {
-        prefs.edit().putStringSet(KEY_TRUSTED_NOTIFICATION_PACKAGES, packages).apply()
-        _trustedNotificationPackages.value = packages
-    }
-
-    /** Static read for use from the notification listener service, which is not Compose-aware. */
-    fun getTrustedNotificationPackagesSnapshot(): Set<String> {
-        return prefs.getStringSet(KEY_TRUSTED_NOTIFICATION_PACKAGES, emptySet()) ?: emptySet()
-    }
-
     companion object {
         private const val KEY_CURRENCY = "pref_currency"
         private const val KEY_REGION = "pref_region"
@@ -277,7 +259,6 @@ class PreferencesManager(context: Context) {
         private const val KEY_ENABLE_BILL_DUE = "pref_enable_bill_due"
         private const val KEY_ENABLE_SIP = "pref_enable_sip"
         private const val KEY_ENABLE_DAILY_BRIEFING = "pref_enable_daily_briefing"
-        private const val KEY_TRUSTED_NOTIFICATION_PACKAGES = "pref_trusted_notification_packages"
 
         // Retained only so purgeLegacyPlaintextSecrets() can delete what older builds wrote.
         // Never read these values; never write them again.
