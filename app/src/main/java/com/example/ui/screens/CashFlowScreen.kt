@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fastfood
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalAtm
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Search
@@ -131,6 +132,7 @@ fun CashFlowScreen(
     // Dynamic Donut chart slices for expenses
     val expenseTransactions = transactions.filter {
         it.type == TransactionType.EXPENSE && it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
+            it.category != Category.INVESTMENT_SIP && it.category != Category.GOAL_SAVINGS &&
             it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
     }
     val donutSlices = if (expenseTransactions.isNotEmpty()) {
@@ -405,7 +407,7 @@ fun CashFlowScreen(
                             slices = donutSlices,
                             sizeDp = 120.dp,
                             centerTitle = "Total Spent",
-                            centerSubtitle = viewModel.formatCompact(month.outflow)
+                            centerSubtitle = viewModel.formatCompact(expenseTransactions.sumOf { it.amount })
                         )
 
                         Spacer(modifier = Modifier.width(16.dp))
@@ -737,6 +739,7 @@ fun getCategoryIcon(category: Category): ImageVector {
         Category.SUBSCRIPTIONS -> Icons.Default.Subscriptions
         Category.INVESTMENT_SIP -> Icons.Default.Payments
         Category.LOAN_EMI -> Icons.Default.Payments
+        Category.GOAL_SAVINGS -> Icons.Default.Savings
         else -> Icons.Default.LocalAtm
     }
 }
