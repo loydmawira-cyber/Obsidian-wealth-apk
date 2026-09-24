@@ -5,6 +5,7 @@ import com.example.data.models.CreditCardEntity
 import com.example.data.models.GoalEntity
 import com.example.data.models.HoldingEntity
 import com.example.data.models.LoanEntity
+import com.example.data.models.NetWorthSnapshotEntity
 import com.example.data.models.SipEntity
 import com.example.data.models.TransactionEntity
 import kotlinx.coroutines.flow.Flow
@@ -19,7 +20,11 @@ class FinanceRepository(private val dao: FinanceDao) {
     val allLoans: Flow<List<LoanEntity>> = dao.getAllLoans()
     val allGoals: Flow<List<GoalEntity>> = dao.getAllGoals()
 
+    val allSnapshots: Flow<List<NetWorthSnapshotEntity>> = dao.getAllSnapshots()
+    suspend fun recordSnapshot(snapshot: NetWorthSnapshotEntity) = dao.upsertSnapshot(snapshot)
+
     // Transaction Operations
+    suspend fun deleteTransactionsBySourceReference(reference: String) = dao.deleteTransactionsBySourceReference(reference)
     suspend fun addTransaction(transaction: TransactionEntity): Long = dao.insertTransaction(transaction)
     suspend fun updateTransaction(transaction: TransactionEntity) = dao.updateTransaction(transaction)
     suspend fun deleteTransaction(transaction: TransactionEntity) = dao.deleteTransaction(transaction)
