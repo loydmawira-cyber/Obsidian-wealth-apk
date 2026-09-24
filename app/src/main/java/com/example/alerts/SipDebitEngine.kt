@@ -53,7 +53,8 @@ object SipDebitEngine {
                     category = Category.INVESTMENT_SIP,
                     account = "Cash / selected account",
                     note = "Automated recurring SIP debit recorded by Obsidian Wealth",
-                    isRecurring = true
+                    isRecurring = true,
+                    sourceReference = "sip:${sip.id}"
                 )
             )
 
