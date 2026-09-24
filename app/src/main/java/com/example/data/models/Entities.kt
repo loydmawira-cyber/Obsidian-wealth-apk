@@ -124,7 +124,9 @@ data class NetWorthSnapshotEntity(
     val netWorth: Double,
     val assets: Double,
     val liabilities: Double,
-    val dateMillis: Long
+    val dateMillis: Long,
+    // Investment holdings value that day; null on rows saved before this was recorded.
+    val investments: Double? = null
 )
 
 /** A monthly spending limit for one category. */
