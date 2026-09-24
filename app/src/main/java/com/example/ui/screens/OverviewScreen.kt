@@ -264,7 +264,8 @@ fun OverviewScreen(
         item {
             D3FinancialTrendsDashboard(
                 userSettings = userSettings,
-                summary = summary
+                summary = summary,
+                snapshots = viewModel.snapshots.collectAsState().value
             )
         }
 
