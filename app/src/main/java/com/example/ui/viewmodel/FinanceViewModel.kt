@@ -78,6 +78,9 @@ data class FinanceSummary(
     val totalInflow: Double = 0.0,
     val totalOutflow: Double = 0.0,
     val netCashRetained: Double = 0.0,
+    // Rolling last 30 days; used for savings rate, DTI and the advisor's "monthly" figures.
+    val recentInflow: Double = 0.0,
+    val recentOutflow: Double = 0.0,
     val savingsRate: Double = 0.0,
     val portfolioValue: Double = 0.0,
     val portfolioCost: Double = 0.0,
@@ -91,6 +94,19 @@ data class FinanceSummary(
     val holdingCount: Int = 0,
     val debtAccountCount: Int = 0,
     val goalCount: Int = 0
+)
+
+/** Cash flow for one calendar month, including the balance carried in and out. */
+data class MonthCashFlow(
+    val monthStart: Long = 0L,
+    val monthEnd: Long = 0L,
+    val label: String = "",
+    val opening: Double = 0.0,
+    val inflow: Double = 0.0,
+    val outflow: Double = 0.0,
+    val invested: Double = 0.0,
+    val closing: Double = 0.0,
+    val isCurrentMonth: Boolean = true
 )
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
@@ -245,6 +261,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         database.financeDao().clearAllLoans()
         database.financeDao().clearAllGoals()
             database.financeDao().clearAllSnapshots()
+            database.financeDao().clearAllBudgets()
+            resetPerAccountLocalState()
     }
 
     // AUTH & PIN ACTIONS
@@ -395,11 +413,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun syncVaultToCloud(onComplete: (CloudSyncResult) -> Unit = {}) {
         viewModelScope.launch {
             _isSyncingCloud.value = true
+            val pendingDeletions = preferencesManager.getPendingCloudDeletions()
             val res = firestoreSyncManager.syncLocalVaultToCloud(
                 dao = database.financeDao(),
-                settings = userSettings.value
+                settings = userSettings.value,
+                startingBalance = _startingBalance.value,
+                startingBalancePromptDone = _startingBalancePromptDone.value,
+                pendingDeletions = pendingDeletions
             )
             if (res.success) {
+                preferencesManager.removePendingCloudDeletions(pendingDeletions)
                 val now = System.currentTimeMillis()
                 preferencesManager.setLastCloudSyncTime(now)
                 _lastCloudSyncTime.value = now
@@ -418,6 +441,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 preferencesManager = preferencesManager
             )
             if (res.success) {
+                // Restore may have replaced the saved starting balance; refresh what the UI observes.
+                _startingBalance.value = preferencesManager.getStartingBalance()
+                _startingBalancePromptDone.value = preferencesManager.isStartingBalancePromptDone()
                 val now = System.currentTimeMillis()
                 preferencesManager.setLastCloudSyncTime(now)
                 _lastCloudSyncTime.value = now
@@ -442,6 +468,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             database.financeDao().clearAllLoans()
             database.financeDao().clearAllGoals()
             database.financeDao().clearAllSnapshots()
+            database.financeDao().clearAllBudgets()
+            resetPerAccountLocalState()
 
             // Safety net: the shared demo/tester account must never end up blank,
             // even if this function is somehow reached for it. Immediately re-seed.
@@ -581,22 +609,44 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     )
 
     // Summary calculation
+    // Cash the user had before their first recorded transaction. Entered by the user; 0 until then.
+    private val _startingBalance = MutableStateFlow(preferencesManager.getStartingBalance())
+    val startingBalance: StateFlow<Double> = _startingBalance.asStateFlow()
+    private val _startingBalancePromptDone = MutableStateFlow(preferencesManager.isStartingBalancePromptDone())
+    val startingBalancePromptDone: StateFlow<Boolean> = _startingBalancePromptDone.asStateFlow()
+
+    private fun currentMonthStart(): Long = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.DAY_OF_MONTH, 1)
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    private val _selectedMonthStart = MutableStateFlow(currentMonthStart())
+
     val summary: StateFlow<FinanceSummary> = combine(
-        transactions, combine(holdings, sips) { h, sp -> h to sp }, creditCards, loans, goals
+        transactions, combine(holdings, sips, _startingBalance) { h, sp, sb -> Triple(h, sp, sb) }, creditCards, loans, goals
     ) { txList, holdingsAndSips, cList, lList, gList ->
         val hList = holdingsAndSips.first
         val sList = holdingsAndSips.second
+        val startBalance = holdingsAndSips.third
         // No demo-value substitution. A zero total means the user has recorded nothing, and that
         // is what the UI and the advisor must both be told.
         val confirmedTransactions = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
         val inflow = confirmedTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
         val outflow = confirmedTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
         val netCash = inflow - outflow
-        // Money moved into investments is saved, not spent, and sale proceeds are not earnings,
-        // so investment transactions are left out of the savings-rate calculation.
-        val operatingIn = confirmedTransactions
+        // Savings rate and DTI use the last 30 days, not all-time totals, so they mean the same
+        // thing in month 1 and month 24. Money moved into investments is saved, not spent, and
+        // sale proceeds are not earnings, so investment transactions are left out of the rate.
+        val windowStart = System.currentTimeMillis() - 30L * 86_400_000L
+        val recentTx = confirmedTransactions.filter { it.dateMillis >= windowStart }
+        val recentIn = recentTx.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val recentOut = recentTx.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        val operatingIn = recentTx
             .filter { it.type == TransactionType.INCOME && it.category != Category.INVESTMENT_SIP }.sumOf { it.amount }
-        val operatingOut = confirmedTransactions
+        val operatingOut = recentTx
             .filter { it.type == TransactionType.EXPENSE && it.category != Category.INVESTMENT_SIP }.sumOf { it.amount }
         val savingsRate = if (operatingIn > 0) ((operatingIn - operatingOut) / operatingIn) * 100.0 else 0.0
 
@@ -613,12 +663,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val loanDebt = lList.sumOf { it.remainingBalance }
         val totalDebtVal = cardDebt + loanDebt
         val monthlyDebt = cList.sumOf { it.currentBalance * 0.03 } + lList.sumOf { it.emiAmount }
-        val dti = if (inflow > 0) (monthlyDebt / inflow) * 100.0 else 0.0
+        val dti = if (recentIn > 0) (monthlyDebt / recentIn) * 100.0 else 0.0
 
         val goalsSum = gList.sumOf { it.currentAmount }
         // Liquid cash was previously a hardcoded 850,000. Until a cash-account entity exists,
         // net cash retained from recorded transactions is the only defensible figure.
-        val liquidCash = if (netCash > 0) netCash else 0.0
+        // The user's starting cash plus everything recorded since. Shown as-is, even if negative.
+        val liquidCash = startBalance + netCash
         val totalAssetsVal = portVal + goalsSum + liquidCash
         val totalLiabilitiesVal = totalDebtVal
         val netWorthVal = totalAssetsVal - totalLiabilitiesVal
@@ -632,6 +683,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             totalInflow = inflow,
             totalOutflow = outflow,
             netCashRetained = netCash,
+            recentInflow = recentIn,
+            recentOutflow = recentOut,
             savingsRate = savingsRate,
             portfolioValue = portVal,
             portfolioCost = portCost,
@@ -647,6 +700,89 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             goalCount = gList.size
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FinanceSummary())
+
+    /** One calendar month of cash flow with opening and closing balances. */
+    val monthCashFlow: StateFlow<MonthCashFlow> = combine(
+        transactions, _selectedMonthStart, _startingBalance
+    ) { txList, monthStart, startBalance ->
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = monthStart; add(java.util.Calendar.MONTH, 1) }
+        val monthEnd = cal.timeInMillis
+        val confirmed = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
+        fun signed(t: TransactionEntity) = if (t.type == TransactionType.INCOME) t.amount else -t.amount
+        val opening = startBalance + confirmed.filter { it.dateMillis < monthStart }.sumOf { signed(it) }
+        val inMonth = confirmed.filter { it.dateMillis >= monthStart && it.dateMillis < monthEnd }
+        val inflow = inMonth.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val outflow = inMonth.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        val invested = inMonth.filter { it.type == TransactionType.EXPENSE && it.category == Category.INVESTMENT_SIP }.sumOf { it.amount }
+        MonthCashFlow(
+            monthStart = monthStart,
+            monthEnd = monthEnd,
+            label = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(monthStart)),
+            opening = opening,
+            inflow = inflow,
+            outflow = outflow,
+            invested = invested,
+            closing = opening + inflow - outflow,
+            isCurrentMonth = monthStart == currentMonthStart()
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MonthCashFlow())
+
+    /** Moves the Cash Flow view by whole months; the future is not selectable. */
+    fun shiftMonth(delta: Int) {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = _selectedMonthStart.value; add(java.util.Calendar.MONTH, delta) }
+        _selectedMonthStart.value = minOf(cal.timeInMillis, currentMonthStart())
+    }
+
+    /**
+     * Sets the cash the user has right now. The starting balance is derived from it, so that
+     * today's balance equals what they entered and everything recorded from here adds to it.
+     */
+    fun setCurrentCashBalance(current: Double) {
+        viewModelScope.launch {
+            val net = repository.allTransactions.first()
+                .filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
+                .sumOf { if (it.type == TransactionType.INCOME) it.amount else -it.amount }
+            val start = current - net
+            preferencesManager.setStartingBalance(start)
+            preferencesManager.setStartingBalancePromptDone(true)
+            _startingBalance.value = start
+            _startingBalancePromptDone.value = true
+            syncVaultToCloud()
+        }
+    }
+
+    fun dismissStartingBalancePrompt() {
+        preferencesManager.setStartingBalancePromptDone(true)
+        _startingBalancePromptDone.value = true
+        syncVaultToCloud()
+    }
+
+    /** Called whenever local data is wiped so one account's balance and pending cloud deletions never carry into another. */
+    private fun resetPerAccountLocalState() {
+        preferencesManager.clearPendingCloudDeletions()
+        preferencesManager.setStartingBalance(0.0)
+        preferencesManager.setStartingBalancePromptDone(false)
+        _startingBalance.value = 0.0
+        _startingBalancePromptDone.value = false
+    }
+
+    val budgets: StateFlow<List<com.example.data.models.BudgetEntity>> = repository.allBudgets
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun saveBudget(category: Category, monthlyLimit: Double) {
+        viewModelScope.launch {
+            repository.saveBudget(com.example.data.models.BudgetEntity(category, monthlyLimit))
+            syncVaultToCloud()
+        }
+    }
+
+    fun deleteBudget(budget: com.example.data.models.BudgetEntity) {
+        viewModelScope.launch {
+            queueCloudDeletion("budgets", budget.category.name)
+            repository.deleteBudget(budget)
+            syncVaultToCloud()
+        }
+    }
 
     val snapshots: StateFlow<List<com.example.data.models.NetWorthSnapshotEntity>> = repository.allSnapshots
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -704,8 +840,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 netWorth = s.totalNetWorth,
                 totalAssets = s.totalAssets,
                 totalLiabilities = s.totalLiabilities,
-                monthlyInflow = s.totalInflow,
-                monthlyOutflow = s.totalOutflow,
+                monthlyInflow = s.recentInflow,
+                monthlyOutflow = s.recentOutflow,
                 savingsRatePercent = s.savingsRate,
                 portfolioValue = s.portfolioValue,
                 portfolioCost = s.portfolioCost,
@@ -900,8 +1036,22 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Remembers that a document was deleted locally so the next sync removes it from the cloud too. */
+    private fun queueCloudDeletion(collection: String, id: Any) {
+        preferencesManager.addPendingCloudDeletions(listOf("$collection/$id"))
+    }
+
+    /** Queues cloud deletion for every ledger entry created by [reference] (e.g. "holding:7"). */
+    private suspend fun queueCloudDeletionsForReference(reference: String) {
+        val ids = repository.allTransactions.first()
+            .filter { it.sourceReference == reference }
+            .map { "transactions/${it.id}" }
+        preferencesManager.addPendingCloudDeletions(ids)
+    }
+
     fun deleteTransaction(transaction: TransactionEntity) {
         viewModelScope.launch {
+            queueCloudDeletion("transactions", transaction.id)
             repository.deleteTransaction(transaction)
             syncVaultToCloud()
         }
@@ -964,6 +1114,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             if (qty <= 0.0 || salePrice < 0.0) return@launch
             val remaining = holding.shares - qty
             if (remaining <= 1e-9) {
+                queueCloudDeletion("holdings", holding.id)
                 repository.deleteHolding(holding)
             } else {
                 repository.updateHolding(holding.copy(shares = remaining, currentPrice = salePrice))
@@ -990,6 +1141,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     /** Deleting a holding undoes its entry: the purchase expense it created is removed too. */
     fun deleteHolding(holding: HoldingEntity) {
         viewModelScope.launch {
+            queueCloudDeletionsForReference("holding:${holding.id}")
+            queueCloudDeletion("holdings", holding.id)
             repository.deleteTransactionsBySourceReference("holding:${holding.id}")
             repository.deleteHolding(holding)
             syncVaultToCloud()
@@ -1057,6 +1210,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     /** Deleting a SIP undoes it: every debit it recorded is removed. Use pause to stop a SIP but keep its history. */
     fun deleteSip(sip: SipEntity) {
         viewModelScope.launch {
+            queueCloudDeletionsForReference("sip:${sip.id}")
+            queueCloudDeletion("sips", sip.id)
             repository.deleteTransactionsBySourceReference("sip:${sip.id}")
             repository.deleteSip(sip)
             syncVaultToCloud()
