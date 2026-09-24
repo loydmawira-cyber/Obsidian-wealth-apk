@@ -151,3 +151,7 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
+}
