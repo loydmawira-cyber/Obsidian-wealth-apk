@@ -77,6 +77,8 @@ import com.example.ui.theme.SovereignGold
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.data.models.NetWorthSnapshotEntity
+import java.util.Calendar
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -90,67 +92,89 @@ enum class TrendMetricType(val title: String, val color: Color, val description:
 data class TrendDataPoint(
     val monthLabel: String,
     val netWorth: Double,
-    val investments: Double,
+    val investments: Double?,
     val debt: Double
 )
+
+/**
+ * Builds the chart points from the user's saved daily net-worth history (one point per month, or per
+ * quarter for 3Y, using the last day recorded in each). The current period always uses live figures.
+ * Nothing is estimated: a month with no saved history simply has no point.
+ */
+private fun buildTrendPoints(
+    timeframe: String,
+    snapshots: List<NetWorthSnapshotEntity>,
+    live: FinanceSummary?
+): List<TrendDataPoint> {
+    val months = when (timeframe) { "6M" -> 6; "3Y" -> 36; else -> 12 }
+    val quarterly = timeframe == "3Y"
+    val shortMonths = java.text.DateFormatSymbols.getInstance().shortMonths
+
+    val start = Calendar.getInstance().apply {
+        set(Calendar.DAY_OF_MONTH, 1)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+        add(Calendar.MONTH, -(months - 1))
+    }.timeInMillis
+
+    fun keyFor(year: Int, month: Int): String =
+        if (quarterly) "$year-Q${(month - 1) / 3 + 1}" else "$year-${"%02d".format(month)}"
+
+    fun labelFor(key: String): String {
+        val year = key.substring(0, 4)
+        return if (quarterly) {
+            "${key.substring(5)} '${year.takeLast(2)}"
+        } else {
+            shortMonths[key.substring(5, 7).toInt() - 1]
+        }
+    }
+
+    val points = snapshots
+        .filter { it.dateMillis >= start && it.dayKey.length >= 7 }
+        .groupBy { keyFor(it.dayKey.substring(0, 4).toInt(), it.dayKey.substring(5, 7).toInt()) }
+        .toSortedMap()
+        .map { (key, days) ->
+            val last = days.maxByOrNull { it.dayKey }!!
+            key to TrendDataPoint(labelFor(key), last.netWorth, last.investments, last.liabilities)
+        }
+        .toMutableList()
+
+    val hasLiveData = live != null && (live.transactionCount > 0 || live.holdingCount > 0 ||
+        live.debtAccountCount > 0 || live.totalNetWorth != 0.0)
+    if (hasLiveData && live != null) {
+        val now = Calendar.getInstance()
+        val nowKey = keyFor(now.get(Calendar.YEAR), now.get(Calendar.MONTH) + 1)
+        val livePoint = TrendDataPoint(labelFor(nowKey), live.totalNetWorth, live.portfolioValue, live.totalLiabilities)
+        if (points.isNotEmpty() && points.last().first == nowKey) {
+            points[points.lastIndex] = nowKey to livePoint
+        } else {
+            points.add(nowKey to livePoint)
+        }
+    }
+    return points.map { it.second }
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun D3FinancialTrendsDashboard(
     userSettings: UserSettings,
     summary: FinanceSummary? = null,
+    snapshots: List<NetWorthSnapshotEntity> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     var selectedMetric by remember { mutableStateOf(TrendMetricType.NET_WORTH) }
     var selectedTimeframe by remember { mutableStateOf("1Y") }
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
 
-    val hasRealData = summary != null && (summary.transactionCount > 0 || summary.holdingCount > 0 || summary.debtAccountCount > 0 || summary.totalNetWorth != 0.0)
-
-    val dataPoints = remember(selectedTimeframe, summary, hasRealData) {
-        if (!hasRealData || summary == null) {
-            listOf(
-                TrendDataPoint("May", 0.0, 0.0, 0.0),
-                TrendDataPoint("Jun", 0.0, 0.0, 0.0),
-                TrendDataPoint("Jul", 0.0, 0.0, 0.0),
-                TrendDataPoint("Aug", 0.0, 0.0, 0.0),
-                TrendDataPoint("Sep", 0.0, 0.0, 0.0),
-                TrendDataPoint("Oct", 0.0, 0.0, 0.0)
-            )
-        } else {
-            val nw = summary.totalNetWorth
-            val inv = summary.portfolioValue
-            val debt = summary.totalDebt
-            when (selectedTimeframe) {
-                "6M" -> listOf(
-                    TrendDataPoint("May", (nw * 0.75).roundToInt().toDouble(), (inv * 0.70).roundToInt().toDouble(), (debt * 1.30).roundToInt().toDouble()),
-                    TrendDataPoint("Jun", (nw * 0.80).roundToInt().toDouble(), (inv * 0.76).roundToInt().toDouble(), (debt * 1.20).roundToInt().toDouble()),
-                    TrendDataPoint("Jul", (nw * 0.85).roundToInt().toDouble(), (inv * 0.82).roundToInt().toDouble(), (debt * 1.15).roundToInt().toDouble()),
-                    TrendDataPoint("Aug", (nw * 0.90).roundToInt().toDouble(), (inv * 0.88).roundToInt().toDouble(), (debt * 1.10).roundToInt().toDouble()),
-                    TrendDataPoint("Sep", (nw * 0.95).roundToInt().toDouble(), (inv * 0.94).roundToInt().toDouble(), (debt * 1.05).roundToInt().toDouble()),
-                    TrendDataPoint("Oct", nw, inv, debt)
-                )
-                "3Y" -> listOf(
-                    TrendDataPoint("2023 Q1", (nw * 0.45).roundToInt().toDouble(), (inv * 0.40).roundToInt().toDouble(), (debt * 1.80).roundToInt().toDouble()),
-                    TrendDataPoint("2023 Q3", (nw * 0.58).roundToInt().toDouble(), (inv * 0.52).roundToInt().toDouble(), (debt * 1.50).roundToInt().toDouble()),
-                    TrendDataPoint("2024 Q1", (nw * 0.68).roundToInt().toDouble(), (inv * 0.62).roundToInt().toDouble(), (debt * 1.35).roundToInt().toDouble()),
-                    TrendDataPoint("2024 Q3", (nw * 0.80).roundToInt().toDouble(), (inv * 0.75).roundToInt().toDouble(), (debt * 1.20).roundToInt().toDouble()),
-                    TrendDataPoint("2025 Q1", (nw * 0.90).roundToInt().toDouble(), (inv * 0.88).roundToInt().toDouble(), (debt * 1.10).roundToInt().toDouble()),
-                    TrendDataPoint("2025 Q3", nw, inv, debt)
-                )
-                else -> listOf(
-                    TrendDataPoint("Nov", (nw * 0.65).roundToInt().toDouble(), (inv * 0.58).roundToInt().toDouble(), (debt * 1.40).roundToInt().toDouble()),
-                    TrendDataPoint("Jan", (nw * 0.72).roundToInt().toDouble(), (inv * 0.65).roundToInt().toDouble(), (debt * 1.30).roundToInt().toDouble()),
-                    TrendDataPoint("Mar", (nw * 0.78).roundToInt().toDouble(), (inv * 0.72).roundToInt().toDouble(), (debt * 1.20).roundToInt().toDouble()),
-                    TrendDataPoint("May", (nw * 0.85).roundToInt().toDouble(), (inv * 0.80).roundToInt().toDouble(), (debt * 1.12).roundToInt().toDouble()),
-                    TrendDataPoint("Jul", (nw * 0.92).roundToInt().toDouble(), (inv * 0.90).roundToInt().toDouble(), (debt * 1.05).roundToInt().toDouble()),
-                    TrendDataPoint("Sep", nw, inv, debt)
-                )
-            }
-        }
+    val dataPoints = remember(selectedTimeframe, snapshots, summary) {
+        buildTrendPoints(selectedTimeframe, snapshots, summary)
     }
 
-    val activePoint = selectedIndex?.let { dataPoints.getOrNull(it) } ?: dataPoints.last()
+    val activePoint = selectedIndex?.let { dataPoints.getOrNull(it) }
+        ?: dataPoints.lastOrNull()
+        ?: TrendDataPoint("-", 0.0, null, 0.0)
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -188,7 +212,7 @@ fun D3FinancialTrendsDashboard(
                             letterSpacing = 1.sp
                         )
                         Text(
-                            text = "Interactive Bezier Splines & Real-Time Curves",
+                            text = "Built from your saved daily net-worth history",
                             color = TextMuted,
                             fontSize = 10.sp
                         )
@@ -289,7 +313,7 @@ fun D3FinancialTrendsDashboard(
                         Spacer(modifier = Modifier.height(2.dp))
                         val displayVal = when (selectedMetric) {
                             TrendMetricType.NET_WORTH -> activePoint.netWorth
-                            TrendMetricType.INVESTMENTS -> activePoint.investments
+                            TrendMetricType.INVESTMENTS -> activePoint.investments ?: 0.0
                             TrendMetricType.DEBT_REDUCTION -> activePoint.debt
                             TrendMetricType.MULTI_COMPARE -> activePoint.netWorth
                         }
@@ -320,14 +344,14 @@ fun D3FinancialTrendsDashboard(
                                 }
                                 val currentVal = when (selectedMetric) {
                                     TrendMetricType.DEBT_REDUCTION -> activePoint.debt
-                                    TrendMetricType.INVESTMENTS -> activePoint.investments
+                                    TrendMetricType.INVESTMENTS -> activePoint.investments ?: 0.0
                                     else -> activePoint.netWorth
                                 }
-                                val pct = if (!hasRealData || startVal == 0.0) {
+                                val pct = if (dataPoints.size < 2 || startVal == 0.0) {
                                     when (selectedMetric) {
-                                        TrendMetricType.DEBT_REDUCTION -> "0.0% Debt"
-                                        TrendMetricType.INVESTMENTS -> "0.0% Assets"
-                                        else -> "0.0% Growth"
+                                        TrendMetricType.DEBT_REDUCTION -> "Building history"
+                                        TrendMetricType.INVESTMENTS -> "Building history"
+                                        else -> "Building history"
                                     }
                                 } else {
                                     val diffPct = ((currentVal - startVal) / startVal) * 100.0
@@ -374,6 +398,7 @@ fun D3FinancialTrendsDashboard(
                         .pointerInput(dataPoints, selectedMetric) {
                             detectTapGestures { offset ->
                                 val step = size.width / (dataPoints.size - 1).coerceAtLeast(1)
+                                if (dataPoints.isEmpty()) return@detectTapGestures
                                 val index = (offset.x / step).roundToInt().coerceIn(0, dataPoints.size - 1)
                                 selectedIndex = index
                             }
@@ -381,19 +406,26 @@ fun D3FinancialTrendsDashboard(
                 ) {
                     val w = size.width
                     val h = size.height
-                    if (w <= 0 || h <= 0) return@Canvas
+                    if (w <= 0 || h <= 0 || dataPoints.isEmpty()) return@Canvas
 
                     // Determine values based on metric selection
                     val primaryValues = when (selectedMetric) {
                         TrendMetricType.NET_WORTH -> dataPoints.map { it.netWorth }
-                        TrendMetricType.INVESTMENTS -> dataPoints.map { it.investments }
+                        TrendMetricType.INVESTMENTS -> dataPoints.map { it.investments ?: 0.0 }
                         TrendMetricType.DEBT_REDUCTION -> dataPoints.map { it.debt }
                         TrendMetricType.MULTI_COMPARE -> dataPoints.map { it.netWorth }
                     }
 
-                    val minVal = (primaryValues.minOrNull() ?: 0.0) * 0.85
-                    val maxVal = (primaryValues.maxOrNull() ?: 1.0) * 1.15
-                    val range = if (maxVal - minVal == 0.0) 1.0 else maxVal - minVal
+                    // Scale to whatever is drawn (all three curves in overlay mode), padded by a share of the spread.
+                    val scaleValues = if (selectedMetric == TrendMetricType.MULTI_COMPARE) {
+                        primaryValues + dataPoints.map { it.investments ?: 0.0 } + dataPoints.map { it.debt }
+                    } else primaryValues
+                    val lo = scaleValues.minOrNull() ?: 0.0
+                    val hi = scaleValues.maxOrNull() ?: 1.0
+                    val pad = maxOf((hi - lo) * 0.15, abs(hi) * 0.05, 1.0)
+                    val minVal = lo - pad
+                    val maxVal = hi + pad
+                    val range = maxVal - minVal
 
                     val stepX = w / (dataPoints.size - 1).coerceAtLeast(1)
 
@@ -418,7 +450,7 @@ fun D3FinancialTrendsDashboard(
 
                     // Helper to draw a single smooth cubic curve
                     fun drawCurve(values: List<Double>, curveColor: Color, fillGradient: Boolean) {
-                        if (values.isEmpty()) return
+                        if (values.size < 2) return
                         val strokePath = Path()
                         val fillPath = Path()
 
@@ -466,7 +498,7 @@ fun D3FinancialTrendsDashboard(
 
                     if (selectedMetric == TrendMetricType.MULTI_COMPARE) {
                         // Draw Investment curve (Emerald)
-                        drawCurve(dataPoints.map { it.investments }, EmeraldGrowth, true)
+                        drawCurve(dataPoints.map { it.investments ?: 0.0 }, EmeraldGrowth, true)
                         // Draw Debt curve (Rose)
                         drawCurve(dataPoints.map { it.debt }, Color(0xFFFB7185), false)
                         // Draw Net Worth curve (Gold)
@@ -476,8 +508,8 @@ fun D3FinancialTrendsDashboard(
                     }
 
                     // Active selected node highlight
-                    val activeIdx = selectedIndex ?: (dataPoints.size - 1)
-                    val nodeX = activeIdx * stepX
+                    val activeIdx = (selectedIndex ?: (dataPoints.size - 1)).coerceIn(0, dataPoints.size - 1)
+                    val nodeX = if (dataPoints.size == 1) w / 2f else activeIdx * stepX
                     val nodeVal = primaryValues[activeIdx]
                     val nodeY = getY(nodeVal)
 
@@ -509,6 +541,19 @@ fun D3FinancialTrendsDashboard(
                     )
                 }
 
+                if (dataPoints.size < 2) {
+                    Text(
+                        text = if (dataPoints.isEmpty()) "No history yet. Your net worth is saved once a day as you use the app."
+                        else "Only this month is recorded so far. The trend line builds up as more days are saved.",
+                        color = TextMuted,
+                        fontSize = 11.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(horizontal = 28.dp)
+                    )
+                }
+
                 // Month Axis Labels at bottom
                 Row(
                     modifier = Modifier
@@ -517,14 +562,17 @@ fun D3FinancialTrendsDashboard(
                         .padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    // Up to six labels fit; beyond that only the first and last are shown (tap for the rest).
                     dataPoints.forEachIndexed { idx, pt ->
-                        val isSelected = (selectedIndex ?: (dataPoints.size - 1)) == idx
-                        Text(
-                            text = pt.monthLabel,
-                            color = if (isSelected) SovereignGold else TextMuted,
-                            fontSize = 9.sp,
-                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal
-                        )
+                        if (dataPoints.size <= 6 || idx == 0 || idx == dataPoints.lastIndex) {
+                            val isSelected = (selectedIndex ?: (dataPoints.size - 1)) == idx
+                            Text(
+                                text = pt.monthLabel,
+                                color = if (isSelected) SovereignGold else TextMuted,
+                                fontSize = 9.sp,
+                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal
+                            )
+                        }
                     }
                 }
             }
