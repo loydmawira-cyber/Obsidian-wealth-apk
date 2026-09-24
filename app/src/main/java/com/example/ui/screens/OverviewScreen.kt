@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,6 +88,14 @@ fun OverviewScreen(
     modifier: Modifier = Modifier
 ) {
     val summary by viewModel.summary.collectAsState()
+    val snapshots by viewModel.snapshots.collectAsState()
+    val netWorthChange: Pair<Int, Double>? = remember(snapshots, summary.totalNetWorth) {
+        val now = System.currentTimeMillis()
+        val base = snapshots.lastOrNull { it.dateMillis <= now - 25L * 86_400_000L }
+        if (base != null && base.netWorth != 0.0) {
+            Pair(((now - base.dateMillis) / 86_400_000L).toInt(), ((summary.totalNetWorth - base.netWorth) / Math.abs(base.netWorth)) * 100.0)
+        } else null
+    }
     val userSettings by viewModel.userSettings.collectAsState()
     val sips by viewModel.sips.collectAsState()
     val creditCards by viewModel.creditCards.collectAsState()
@@ -133,7 +142,11 @@ fun OverviewScreen(
                         // fixed "+1.4%" made every vault, including an empty new one, look like
                         // it had a month of real gains.
                         if (summary.transactionCount > 0 || summary.holdingCount > 0) {
-                            GoldBadge(text = "MoM: N/A")
+                            GoldBadge(
+                                text = netWorthChange?.let { (days, pct) ->
+                                    "${days}d: ${if (pct >= 0) "+" else ""}${"%.1f".format(pct)}%"
+                                } ?: "MoM: N/A"
+                            )
                         }
                     }
 
@@ -183,6 +196,19 @@ fun OverviewScreen(
                                 )
                             }
                         }
+                    }
+
+                    if (snapshots.size >= 2) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "NET WORTH TREND (${snapshots.size} DAYS RECORDED)",
+                            color = TextMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        NetWorthSparkline(points = snapshots.takeLast(60).map { it.netWorth }, lineColor = SovereignGold)
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -686,5 +712,28 @@ private fun BreakdownLine(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+
+@Composable
+private fun NetWorthSparkline(points: List<Double>, lineColor: Color) {
+    if (points.size < 2) return
+    val minV = points.minOrNull() ?: 0.0
+    val maxV = points.maxOrNull() ?: 0.0
+    val range = if (maxV - minV > 0.0) maxV - minV else 1.0
+    androidx.compose.foundation.Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+    ) {
+        val stepX = size.width / (points.size - 1)
+        val path = androidx.compose.ui.graphics.Path()
+        points.forEachIndexed { i, v ->
+            val x = i * stepX
+            val y = size.height - ((v - minV) / range).toFloat() * size.height
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, color = lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
     }
 }
