@@ -114,3 +114,13 @@ data class GoalEntity(
         (remaining / monthlyContribution).toInt()
     } else 0
 }
+
+/** One row per calendar day (yyyy-MM-dd): the latest net worth recorded that day. Powers the trend line and MoM change. */
+@Entity(tableName = "net_worth_snapshots")
+data class NetWorthSnapshotEntity(
+    @PrimaryKey val dayKey: String,
+    val netWorth: Double,
+    val assets: Double,
+    val liabilities: Double,
+    val dateMillis: Long
+)
