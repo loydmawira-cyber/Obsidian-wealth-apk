@@ -1062,6 +1062,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         preferencesManager.addPendingCloudDeletions(ids)
     }
 
+    fun updateTransaction(transaction: TransactionEntity) {
+        viewModelScope.launch {
+            repository.updateTransaction(transaction)
+            syncVaultToCloud()
+        }
+    }
+
     fun deleteTransaction(transaction: TransactionEntity) {
         viewModelScope.launch {
             queueCloudDeletion("transactions", transaction.id)
