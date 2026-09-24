@@ -110,6 +110,9 @@ data class MonthCashFlow(
     val isCurrentMonth: Boolean = true
 )
 
+/** Categories that move money into something you own rather than spend it. */
+private val nonSpendingCategories = setOf(Category.INVESTMENT_SIP, Category.GOAL_SAVINGS)
+
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val billingManager = BillingManager(application)
     private val firebaseAuth: FirebaseAuth? by lazy {
@@ -646,9 +649,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val recentIn = recentTx.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
         val recentOut = recentTx.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
         val operatingIn = recentTx
-            .filter { it.type == TransactionType.INCOME && it.category != Category.INVESTMENT_SIP }.sumOf { it.amount }
+            .filter { it.type == TransactionType.INCOME && it.category !in nonSpendingCategories }.sumOf { it.amount }
         val operatingOut = recentTx
-            .filter { it.type == TransactionType.EXPENSE && it.category != Category.INVESTMENT_SIP }.sumOf { it.amount }
+            .filter { it.type == TransactionType.EXPENSE && it.category !in nonSpendingCategories }.sumOf { it.amount }
         val savingsRate = if (operatingIn > 0) ((operatingIn - operatingOut) / operatingIn) * 100.0 else 0.0
 
         // SIPs count toward the portfolio at the amount invested so far (both value and cost).
@@ -714,7 +717,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val inMonth = confirmed.filter { it.dateMillis >= monthStart && it.dateMillis < monthEnd }
         val inflow = inMonth.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
         val outflow = inMonth.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
-        val invested = inMonth.filter { it.type == TransactionType.EXPENSE && it.category == Category.INVESTMENT_SIP }.sumOf { it.amount }
+        val invested = inMonth.filter { it.type == TransactionType.EXPENSE && it.category in nonSpendingCategories }.sumOf { it.amount }
         MonthCashFlow(
             monthStart = monthStart,
             monthEnd = monthEnd,
@@ -1312,15 +1315,20 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Creates a goal. If it starts with a balance, [deductFromCash] says whether that money is still
+     * in the user's cash (deduct it) or was already set aside (leave cash alone).
+     */
     fun addGoal(
         title: String,
         category: String,
         targetAmount: Double,
         currentAmount: Double,
-        monthlyContribution: Double
+        monthlyContribution: Double,
+        deductFromCash: Boolean = false
     ) {
         viewModelScope.launch {
-            repository.addGoal(
+            val goalId = repository.addGoal(
                 GoalEntity(
                     title = title,
                     category = category,
@@ -1329,25 +1337,46 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     monthlyContribution = monthlyContribution
                 )
             )
+            if (deductFromCash && currentAmount > 0) {
+                recordGoalTransfer(title, currentAmount, toGoal = true, goalId = goalId, note = "Opening balance of goal")
+            }
             syncVaultToCloud()
         }
     }
 
+    /** Moves [amount] from cash into the goal and records it as savings. */
     fun contributeGoal(goal: GoalEntity, amount: Double) {
+        if (amount <= 0.0) return
         viewModelScope.launch {
             repository.contributeToGoal(goal, amount)
-            repository.addTransaction(
-                TransactionEntity(
-                    title = "Goal Deposit: ${goal.title}",
-                    amount = amount,
-                    type = TransactionType.EXPENSE,
-                    category = Category.OTHER,
-                    account = "Chase Checking",
-                    note = "Capital reserve deposit"
-                )
-            )
+            recordGoalTransfer(goal.title, amount, toGoal = true, goalId = goal.id, note = "Deposit into goal")
             syncVaultToCloud()
         }
+    }
+
+    /** Moves [amount] (at most what the goal holds) from the goal back into cash. */
+    fun withdrawFromGoal(goal: GoalEntity, amount: Double) {
+        viewModelScope.launch {
+            val withdrawn = amount.coerceAtMost(goal.currentAmount)
+            if (withdrawn <= 0.0) return@launch
+            repository.contributeToGoal(goal, -withdrawn)
+            recordGoalTransfer(goal.title, withdrawn, toGoal = false, goalId = goal.id, note = "Withdrawal from goal")
+            syncVaultToCloud()
+        }
+    }
+
+    private suspend fun recordGoalTransfer(title: String, amount: Double, toGoal: Boolean, goalId: Long, note: String) {
+        repository.addTransaction(
+            TransactionEntity(
+                title = if (toGoal) "Goal deposit: $title" else "Goal withdrawal: $title",
+                amount = amount,
+                type = if (toGoal) TransactionType.EXPENSE else TransactionType.INCOME,
+                category = Category.GOAL_SAVINGS,
+                account = "Cash / selected account",
+                note = note,
+                sourceReference = "goal:$goalId"
+            )
+        )
     }
 
     companion object {
