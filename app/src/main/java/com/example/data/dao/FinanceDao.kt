@@ -10,6 +10,7 @@ import com.example.data.models.CreditCardEntity
 import com.example.data.models.GoalEntity
 import com.example.data.models.HoldingEntity
 import com.example.data.models.LoanEntity
+import com.example.data.models.BudgetEntity
 import com.example.data.models.NetWorthSnapshotEntity
 import com.example.data.models.SipEntity
 import com.example.data.models.TransactionEntity
@@ -45,6 +46,31 @@ interface FinanceDao {
 
     @Query("DELETE FROM net_worth_snapshots")
     suspend fun clearAllSnapshots()
+
+    // --- Budgets ---
+    @Query("SELECT * FROM budgets ORDER BY category ASC")
+    fun getAllBudgets(): Flow<List<BudgetEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertBudget(budget: BudgetEntity)
+
+    @Delete
+    suspend fun deleteBudget(budget: BudgetEntity)
+
+    @Query("DELETE FROM budgets")
+    suspend fun clearAllBudgets()
+
+    @Query("SELECT * FROM budgets")
+    suspend fun getBudgetsSnapshot(): List<BudgetEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertBudgets(budgets: List<BudgetEntity>)
+
+    @Query("SELECT * FROM net_worth_snapshots")
+    suspend fun getNetWorthSnapshotsSnapshot(): List<NetWorthSnapshotEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSnapshots(snapshots: List<NetWorthSnapshotEntity>)
 
     @Query("UPDATE transactions SET importStatus = :status WHERE id = :id")
     suspend fun updateImportStatus(id: Long, status: String)
