@@ -15,6 +15,7 @@ import com.example.data.models.GoalEntity
 import com.example.data.models.HoldingEntity
 import com.example.data.models.HoldingType
 import com.example.data.models.LoanEntity
+import com.example.data.models.BudgetEntity
 import com.example.data.models.NetWorthSnapshotEntity
 import com.example.data.models.SipEntity
 import com.example.data.models.TransactionEntity
@@ -53,6 +54,14 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `budgets` (`category` TEXT NOT NULL, `monthlyLimit` REAL NOT NULL, PRIMARY KEY(`category`))"
+        )
+    }
+}
+
 @Database(
     entities = [
         TransactionEntity::class,
@@ -61,9 +70,10 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         CreditCardEntity::class,
         LoanEntity::class,
         GoalEntity::class,
-        NetWorthSnapshotEntity::class
+        NetWorthSnapshotEntity::class,
+        BudgetEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -79,7 +89,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "obsidian_wealth_v3.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance
@@ -103,6 +113,7 @@ abstract class AppDatabase : RoomDatabase() {
             dao.clearAllLoans()
             dao.clearAllGoals()
             dao.clearAllSnapshots()
+            dao.clearAllBudgets()
             populateDatabaseForRegion(dao, region)
         }
 
