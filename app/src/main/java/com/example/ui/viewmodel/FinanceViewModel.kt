@@ -520,6 +520,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         preferencesManager.toggleHideBalances()
     }
 
+    fun setThemeMode(mode: com.example.data.models.ThemeMode) {
+        preferencesManager.updateSettings(userSettings.value.copy(themeMode = mode))
+    }
+
+    fun setAccentColor(color: com.example.data.models.AccentColor) {
+        preferencesManager.updateSettings(userSettings.value.copy(accentColor = color))
+    }
+
     fun toggleModule(module: String, enabled: Boolean) {
         preferencesManager.toggleModule(module, enabled)
         validateSelectedTab()
