@@ -92,7 +92,7 @@ fun MonthCashFlowCard(viewModel: FinanceViewModel) {
             BalanceLine("+ Inflow", viewModel.formatAmount(month.inflow), EmeraldLight)
             BalanceLine("\u2212 Outflow", viewModel.formatAmount(month.outflow), Color(0xFFFB7185))
             if (month.invested > 0) {
-                BalanceLine("   of which invested", viewModel.formatAmount(month.invested), TextMuted, small = true)
+                BalanceLine("   of which invested & saved", viewModel.formatAmount(month.invested), TextMuted, small = true)
             }
             Spacer(modifier = Modifier.height(4.dp))
             BalanceLine(
