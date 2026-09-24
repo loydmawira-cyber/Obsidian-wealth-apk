@@ -216,6 +216,41 @@ class PreferencesManager(context: Context) {
         prefs.edit().putBoolean(KEY_PIN_ENABLED, enabled).apply()
     }
 
+    // CLOUD DELETIONS: items the user deleted on this device that still need removing from the cloud.
+    // Entries look like "transactions/42". Only explicit local deletions are ever queued, so a new
+    // or empty device can never wipe a cloud vault.
+    fun getPendingCloudDeletions(): Set<String> =
+        (prefs.getStringSet(KEY_PENDING_CLOUD_DELETIONS, emptySet()) ?: emptySet()).toSet()
+
+    fun addPendingCloudDeletions(entries: Collection<String>) {
+        if (entries.isEmpty()) return
+        val updated = getPendingCloudDeletions().toMutableSet().apply { addAll(entries) }
+        prefs.edit().putStringSet(KEY_PENDING_CLOUD_DELETIONS, updated).apply()
+    }
+
+    fun removePendingCloudDeletions(entries: Collection<String>) {
+        val updated = getPendingCloudDeletions().toMutableSet().apply { removeAll(entries.toSet()) }
+        prefs.edit().putStringSet(KEY_PENDING_CLOUD_DELETIONS, updated).apply()
+    }
+
+    fun clearPendingCloudDeletions() {
+        prefs.edit().remove(KEY_PENDING_CLOUD_DELETIONS).apply()
+    }
+
+    // CASH STARTING BALANCE (set by each user; 0 until they choose to enter one)
+    fun getStartingBalance(): Double =
+        java.lang.Double.longBitsToDouble(prefs.getLong(KEY_STARTING_BALANCE, java.lang.Double.doubleToRawLongBits(0.0)))
+
+    fun setStartingBalance(value: Double) {
+        prefs.edit().putLong(KEY_STARTING_BALANCE, java.lang.Double.doubleToRawLongBits(value)).apply()
+    }
+
+    fun isStartingBalancePromptDone(): Boolean = prefs.getBoolean(KEY_STARTING_BALANCE_PROMPT_DONE, false)
+
+    fun setStartingBalancePromptDone(done: Boolean) {
+        prefs.edit().putBoolean(KEY_STARTING_BALANCE_PROMPT_DONE, done).apply()
+    }
+
     // DEMO/SEED DATA (restricted to a single designated account)
     fun hasAutoSeededDemoData(): Boolean {
         return prefs.getBoolean(KEY_DEMO_SEEDED, false)
@@ -254,6 +289,9 @@ class PreferencesManager(context: Context) {
         private const val KEY_USER_EMAIL = "pref_user_email"
         private const val KEY_PIN_ENABLED = "pref_pin_enabled"
         private const val KEY_DEMO_SEEDED = "pref_demo_seeded"
+        private const val KEY_PENDING_CLOUD_DELETIONS = "pref_pending_cloud_deletions"
+        private const val KEY_STARTING_BALANCE = "pref_cash_starting_balance"
+        private const val KEY_STARTING_BALANCE_PROMPT_DONE = "pref_cash_starting_balance_prompt_done"
         private const val KEY_LAST_SIGNED_IN_UID = "pref_last_signed_in_uid"
         private const val KEY_ENABLE_NOTIFICATIONS = "pref_enable_notifications"
         private const val KEY_ENABLE_BILL_DUE = "pref_enable_bill_due"
