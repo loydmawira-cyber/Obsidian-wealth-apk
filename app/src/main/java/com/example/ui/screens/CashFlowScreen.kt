@@ -102,6 +102,8 @@ fun CashFlowScreen(
     modifier: Modifier = Modifier
 ) {
     val summary by viewModel.summary.collectAsState()
+    val month by viewModel.monthCashFlow.collectAsState()
+    val budgets by viewModel.budgets.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val sym = userSettings.currency.symbol
@@ -122,12 +124,14 @@ fun CashFlowScreen(
             "RECURRING" -> tx.isRecurring
             else -> true
         }
-        matchesSearch && matchesFilter
+        val inMonth = tx.dateMillis >= month.monthStart && tx.dateMillis < month.monthEnd
+        matchesSearch && matchesFilter && inMonth
     }
 
     // Dynamic Donut chart slices for expenses
     val expenseTransactions = transactions.filter {
-        it.type == TransactionType.EXPENSE && it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED"
+        it.type == TransactionType.EXPENSE && it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
+            it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
     }
     val donutSlices = if (expenseTransactions.isNotEmpty()) {
         val categoryColors = mapOf(
@@ -166,11 +170,21 @@ fun CashFlowScreen(
     }
 
     val hasCashFlowData = summary.totalInflow > 0 || summary.totalOutflow > 0 || summary.transactionCount > 0
-    val budgetCap = if (hasCashFlowData) (if (isKenya) 350000.0 else 5000.0) else 0.0
-    val budgetSpent = summary.totalOutflow
+    // The monthly cap is the sum of the user's own budgets; nothing is assumed.
+    val budgetCap = budgets.sumOf { it.monthlyLimit }
+    val budgetedCategories = budgets.map { it.category }.toSet()
+    val budgetSpent = transactions
+        .filter {
+            it.type == TransactionType.EXPENSE && it.category in budgetedCategories &&
+                it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
+                it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
+        }
+        .sumOf { it.amount }
     val budgetProgress = if (budgetCap > 0) (budgetSpent / budgetCap).toFloat().coerceIn(0f, 1f) else 0f
     val bufferRemaining = if (budgetCap > 0) (budgetCap - budgetSpent).coerceAtLeast(0.0) else 0.0
-    val dailyPace = if (budgetCap > 0) bufferRemaining / 12.0 else 0.0
+    val nowCal = java.util.Calendar.getInstance()
+    val daysLeft = nowCal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH) - nowCal.get(java.util.Calendar.DAY_OF_MONTH) + 1
+    val dailyPace = if (budgetCap > 0 && month.isCurrentMonth) bufferRemaining / daysLeft else 0.0
     val pendingImportedCount = transactions.count { it.importStatus == "PENDING_REVIEW" }
 
     LazyColumn(
@@ -190,6 +204,9 @@ fun CashFlowScreen(
                 }
             }
         }
+        // Month switcher with opening / closing balances
+        item { MonthCashFlowCard(viewModel = viewModel) }
+
         // Cash Flow Hero Waterfall Summary
         item {
             FinCard(
@@ -202,7 +219,7 @@ fun CashFlowScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "NET CASH RETAINED",
+                            text = "NET CASH THIS MONTH",
                             color = TextSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -210,9 +227,9 @@ fun CashFlowScreen(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = (if (summary.netCashRetained >= 0) "+" else "") + viewModel.formatAmount(summary.netCashRetained),
-                            color = if (summary.netCashRetained >= 0) EmeraldLight else CrimsonDebt,
-                            fontSize = if (Math.abs(summary.netCashRetained) >= 100_000) 21.sp else 26.sp,
+                            text = (if ((month.inflow - month.outflow) >= 0) "+" else "") + viewModel.formatAmount((month.inflow - month.outflow)),
+                            color = if ((month.inflow - month.outflow) >= 0) EmeraldLight else CrimsonDebt,
+                            fontSize = if (Math.abs((month.inflow - month.outflow)) >= 100_000) 21.sp else 26.sp,
                             fontWeight = FontWeight.ExtraBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -222,7 +239,7 @@ fun CashFlowScreen(
                     Spacer(modifier = Modifier.width(6.dp))
 
                     GoldBadge(
-                        text = "${"%.1f".format(summary.savingsRate)}% Savings Velocity"
+                        text = "${"%.1f".format(summary.savingsRate)}% saved (30 days)"
                     )
                 }
 
@@ -248,13 +265,13 @@ fun CashFlowScreen(
                                     Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = EmeraldLight, modifier = Modifier.size(14.dp))
                                 }
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Total Inflow", color = TextSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("Inflow", color = TextSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = viewModel.formatAmount(summary.totalInflow),
+                                text = viewModel.formatAmount(month.inflow),
                                 color = EmeraldLight,
-                                fontSize = if (summary.totalInflow >= 100_000) 13.sp else 16.sp,
+                                fontSize = if (month.inflow >= 100_000) 13.sp else 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -277,13 +294,13 @@ fun CashFlowScreen(
                                     Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = Color(0xFFFB7185), modifier = Modifier.size(14.dp))
                                 }
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Total Outflow", color = TextSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("Outflow", color = TextSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = viewModel.formatAmount(summary.totalOutflow),
+                                text = viewModel.formatAmount(month.outflow),
                                 color = Color(0xFFFB7185),
-                                fontSize = if (summary.totalOutflow >= 100_000) 13.sp else 16.sp,
+                                fontSize = if (month.outflow >= 100_000) 13.sp else 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -310,7 +327,7 @@ fun CashFlowScreen(
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = if (budgetCap > 0) "${viewModel.formatCompact(budgetSpent)} / ${viewModel.formatCompact(budgetCap)}" else "${viewModel.formatCompact(0.0)} / ${viewModel.formatCompact(0.0)}",
+                        text = if (budgetCap > 0) "${viewModel.formatCompact(budgetSpent)} / ${viewModel.formatCompact(budgetCap)}" else "No budgets set",
                         color = TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -336,12 +353,15 @@ fun CashFlowScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = if (hasCashFlowData) "12 days left in billing cycle" else "Billing cycle active",
+                        text = if (month.isCurrentMonth) "$daysLeft days left this month" else "Month closed",
                         color = TextMuted,
                         fontSize = 11.sp
                     )
                     Text(
-                        text = if (budgetCap > 0) "${viewModel.formatCompact(bufferRemaining)} buffer remaining (${viewModel.formatCompact(dailyPace)}/day pace)" else "No active expense cap",
+                        text = if (budgetCap > 0) {
+                            if (month.isCurrentMonth) "${viewModel.formatCompact(bufferRemaining)} left (${viewModel.formatCompact(dailyPace)}/day)"
+                            else "${viewModel.formatCompact(bufferRemaining)} unspent"
+                        } else "Set budgets below to track a monthly cap",
                         color = if (budgetCap > 0) EmeraldLight else TextMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
@@ -385,7 +405,7 @@ fun CashFlowScreen(
                             slices = donutSlices,
                             sizeDp = 120.dp,
                             centerTitle = "Total Spent",
-                            centerSubtitle = viewModel.formatCompact(summary.totalOutflow)
+                            centerSubtitle = viewModel.formatCompact(month.outflow)
                         )
 
                         Spacer(modifier = Modifier.width(16.dp))
@@ -422,6 +442,8 @@ fun CashFlowScreen(
                 }
             }
         }
+
+        item { BudgetsCard(viewModel = viewModel, transactions = transactions, monthStart = month.monthStart, monthEnd = month.monthEnd) }
 
         // Ledger Activity Header & Search & Filters
         item {
