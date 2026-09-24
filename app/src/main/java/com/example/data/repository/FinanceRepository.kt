@@ -5,6 +5,7 @@ import com.example.data.models.CreditCardEntity
 import com.example.data.models.GoalEntity
 import com.example.data.models.HoldingEntity
 import com.example.data.models.LoanEntity
+import com.example.data.models.BudgetEntity
 import com.example.data.models.NetWorthSnapshotEntity
 import com.example.data.models.SipEntity
 import com.example.data.models.TransactionEntity
@@ -22,6 +23,10 @@ class FinanceRepository(private val dao: FinanceDao) {
 
     val allSnapshots: Flow<List<NetWorthSnapshotEntity>> = dao.getAllSnapshots()
     suspend fun recordSnapshot(snapshot: NetWorthSnapshotEntity) = dao.upsertSnapshot(snapshot)
+
+    val allBudgets: Flow<List<BudgetEntity>> = dao.getAllBudgets()
+    suspend fun saveBudget(budget: BudgetEntity) = dao.upsertBudget(budget)
+    suspend fun deleteBudget(budget: BudgetEntity) = dao.deleteBudget(budget)
 
     // Transaction Operations
     suspend fun deleteTransactionsBySourceReference(reference: String) = dao.deleteTransactionsBySourceReference(reference)
