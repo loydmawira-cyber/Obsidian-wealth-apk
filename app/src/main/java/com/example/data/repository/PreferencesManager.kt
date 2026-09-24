@@ -2,11 +2,13 @@ package com.example.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.data.models.AccentColor
 import com.example.data.models.AiRiskProfile
 import com.example.data.models.FiscalCalendar
 import com.example.data.models.GeographicRegion
 import com.example.data.models.NumberFormatStyle
 import com.example.data.models.SupportedCurrency
+import com.example.data.models.ThemeMode
 import com.example.data.models.UserSettings
 import com.example.data.security.PinCredentialStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -87,6 +89,12 @@ class PreferencesManager(context: Context) {
         val enableSip = prefs.getBoolean(KEY_ENABLE_SIP, true)
         val enableDailyBriefing = prefs.getBoolean(KEY_ENABLE_DAILY_BRIEFING, true)
 
+        val themeModeName = prefs.getString(KEY_THEME_MODE, ThemeMode.DARK.name) ?: ThemeMode.DARK.name
+        val themeMode = try { ThemeMode.valueOf(themeModeName) } catch (e: Exception) { ThemeMode.DARK }
+
+        val accentColorName = prefs.getString(KEY_ACCENT_COLOR, AccentColor.GOLD.name) ?: AccentColor.GOLD.name
+        val accentColor = try { AccentColor.valueOf(accentColorName) } catch (e: Exception) { AccentColor.GOLD }
+
         return UserSettings(
             currency = currency,
             region = region,
@@ -103,7 +111,9 @@ class PreferencesManager(context: Context) {
             enableNotifications = enableNotifications,
             enableBillDueReminders = enableBillDue,
             enableSipReminders = enableSip,
-            enableDailyBriefingReminders = enableDailyBriefing
+            enableDailyBriefingReminders = enableDailyBriefing,
+            themeMode = themeMode,
+            accentColor = accentColor
         )
     }
 
@@ -125,6 +135,8 @@ class PreferencesManager(context: Context) {
             .putBoolean(KEY_ENABLE_BILL_DUE, newSettings.enableBillDueReminders)
             .putBoolean(KEY_ENABLE_SIP, newSettings.enableSipReminders)
             .putBoolean(KEY_ENABLE_DAILY_BRIEFING, newSettings.enableDailyBriefingReminders)
+            .putString(KEY_THEME_MODE, newSettings.themeMode.name)
+            .putString(KEY_ACCENT_COLOR, newSettings.accentColor.name)
             .apply()
 
         _settings.value = newSettings
@@ -297,6 +309,8 @@ class PreferencesManager(context: Context) {
         private const val KEY_ENABLE_BILL_DUE = "pref_enable_bill_due"
         private const val KEY_ENABLE_SIP = "pref_enable_sip"
         private const val KEY_ENABLE_DAILY_BRIEFING = "pref_enable_daily_briefing"
+        private const val KEY_THEME_MODE = "pref_theme_mode"
+        private const val KEY_ACCENT_COLOR = "pref_accent_color"
 
         // Retained only so purgeLegacyPlaintextSecrets() can delete what older builds wrote.
         // Never read these values; never write them again.
