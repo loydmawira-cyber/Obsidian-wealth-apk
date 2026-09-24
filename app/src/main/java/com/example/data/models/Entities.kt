@@ -15,7 +15,9 @@ enum class Category {
     SALARY, FREELANCE, DIVIDENDS, RENTAL,
     HOUSING, FOOD_DINING, UTILITIES, TRANSPORT,
     SHOPPING, HEALTHCARE, SUBSCRIPTIONS, ENTERTAINMENT,
-    INVESTMENT_SIP, LOAN_EMI, OTHER
+    INVESTMENT_SIP, LOAN_EMI, OTHER,
+    // Money moved into or out of a savings goal: a transfer, not spending.
+    GOAL_SAVINGS
 }
 
 @Entity(tableName = "transactions")
