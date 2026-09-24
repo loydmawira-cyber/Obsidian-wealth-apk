@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -243,6 +244,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         database.financeDao().clearAllCreditCards()
         database.financeDao().clearAllLoans()
         database.financeDao().clearAllGoals()
+            database.financeDao().clearAllSnapshots()
     }
 
     // AUTH & PIN ACTIONS
@@ -439,6 +441,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             database.financeDao().clearAllCreditCards()
             database.financeDao().clearAllLoans()
             database.financeDao().clearAllGoals()
+            database.financeDao().clearAllSnapshots()
 
             // Safety net: the shared demo/tester account must never end up blank,
             // even if this function is somehow reached for it. Immediately re-seed.
@@ -589,7 +592,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val inflow = confirmedTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
         val outflow = confirmedTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
         val netCash = inflow - outflow
-        val savingsRate = if (inflow > 0) (netCash / inflow) * 100.0 else 0.0
+        // Money moved into investments is saved, not spent, and sale proceeds are not earnings,
+        // so investment transactions are left out of the savings-rate calculation.
+        val operatingIn = confirmedTransactions
+            .filter { it.type == TransactionType.INCOME && it.category != Category.INVESTMENT_SIP }.sumOf { it.amount }
+        val operatingOut = confirmedTransactions
+            .filter { it.type == TransactionType.EXPENSE && it.category != Category.INVESTMENT_SIP }.sumOf { it.amount }
+        val savingsRate = if (operatingIn > 0) ((operatingIn - operatingOut) / operatingIn) * 100.0 else 0.0
 
         // SIPs count toward the portfolio at the amount invested so far (both value and cost).
         val sipInvested = sList.sumOf { it.totalInvested }
@@ -638,6 +647,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             goalCount = gList.size
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FinanceSummary())
+
+    val snapshots: StateFlow<List<com.example.data.models.NetWorthSnapshotEntity>> = repository.allSnapshots
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        // Keep one net-worth snapshot per day (the latest value that day) for the trend and MoM change.
+        viewModelScope.launch {
+            summary.collect { s ->
+                if (s.totalAssets == 0.0 && s.totalLiabilities == 0.0) return@collect
+                val now = System.currentTimeMillis()
+                repository.recordSnapshot(
+                    com.example.data.models.NetWorthSnapshotEntity(
+                        dayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(now)),
+                        netWorth = s.totalNetWorth,
+                        assets = s.totalAssets,
+                        liabilities = s.totalLiabilities,
+                        dateMillis = now
+                    )
+                )
+            }
+        }
+    }
 
     // AI Chat State
     private val _chatMessages = MutableStateFlow<List<ChatMessage>>(
@@ -811,6 +842,64 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Writes transactions, holdings and SIPs to CSV files and opens the share sheet. */
+    fun exportCsv() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val app = getApplication<Application>()
+                val dir = java.io.File(app.cacheDir, "exports").apply { mkdirs() }
+                // Quote every text cell; a leading = + - @ is neutralised so spreadsheets don't run it as a formula.
+                fun cell(v: String): String {
+                    val safe = if (v.isNotEmpty() && v[0] in "=+-@") "'" + v else v
+                    return "\"" + safe.replace("\"", "\"\"") + "\""
+                }
+                val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+
+                val txFile = java.io.File(dir, "obsidian_transactions.csv")
+                txFile.writeText(buildString {
+                    appendLine("date,title,type,category,account,amount,note")
+                    repository.allTransactions.first()
+                        .filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
+                        .forEach { t ->
+                            appendLine(listOf(day.format(java.util.Date(t.dateMillis)), cell(t.title), t.type.name,
+                                t.category.name, cell(t.account), t.amount.toString(), cell(t.note)).joinToString(","))
+                        }
+                })
+                val holdingsFile = java.io.File(dir, "obsidian_holdings.csv")
+                holdingsFile.writeText(buildString {
+                    appendLine("symbol,name,type,shares,avg_buy_price,current_price,value")
+                    repository.allHoldings.first().forEach { h ->
+                        appendLine(listOf(cell(h.symbol), cell(h.name), h.type.name, h.shares.toString(),
+                            h.avgBuyPrice.toString(), h.currentPrice.toString(), h.totalValue.toString()).joinToString(","))
+                    }
+                })
+                val sipsFile = java.io.File(dir, "obsidian_sips.csv")
+                sipsFile.writeText(buildString {
+                    appendLine("fund,category,monthly_amount,debit_day,active,total_invested")
+                    repository.allSips.first().forEach { p ->
+                        appendLine(listOf(cell(p.fundName), cell(p.category), p.monthlyAmount.toString(),
+                            p.debitDayOfMonth.toString(), p.isActive.toString(), p.totalInvested.toString()).joinToString(","))
+                    }
+                })
+
+                val uris = ArrayList(listOf(txFile, holdingsFile, sipsFile).map {
+                    androidx.core.content.FileProvider.getUriForFile(app, app.packageName + ".fileprovider", it)
+                })
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "text/csv"
+                    putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, uris)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                app.startActivity(
+                    android.content.Intent.createChooser(send, "Export Obsidian data")
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("FinanceViewModel", "CSV export failed", e)
+            }
+        }
+    }
+
     fun deleteTransaction(transaction: TransactionEntity) {
         viewModelScope.launch {
             repository.deleteTransaction(transaction)
@@ -827,7 +916,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         currentPrice: Double
     ) {
         viewModelScope.launch {
-            repository.addHolding(
+            val holdingId = repository.addHolding(
                 HoldingEntity(
                     symbol = symbol.uppercase(),
                     name = name,
@@ -835,7 +924,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     shares = shares,
                     avgBuyPrice = avgBuyPrice,
                     currentPrice = currentPrice,
-                    dailyChangePercent = 0.5
+                    dailyChangePercent = 0.0 // no live price feed: day change is unknown until prices are edited
                 )
             )
             // Buying an investment spends cash: record the purchase cost as an expense so it
@@ -849,7 +938,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         type = TransactionType.EXPENSE,
                         category = Category.INVESTMENT_SIP,
                         account = "Cash / selected account",
-                        note = "Purchase of $shares x ${symbol.uppercase()} recorded in Obsidian Wealth"
+                        note = "Purchase of $shares x ${symbol.uppercase()} recorded in Obsidian Wealth",
+                        sourceReference = "holding:$holdingId"
                     )
                 )
             }
@@ -864,8 +954,43 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Sells [sharesToSell] units at [salePrice]: reduces (or removes) the holding and records the
+     * proceeds as income on Cash Flow. Realised gain is shown in the note.
+     */
+    fun sellHolding(holding: HoldingEntity, sharesToSell: Double, salePrice: Double) {
+        viewModelScope.launch {
+            val qty = sharesToSell.coerceAtMost(holding.shares)
+            if (qty <= 0.0 || salePrice < 0.0) return@launch
+            val remaining = holding.shares - qty
+            if (remaining <= 1e-9) {
+                repository.deleteHolding(holding)
+            } else {
+                repository.updateHolding(holding.copy(shares = remaining, currentPrice = salePrice))
+            }
+            val proceeds = qty * salePrice
+            if (proceeds > 0) {
+                val gain = qty * (salePrice - holding.avgBuyPrice)
+                repository.addTransaction(
+                    TransactionEntity(
+                        title = "Sold: ${holding.symbol}",
+                        amount = proceeds,
+                        type = TransactionType.INCOME,
+                        category = Category.INVESTMENT_SIP,
+                        account = "Cash / selected account",
+                        note = "Sale of $qty x ${holding.symbol}; realised ${if (gain >= 0) "gain" else "loss"} ${"%.2f".format(gain)}",
+                        sourceReference = "holdingsale:${holding.id}"
+                    )
+                )
+            }
+            syncVaultToCloud()
+        }
+    }
+
+    /** Deleting a holding undoes its entry: the purchase expense it created is removed too. */
     fun deleteHolding(holding: HoldingEntity) {
         viewModelScope.launch {
+            repository.deleteTransactionsBySourceReference("holding:${holding.id}")
             repository.deleteHolding(holding)
             syncVaultToCloud()
         }
@@ -879,7 +1004,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         annualizedReturnPercent: Double
     ) {
         viewModelScope.launch {
-            repository.addSip(
+            val sipId = repository.addSip(
                 SipEntity(
                     fundName = fundName,
                     category = category,
@@ -907,7 +1032,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     category = Category.INVESTMENT_SIP,
                     account = "Cash / selected account",
                     note = "Automated SIP investment recorded in Obsidian Wealth",
-                    isRecurring = true
+                    isRecurring = true,
+                    sourceReference = "sip:$sipId"
                 )
             )
             syncVaultToCloud()
@@ -928,8 +1054,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Deleting a SIP undoes it: every debit it recorded is removed. Use pause to stop a SIP but keep its history. */
     fun deleteSip(sip: SipEntity) {
         viewModelScope.launch {
+            repository.deleteTransactionsBySourceReference("sip:${sip.id}")
             repository.deleteSip(sip)
             syncVaultToCloud()
         }
