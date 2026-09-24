@@ -365,8 +365,8 @@ fun AiSmartLogDialog(
                         val presets = listOf(
                             "Spent $45 on groceries at Supermarket",
                             "Received $4,500 consulting retainer deposit",
-                            "Paid €85 for electricity bill",
-                            "Spent £65 on transport and rail ticket",
+                            "Paid â‚¬85 for electricity bill",
+                            "Spent Â£65 on transport and rail ticket",
                             "Invested $500 into Index Fund ETF",
                             "Paid $120 for Internet & Mobile bill"
                         )
@@ -440,7 +440,7 @@ fun AiSmartLogDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Extracting Draft…", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("Extracting Draftâ€¦", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                         } else {
                             Text("Extract & Review Draft", color = Color.Black, fontWeight = FontWeight.Bold)
@@ -807,7 +807,7 @@ fun ObsidianAiAdvisorSheet(
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("🎯 Create Goal (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("ðŸŽ¯ Create Goal (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -824,7 +824,7 @@ fun ObsidianAiAdvisorSheet(
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("➕ Log Transaction (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("âž• Log Transaction (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1159,7 +1159,8 @@ fun HoldingActionDialog(
     holding: HoldingEntity,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onSell: () -> Unit = {}
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1171,7 +1172,7 @@ fun HoldingActionDialog(
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(holding.name, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("${holding.symbol} • ${if (holding.shares % 1.0 == 0.0) holding.shares.toInt() else holding.shares} units", color = TextSecondary, fontSize = 13.sp)
+                Text("${holding.symbol} â€¢ ${if (holding.shares % 1.0 == 0.0) holding.shares.toInt() else holding.shares} units", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = { onEdit(); onDismiss() },
@@ -1180,6 +1181,15 @@ fun HoldingActionDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Edit Holding", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { onSell(); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Sell Shares", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(
@@ -1535,7 +1545,7 @@ fun SipActionDialog(
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(sip.fundName, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("${sip.category} • ${sip.monthlyAmount.let { "%,.2f".format(it) }}/mo", color = TextSecondary, fontSize = 13.sp)
+                Text("${sip.category} â€¢ ${sip.monthlyAmount.let { "%,.2f".format(it) }}/mo", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = { onEdit(); onDismiss() },
@@ -1952,6 +1962,91 @@ fun ConfirmClearDataDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
                     Button(onClick = { onConfirm(); onDismiss() }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))) { Text("Clear Data", color = Color.White) }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+fun SellHoldingDialog(
+    holding: HoldingEntity,
+    formatAmount: (Double) -> String,
+    onDismiss: () -> Unit,
+    onSell: (shares: Double, price: Double) -> Unit
+) {
+    var sharesText by remember { mutableStateOf(holding.shares.toString()) }
+    var priceText by remember { mutableStateOf(holding.currentPrice.toString()) }
+    val shares = sharesText.toDoubleOrNull()
+    val price = priceText.toDoubleOrNull()
+    val valid = shares != null && price != null && shares > 0.0 && shares <= holding.shares + 1e-9 && price >= 0.0
+    val proceeds = if (valid) shares!! * price!! else 0.0
+    val gain = if (valid) shares!! * (price!! - holding.avgBuyPrice) else 0.0
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = ObsidianSurface,
+            border = BorderStroke(1.dp, ObsidianBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Sell ${holding.symbol}", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text("You hold ${holding.shares} units. Proceeds are added to Cash Flow as income.", color = TextSecondary, fontSize = 12.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = sharesText,
+                    onValueChange = { sharesText = it },
+                    label = { Text("Units to sell", color = TextSecondary) },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = EmeraldGrowth,
+                        unfocusedBorderColor = ObsidianBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = priceText,
+                    onValueChange = { priceText = it },
+                    label = { Text("Sale price per unit", color = TextSecondary) },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = EmeraldGrowth,
+                        unfocusedBorderColor = ObsidianBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(Modifier.height(10.dp))
+                if (valid) {
+                    Text("Proceeds: ${formatAmount(proceeds)}", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "${if (gain >= 0) "Realised gain" else "Realised loss"}: ${formatAmount(Math.abs(gain))}",
+                        color = if (gain >= 0) EmeraldLight else Color(0xFFFB7185),
+                        fontSize = 12.sp
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Button(
+                    onClick = { onSell(shares!!, price!!); onDismiss() },
+                    enabled = valid,
+                    colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Confirm sale", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                    Text("Cancel")
                 }
             }
         }
