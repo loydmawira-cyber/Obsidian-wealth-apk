@@ -3,6 +3,7 @@ package com.example.data.firebase
 import android.content.Context
 import android.util.Log
 import com.example.data.dao.FinanceDao
+import com.example.data.models.BudgetEntity
 import com.example.data.models.Category
 import com.example.data.models.CreditCardEntity
 import com.example.data.models.FiscalCalendar
@@ -11,6 +12,7 @@ import com.example.data.models.GoalEntity
 import com.example.data.models.HoldingEntity
 import com.example.data.models.HoldingType
 import com.example.data.models.LoanEntity
+import com.example.data.models.NetWorthSnapshotEntity
 import com.example.data.models.NumberFormatStyle
 import com.example.data.models.SipEntity
 import com.example.data.models.SupportedCurrency
@@ -101,7 +103,10 @@ class FirestoreSyncManager(private val context: Context) {
      */
     suspend fun syncLocalVaultToCloud(
         dao: FinanceDao,
-        settings: UserSettings
+        settings: UserSettings,
+        startingBalance: Double = 0.0,
+        startingBalancePromptDone: Boolean = false,
+        pendingDeletions: Set<String> = emptySet()
     ): CloudSyncResult = withContext(Dispatchers.IO) {
         val firestore = getFirestoreInstance()
             ?: return@withContext CloudSyncResult(
@@ -122,6 +127,8 @@ class FirestoreSyncManager(private val context: Context) {
             val cards = dao.getCreditCardsSnapshot()
             val loans = dao.getLoansSnapshot()
             val goals = dao.getGoalsSnapshot()
+            val budgets = dao.getBudgetsSnapshot()
+            val netWorthSnapshots = dao.getNetWorthSnapshotsSnapshot()
 
             val vaultRef = firestore.collection("wealth_vaults").document(authUser.uid)
 
@@ -138,9 +145,22 @@ class FirestoreSyncManager(private val context: Context) {
                 "sipsCount" to sips.size,
                 "cardsCount" to cards.size,
                 "loansCount" to loans.size,
-                "goalsCount" to goals.size
+                "goalsCount" to goals.size,
+                "budgetsCount" to budgets.size
             )
             vaultRef.set(metaData, SetOptions.merge()).awaitTask()
+
+            // 1b. Remove items the user deleted on this device. Only explicitly queued deletions are
+            // applied; nothing is ever inferred from what is missing locally. Deleting a document
+            // that is already gone succeeds, so a retry after a failed sync is harmless.
+            val deletableCollections = setOf("transactions", "holdings", "sips", "credit_cards", "loans", "goals", "budgets")
+            pendingDeletions.forEach { entry ->
+                val collectionName = entry.substringBefore('/')
+                val docId = entry.substringAfter('/', "")
+                if (collectionName in deletableCollections && docId.isNotBlank()) {
+                    vaultRef.collection(collectionName).document(docId).delete().awaitTask()
+                }
+            }
 
             // 2. Sync Transactions
             val txCollection = vaultRef.collection("transactions")
@@ -243,6 +263,41 @@ class FirestoreSyncManager(private val context: Context) {
                 goalsCollection.document(g.id.toString()).set(gMap, SetOptions.merge()).awaitTask()
             }
 
+            // 7b. Sync Budgets (one document per category)
+            val budgetsCollection = vaultRef.collection("budgets")
+            budgets.forEach { b ->
+                budgetsCollection.document(b.category.name).set(
+                    hashMapOf("category" to b.category.name, "monthlyLimit" to b.monthlyLimit),
+                    SetOptions.merge()
+                ).awaitTask()
+            }
+
+            // 7c. Sync net-worth history (one document per month, so a year is 12 writes, not 365)
+            val historyCollection = vaultRef.collection("net_worth_history")
+            netWorthSnapshots.groupBy { it.dayKey.take(7) }.forEach { (month, days) ->
+                val dayMap = days.associate { d ->
+                    d.dayKey to hashMapOf(
+                        "netWorth" to d.netWorth,
+                        "assets" to d.assets,
+                        "liabilities" to d.liabilities,
+                        "dateMillis" to d.dateMillis
+                    )
+                }
+                historyCollection.document(month).set(
+                    hashMapOf("month" to month, "days" to dayMap),
+                    SetOptions.merge()
+                ).awaitTask()
+            }
+
+            // 7d. Cash starting balance the user entered (per user, never assumed)
+            vaultRef.collection("settings").document("cash").set(
+                hashMapOf(
+                    "startingBalance" to startingBalance,
+                    "startingBalancePromptDone" to startingBalancePromptDone
+                ),
+                SetOptions.merge()
+            ).awaitTask()
+
             // 8. Sync User Settings
             val settingsMap = hashMapOf(
                 "currency" to settings.currency.name,
@@ -265,7 +320,8 @@ class FirestoreSyncManager(private val context: Context) {
             vaultRef.collection("settings").document("preferences")
                 .set(settingsMap, SetOptions.merge()).awaitTask()
 
-            val totalCount = transactions.size + holdings.size + sips.size + cards.size + loans.size + goals.size
+            val totalCount = transactions.size + holdings.size + sips.size + cards.size + loans.size + goals.size +
+                budgets.size + netWorthSnapshots.size
             CloudSyncResult(
                 success = true,
                 message = "Successfully synchronized $totalCount financial records to Cloud Firestore.",
@@ -425,6 +481,39 @@ class FirestoreSyncManager(private val context: Context) {
                 }
             }
 
+            // 6b. Budgets
+            val bSnap = vaultRef.collection("budgets").get().awaitTask()
+            val bList = bSnap.documents.mapNotNull { doc ->
+                try {
+                    BudgetEntity(
+                        category = Category.valueOf(doc.getString("category") ?: doc.id),
+                        monthlyLimit = doc.getDouble("monthlyLimit") ?: 0.0
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
+            // 6c. Net-worth history
+            val nwSnap = vaultRef.collection("net_worth_history").get().awaitTask()
+            val nwList = nwSnap.documents.flatMap { doc ->
+                val days = doc.get("days") as? Map<*, *> ?: return@flatMap emptyList<NetWorthSnapshotEntity>()
+                days.mapNotNull { (key, value) ->
+                    val m = value as? Map<*, *> ?: return@mapNotNull null
+                    try {
+                        NetWorthSnapshotEntity(
+                            dayKey = key.toString(),
+                            netWorth = (m["netWorth"] as? Number)?.toDouble() ?: 0.0,
+                            assets = (m["assets"] as? Number)?.toDouble() ?: 0.0,
+                            liabilities = (m["liabilities"] as? Number)?.toDouble() ?: 0.0,
+                            dateMillis = (m["dateMillis"] as? Number)?.toLong() ?: 0L
+                        )
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+            }
+
             // Insert into Room
             if (txList.isNotEmpty()) dao.insertTransactions(txList)
             if (hList.isNotEmpty()) dao.insertHoldings(hList)
@@ -432,6 +521,15 @@ class FirestoreSyncManager(private val context: Context) {
             if (cList.isNotEmpty()) dao.insertCreditCards(cList)
             if (lList.isNotEmpty()) dao.insertLoans(lList)
             if (gList.isNotEmpty()) dao.insertGoals(gList)
+            if (bList.isNotEmpty()) dao.upsertBudgets(bList)
+            if (nwList.isNotEmpty()) dao.upsertSnapshots(nwList)
+
+            // Cash starting balance
+            val cashDoc = vaultRef.collection("settings").document("cash").get().awaitTask()
+            if (cashDoc.exists()) {
+                preferencesManager.setStartingBalance(cashDoc.getDouble("startingBalance") ?: 0.0)
+                preferencesManager.setStartingBalancePromptDone(cashDoc.getBoolean("startingBalancePromptDone") ?: false)
+            }
 
             // 7. Settings
             val settingsDoc = vaultRef.collection("settings").document("preferences").get().awaitTask()
@@ -463,7 +561,8 @@ class FirestoreSyncManager(private val context: Context) {
                 preferencesManager.updateSettings(restoredSettings)
             }
 
-            val totalCount = txList.size + hList.size + sList.size + cList.size + lList.size + gList.size
+            val totalCount = txList.size + hList.size + sList.size + cList.size + lList.size + gList.size +
+                bList.size + nwList.size
             CloudSyncResult(
                 success = true,
                 message = "Successfully restored $totalCount financial records from Cloud Firestore.",
