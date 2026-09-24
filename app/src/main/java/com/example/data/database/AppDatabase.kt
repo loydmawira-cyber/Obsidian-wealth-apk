@@ -15,6 +15,7 @@ import com.example.data.models.GoalEntity
 import com.example.data.models.HoldingEntity
 import com.example.data.models.HoldingType
 import com.example.data.models.LoanEntity
+import com.example.data.models.NetWorthSnapshotEntity
 import com.example.data.models.SipEntity
 import com.example.data.models.TransactionEntity
 import com.example.data.models.TransactionType
@@ -42,6 +43,16 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `net_worth_snapshots` (" +
+                "`dayKey` TEXT NOT NULL, `netWorth` REAL NOT NULL, `assets` REAL NOT NULL, " +
+                "`liabilities` REAL NOT NULL, `dateMillis` INTEGER NOT NULL, PRIMARY KEY(`dayKey`))"
+        )
+    }
+}
+
 @Database(
     entities = [
         TransactionEntity::class,
@@ -49,10 +60,11 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         SipEntity::class,
         CreditCardEntity::class,
         LoanEntity::class,
-        GoalEntity::class
+        GoalEntity::class,
+        NetWorthSnapshotEntity::class
     ],
-    version = 4,
-    exportSchema = false
+    version = 5,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun financeDao(): FinanceDao
@@ -67,7 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "obsidian_wealth_v3.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance
@@ -90,6 +102,7 @@ abstract class AppDatabase : RoomDatabase() {
             dao.clearAllCreditCards()
             dao.clearAllLoans()
             dao.clearAllGoals()
+            dao.clearAllSnapshots()
             populateDatabaseForRegion(dao, region)
         }
 
