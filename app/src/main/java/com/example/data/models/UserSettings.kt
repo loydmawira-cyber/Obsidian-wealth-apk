@@ -70,6 +70,21 @@ enum class AiRiskProfile(
     CONSERVATIVE_PRESERVATION("Capital Preservation", "Debt clearance, capital retention & yield")
 }
 
+enum class ThemeMode(val title: String) {
+    DARK("Dark"),
+    LIGHT("Light"),
+    SYSTEM("Match Device")
+}
+
+/** Accent tint applied to the app's chrome (top bar, nav, FAB). ARGB stored as a raw Long so this model has no Compose dependency. */
+enum class AccentColor(val title: String, val argb: Long) {
+    GOLD("Sovereign Gold", 0xFFFBBF24),
+    EMERALD("Emerald Growth", 0xFF10B981),
+    CYAN("Cyan Sapphire", 0xFF38BDF8),
+    INDIGO("Electric Indigo", 0xFF818CF8),
+    CRIMSON("Crimson", 0xFFF87171)
+}
+
 data class UserSettings(
     // Geographical & Regional
     val currency: SupportedCurrency = SupportedCurrency.KES,
@@ -95,7 +110,11 @@ data class UserSettings(
     val enableNotifications: Boolean = true,
     val enableBillDueReminders: Boolean = true,
     val enableSipReminders: Boolean = true,
-    val enableDailyBriefingReminders: Boolean = true
+    val enableDailyBriefingReminders: Boolean = true,
+
+    // Appearance
+    val themeMode: ThemeMode = ThemeMode.DARK,
+    val accentColor: AccentColor = AccentColor.GOLD
 ) {
     fun formatAmount(amount: Double, forceVisible: Boolean = false): String {
         if (hideBalances && !forceVisible) {
