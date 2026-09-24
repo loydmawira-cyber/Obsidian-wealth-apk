@@ -91,7 +91,7 @@ fun InvestmentsScreen(
     val userSettings by viewModel.userSettings.collectAsState()
     val sym = userSettings.currency.symbol
 
-    val totalPortfolioValue = holdings.sumOf { it.totalValue }
+    val totalPortfolioValue = holdings.sumOf { it.totalValue } + sips.sumOf { it.totalInvested }
     val totalUnrealizedGain = holdings.sumOf { it.unrealizedGain }
     val totalGainPercent = if (holdings.sumOf { it.totalCost } > 0) (totalUnrealizedGain / holdings.sumOf { it.totalCost }) * 100.0 else 0.0
 
