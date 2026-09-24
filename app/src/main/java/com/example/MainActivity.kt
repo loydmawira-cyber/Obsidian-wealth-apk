@@ -489,8 +489,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     }
 
     if (showAddGoalDialog) {
-        AddGoalDialog(onDismiss = { showAddGoalDialog = false }) { title, category, target, current, monthly, deduct ->
-            viewModel.addGoal(title, category, target, current, monthly, deduct)
+        AddGoalDialog(onDismiss = { showAddGoalDialog = false }) { title, category, target, current, monthly ->
+            viewModel.addGoal(title, category, target, current, monthly)
         }
     }
 
