@@ -811,7 +811,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         netWorth = s.totalNetWorth,
                         assets = s.totalAssets,
                         liabilities = s.totalLiabilities,
-                        dateMillis = now
+                        dateMillis = now,
+                        investments = s.portfolioValue
                     )
                 )
             }
