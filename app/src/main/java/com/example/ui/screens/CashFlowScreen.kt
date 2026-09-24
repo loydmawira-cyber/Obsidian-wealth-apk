@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -94,6 +96,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CashFlowScreen(
     viewModel: FinanceViewModel,
@@ -114,6 +117,11 @@ fun CashFlowScreen(
     var selectedFilter by remember { mutableStateOf("ALL") }
     var showReceiptDialog by remember { mutableStateOf(false) }
     var showStatementDialog by remember { mutableStateOf(false) }
+
+    // The ledger opens short and grows on demand; it resets whenever the month, search or filter changes.
+    var actionTx by remember { mutableStateOf<TransactionEntity?>(null) }
+    var editTx by remember { mutableStateOf<TransactionEntity?>(null) }
+    var visibleCount by remember(month.monthStart, searchQuery, selectedFilter) { mutableStateOf(15) }
 
     val filteredTransactions = transactions.filter { tx ->
         val matchesSearch = tx.title.contains(searchQuery, ignoreCase = true) ||
@@ -456,7 +464,7 @@ fun CashFlowScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "REAL-TIME LEDGER",
+                        text = "REAL-TIME LEDGER (${filteredTransactions.size})",
                         color = TextSecondary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -578,14 +586,37 @@ fun CashFlowScreen(
             }
         }
 
-        // Transactions List
-        items(filteredTransactions, key = { "tx_${it.id}" }) { tx ->
+        // Transactions list: newest first, grouped by day, limited to what has been revealed so far.
+        val dayHeaderFormat = SimpleDateFormat("EEE d MMM", Locale.getDefault())
+        filteredTransactions.take(visibleCount)
+            .groupBy { dayHeaderFormat.format(Date(it.dateMillis)) }
+            .forEach { (dayLabel, dayTx) ->
+        item(key = "day_$dayLabel") {
+            val dayNet = dayTx.sumOf { if (it.type == TransactionType.INCOME) it.amount else -it.amount }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp, start = 4.dp, end = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(dayLabel, color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (dayNet >= 0) "+${viewModel.formatAmount(dayNet)}" else "-${viewModel.formatAmount(-dayNet)}",
+                    color = if (dayNet >= 0) EmeraldLight else TextMuted,
+                    fontSize = 11.sp
+                )
+            }
+        }
+        items(dayTx, key = { "tx_${it.id}" }) { tx ->
             val isIncome = tx.type == TransactionType.INCOME
             val dateFormatter = remember { SimpleDateFormat("MMM d", Locale.getDefault()) }
             val formattedDate = remember(tx.dateMillis) { dateFormatter.format(Date(tx.dateMillis)) }
 
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .combinedClickable(onClick = {}, onLongClick = { actionTx = tx }),
                 shape = RoundedCornerShape(14.dp),
                 color = ObsidianSurface,
                 border = BorderStroke(1.dp, ObsidianBorderSubtle)
@@ -691,17 +722,31 @@ fun CashFlowScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        IconButton(
-                            onClick = { viewModel.deleteTransaction(tx) },
-                            modifier = Modifier.size(26.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                tint = TextMuted,
-                                modifier = Modifier.size(14.dp)
+                    }
+                }
+            }
+        }
+            }
+
+        if (filteredTransactions.size > 15) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    if (visibleCount < filteredTransactions.size) {
+                        androidx.compose.material3.TextButton(onClick = { visibleCount += 15 }) {
+                            Text(
+                                "Show 15 more (${filteredTransactions.size - visibleCount} left)",
+                                color = SovereignGold,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
                             )
+                        }
+                    }
+                    if (visibleCount > 15) {
+                        androidx.compose.material3.TextButton(onClick = { visibleCount = 15 }) {
+                            Text("Show less", color = TextMuted, fontSize = 12.sp)
                         }
                     }
                 }
@@ -711,6 +756,24 @@ fun CashFlowScreen(
         item {
             Spacer(modifier = Modifier.height(20.dp))
         }
+    }
+
+    actionTx?.let { tx ->
+        com.example.ui.components.TransactionActionDialog(
+            transaction = tx,
+            formatAmount = { viewModel.formatAmount(it) },
+            onDismiss = { actionTx = null },
+            onEdit = { editTx = tx },
+            onDelete = { viewModel.deleteTransaction(tx) }
+        )
+    }
+
+    editTx?.let { tx ->
+        com.example.ui.components.EditTransactionDialog(
+            transaction = tx,
+            onDismiss = { editTx = null },
+            onSave = { viewModel.updateTransaction(it) }
+        )
     }
 
     if (showReceiptDialog) {
