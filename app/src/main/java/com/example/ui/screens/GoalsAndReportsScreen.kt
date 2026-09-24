@@ -238,14 +238,6 @@ statement to produce an audit of your actual position.
             }
         }
 
-        item {
-            D3FinancialTrendsDashboard(
-                userSettings = userSettings,
-                summary = summary,
-                snapshots = viewModel.snapshots.collectAsState().value
-            )
-        }
-
         // Savings Goals Section Header & List
         item {
             Row(
