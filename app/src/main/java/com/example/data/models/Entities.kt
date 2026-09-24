@@ -124,3 +124,10 @@ data class NetWorthSnapshotEntity(
     val liabilities: Double,
     val dateMillis: Long
 )
+
+/** A monthly spending limit for one category. */
+@Entity(tableName = "budgets")
+data class BudgetEntity(
+    @PrimaryKey val category: Category,
+    val monthlyLimit: Double
+)
