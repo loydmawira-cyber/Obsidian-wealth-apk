@@ -184,6 +184,9 @@ fun OverviewScreen(
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NetWorthBreakdown(summary = summary, format = { viewModel.formatAmount(it) })
                 }
             }
         }
@@ -583,3 +586,105 @@ fun OverviewScreen(
 
 /** One line of recorded debt (a credit card or a loan) used to order payoff by interest rate. */
 private data class DebtLine(val name: String, val rate: Double, val balance: Double)
+
+
+/** Compact "what your net worth is made of" strip: asset mix bar plus one line per component. */
+@Composable
+private fun NetWorthBreakdown(
+    summary: com.example.ui.viewmodel.FinanceSummary,
+    format: (Double) -> String
+) {
+    val cashColor = Color(0xFF34D399)
+    val investColor = SovereignGold
+    val goalsColor = Color(0xFF60A5FA)
+    val debtColor = Color(0xFFFB7185)
+
+    val parts = listOf(
+        Triple("Cash", summary.liquidCash, cashColor),
+        Triple("Investments", summary.portfolioValue, investColor),
+        Triple("Goal savings", summary.goalsValue, goalsColor)
+    )
+    val assetTotal = parts.sumOf { it.second.coerceAtLeast(0.0) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "NET WORTH BREAKDOWN",
+            color = TextMuted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (assetTotal > 0) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .background(ObsidianSurfaceVariant, RoundedCornerShape(3.dp))
+            ) {
+                parts.filter { it.second > 0 }.forEach { (_, amount, color) ->
+                    Box(
+                        modifier = Modifier
+                            .weight(amount.toFloat())
+                            .height(6.dp)
+                            .background(color)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        parts.forEach { (label, amount, color) ->
+            BreakdownLine(
+                label = label,
+                value = format(amount),
+                share = if (assetTotal > 0) "${Math.round(amount.coerceAtLeast(0.0) / assetTotal * 100)}%" else "",
+                color = color,
+                valueColor = GoldLight
+            )
+        }
+        BreakdownLine(
+            label = "Debt",
+            value = "-" + format(summary.totalLiabilities),
+            share = "",
+            color = debtColor,
+            valueColor = debtColor
+        )
+    }
+}
+
+@Composable
+private fun BreakdownLine(
+    label: String,
+    value: String,
+    share: String,
+    color: Color,
+    valueColor: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = label, color = TextSecondary, fontSize = 12.sp)
+            if (share.isNotEmpty()) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(text = share, color = TextMuted, fontSize = 10.sp)
+            }
+        }
+        Text(
+            text = value,
+            color = valueColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
