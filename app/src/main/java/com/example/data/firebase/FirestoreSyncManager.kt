@@ -280,6 +280,7 @@ class FirestoreSyncManager(private val context: Context) {
                         "netWorth" to d.netWorth,
                         "assets" to d.assets,
                         "liabilities" to d.liabilities,
+                        "investments" to d.investments,
                         "dateMillis" to d.dateMillis
                     )
                 }
@@ -506,6 +507,7 @@ class FirestoreSyncManager(private val context: Context) {
                             netWorth = (m["netWorth"] as? Number)?.toDouble() ?: 0.0,
                             assets = (m["assets"] as? Number)?.toDouble() ?: 0.0,
                             liabilities = (m["liabilities"] as? Number)?.toDouble() ?: 0.0,
+                            investments = (m["investments"] as? Number)?.toDouble(),
                             dateMillis = (m["dateMillis"] as? Number)?.toLong() ?: 0L
                         )
                     } catch (e: Exception) {
