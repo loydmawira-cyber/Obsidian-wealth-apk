@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
@@ -59,6 +60,7 @@ import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -90,6 +92,9 @@ import com.example.ui.components.AddGoalDialog
 import com.example.ui.components.ConfirmClearDataDialog
 import com.example.ui.components.ConfirmLoanPaymentDialog
 import com.example.data.models.UserSettings
+import com.example.data.models.ThemeMode
+import com.example.data.models.AccentColor
+import com.example.ui.components.ThemePickerDialog
 import com.example.ui.auth.AuthScreen
 import com.example.ui.auth.PinLockScreen
 import com.example.ui.components.AddHoldingDialog
@@ -180,7 +185,11 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
+            val userSettings by viewModel.userSettings.collectAsState()
+            MyApplicationTheme(
+                themeMode = userSettings.themeMode,
+                accentColor = userSettings.accentColor
+            ) {
                 ObsidianApp(viewModel)
             }
         }
@@ -240,6 +249,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     var showClearDataDialog by remember { mutableStateOf(false) }
     var showAiAdvisorSheet by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showThemePickerDialog by remember { mutableStateOf(false) }
     var showExportReportDialog by remember { mutableStateOf(false) }
     var showImportedTransactionsDialog by remember { mutableStateOf(false) }
     var exportReportContent by remember { mutableStateOf("") }
@@ -255,13 +265,14 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = ObsidianBg,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             ObsidianTopBar(
                 userSettings = userSettings,
                 onOpenSettings = { showSettingsSheet = true },
                 onToggleHideBalances = { viewModel.toggleHideBalances() },
-                onProfileClick = { showSettingsSheet = true }
+                onProfileClick = { showSettingsSheet = true },
+                onOpenThemePicker = { showThemePickerDialog = true }
             )
         },
         floatingActionButton = {
@@ -494,6 +505,16 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         }
     }
 
+    if (showThemePickerDialog) {
+        ThemePickerDialog(
+            currentMode = userSettings.themeMode,
+            currentAccent = userSettings.accentColor,
+            onDismiss = { showThemePickerDialog = false },
+            onModeChange = { viewModel.setThemeMode(it) },
+            onAccentChange = { viewModel.setAccentColor(it) }
+        )
+    }
+
     if (loanToPay != null) {
         val loan = loanToPay!!
         ConfirmLoanPaymentDialog(
@@ -564,13 +585,17 @@ fun ObsidianTopBar(
     userSettings: UserSettings,
     onOpenSettings: () -> Unit = {},
     onToggleHideBalances: () -> Unit = {},
-    onProfileClick: () -> Unit = {}
+    onProfileClick: () -> Unit = {},
+    onOpenThemePicker: () -> Unit = {}
 ) {
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
+    val accent = MaterialTheme.colorScheme.primary
+    val barBg = MaterialTheme.colorScheme.background
+    val barSurface = MaterialTheme.colorScheme.surface
 
     Surface(
-        color = ObsidianBg,
-        border = BorderStroke(1.dp, GoldBorder.copy(alpha = 0.35f)),
+        color = barBg,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -579,8 +604,8 @@ fun ObsidianTopBar(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xFF141A24),
-                            ObsidianBg
+                            barSurface,
+                            barBg
                         )
                     )
                 )
@@ -611,13 +636,13 @@ fun ObsidianTopBar(
                                 ),
                                 RoundedCornerShape(10.dp)
                             )
-                            .border(1.5.dp, SovereignGold, RoundedCornerShape(10.dp)),
+                            .border(1.5.dp, accent, RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             Icons.Default.Shield,
                             contentDescription = "Obsidian Shield",
-                            tint = GoldBright,
+                            tint = accent,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -642,7 +667,7 @@ fun ObsidianTopBar(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "Vault Encrypted",
-                                color = SovereignGold,
+                                color = accent,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 letterSpacing = 0.3.sp
@@ -660,7 +685,7 @@ fun ObsidianTopBar(
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = Color(0xFF121824),
-                        border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.45f)),
+                        border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
                         modifier = Modifier
                             .clickable { onOpenSettings() }
                             .testTag("currency_selector_pill")
@@ -676,7 +701,7 @@ fun ObsidianTopBar(
                             )
                             Text(
                                 text = userSettings.currency.code,
-                                color = GoldBright,
+                                color = accent,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -695,7 +720,24 @@ fun ObsidianTopBar(
                         Icon(
                             imageVector = if (userSettings.hideBalances) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                             contentDescription = if (userSettings.hideBalances) "Show Balances" else "Hide Balances",
-                            tint = if (userSettings.hideBalances) SovereignGold else TextMuted,
+                            tint = if (userSettings.hideBalances) accent else TextMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    // Appearance / Theme Picker Button
+                    IconButton(
+                        onClick = onOpenThemePicker,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(ObsidianSurfaceVariant, CircleShape)
+                            .border(1.dp, accent.copy(alpha = 0.45f), CircleShape)
+                            .testTag("open_theme_picker_button")
+                    ) {
+                        Icon(
+                            Icons.Default.Palette,
+                            contentDescription = "Appearance",
+                            tint = accent,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -706,13 +748,13 @@ fun ObsidianTopBar(
                         modifier = Modifier
                             .size(38.dp)
                             .background(ObsidianSurfaceVariant, CircleShape)
-                            .border(1.2.dp, SovereignGold.copy(alpha = 0.65f), CircleShape)
+                            .border(1.2.dp, accent.copy(alpha = 0.65f), CircleShape)
                             .testTag("open_settings_button")
                     ) {
                         Icon(
                             Icons.Default.Menu,
                             contentDescription = "Menu & Settings",
-                            tint = GoldBright,
+                            tint = accent,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -727,14 +769,14 @@ fun ObsidianTopBar(
                                     listOf(Color(0xFF2A2012), ObsidianSurfaceVariant)
                                 )
                             )
-                            .border(1.2.dp, SovereignGold, CircleShape)
+                            .border(1.2.dp, accent, CircleShape)
                             .clickable { onProfileClick() }
                             .testTag("profile_avatar_button"),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "OW",
-                            color = GoldBright,
+                            color = accent,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 0.5.sp
@@ -743,7 +785,7 @@ fun ObsidianTopBar(
                 }
             }
 
-            // Bottom Gold Horizon Accent Line
+            // Bottom Accent Horizon Line
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -752,7 +794,7 @@ fun ObsidianTopBar(
                         Brush.horizontalGradient(
                             listOf(
                                 Color.Transparent,
-                                SovereignGold.copy(alpha = 0.6f),
+                                accent.copy(alpha = 0.6f),
                                 Color.Transparent
                             )
                         )
@@ -767,11 +809,12 @@ fun FloatingAiAdvisorButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val accent = MaterialTheme.colorScheme.primary
     Surface(
         onClick = onClick,
         shape = CircleShape,
         color = Color(0xFF161C26),
-        border = BorderStroke(1.5.dp, SovereignGold),
+        border = BorderStroke(1.5.dp, accent),
         shadowElevation = 8.dp,
         modifier = modifier
             .padding(bottom = 6.dp, end = 2.dp)
@@ -795,7 +838,7 @@ fun FloatingAiAdvisorButton(
             Icon(
                 Icons.Default.AutoAwesome,
                 contentDescription = "Advisor AI",
-                tint = GoldBright,
+                tint = accent,
                 modifier = Modifier.size(22.dp)
             )
             // Tiny active pulse dot
@@ -826,10 +869,12 @@ fun ObsidianBottomNavigation(
         NavigationTabItem(FinanceTab.GOALS_REPORTS, "Goals", Icons.Default.Flag, userSettings.enableGoals)
     )
     val activeTabs = allTabs.filter { it.isEnabled }
+    val accent = MaterialTheme.colorScheme.primary
+    val barBg = MaterialTheme.colorScheme.background
 
     Surface(
-        color = ObsidianBg,
-        border = BorderStroke(1.dp, GoldBorder.copy(alpha = 0.3f)),
+        color = barBg,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.3f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -857,25 +902,25 @@ fun ObsidianBottomNavigation(
                         modifier = Modifier
                             .size(34.dp)
                             .background(
-                                if (isSelected) SovereignGold.copy(alpha = 0.22f) else Color.Transparent,
+                                if (isSelected) accent.copy(alpha = 0.22f) else Color.Transparent,
                                 CircleShape
                             )
                             .then(
-                                if (isSelected) Modifier.border(1.dp, SovereignGold.copy(alpha = 0.6f), CircleShape) else Modifier
+                                if (isSelected) Modifier.border(1.dp, accent.copy(alpha = 0.6f), CircleShape) else Modifier
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = item.icon,
                             contentDescription = item.label,
-                            tint = if (isSelected) SovereignGold else TextMuted,
+                            tint = if (isSelected) accent else TextMuted,
                             modifier = Modifier.size(18.dp)
                         )
                     }
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = item.label,
-                        color = if (isSelected) GoldBright else TextMuted,
+                        color = if (isSelected) accent else TextMuted,
                         fontSize = 10.sp,
                         fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal
                     )
