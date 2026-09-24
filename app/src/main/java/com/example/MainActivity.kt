@@ -532,10 +532,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         ObsidianSettingsSheet(
             viewModel = viewModel,
             onDismiss = { showSettingsSheet = false },
-            onRequestClearAllData = { showClearDataDialog = true },
-            onOpenNotificationAccess = {
-                context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-            }
+            onRequestClearAllData = { showClearDataDialog = true }
         )
     }
     if (showImportedTransactionsDialog) {
