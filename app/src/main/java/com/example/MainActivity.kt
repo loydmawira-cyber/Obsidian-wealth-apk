@@ -239,6 +239,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     val isAiThinking by viewModel.isAiThinking.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
+    val accounts by viewModel.accounts.collectAsState()
 
     // Dialog & Sheet States
     var showAddTransactionDialog by remember { mutableStateOf(false) }
@@ -361,9 +362,10 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     // Modal Dialogs
     if (showAddTransactionDialog) {
         AddTransactionDialog(
+            accounts = accounts,
             onDismiss = { showAddTransactionDialog = false },
-            onAdd = { title, amt, type, cat, acc, note ->
-                viewModel.addTransaction(title, amt, type, cat, acc, note = note)
+            onAdd = { title, amt, type, cat, account, note ->
+                viewModel.addTransaction(title, amt, type, cat, account, note = note)
             },
             onAiSmartLog = {
                 showAddTransactionDialog = false
@@ -374,6 +376,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
 
     if (showAiSmartLogDialog) {
         AiSmartLogDialog(
+            accounts = accounts,
             onDismiss = { showAiSmartLogDialog = false },
             onConfirm = { transaction ->
                 viewModel.addTransaction(transaction)
@@ -384,9 +387,10 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
 
     if (showAddHoldingDialog) {
         AddHoldingDialog(
+            defaultCurrency = userSettings.currency,
             onDismiss = { showAddHoldingDialog = false },
-            onAdd = { sym, name, type, shares, avg, cur ->
-                viewModel.addHolding(sym, name, type, shares, avg, cur)
+            onAdd = { sym, name, type, shares, avg, cur, currencyCode ->
+                viewModel.addHolding(sym, name, type, shares, avg, cur, currencyCode)
             }
         )
     }
@@ -415,9 +419,10 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         val holding = holdingToSell!!
         SellHoldingDialog(
             holding = holding,
-            formatAmount = { viewModel.formatAmount(it) },
+            accounts = accounts,
+            formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
             onDismiss = { holdingToSell = null },
-            onSell = { qty, price -> viewModel.sellHolding(holding, qty, price) }
+            onSell = { qty, price, account -> viewModel.sellHolding(holding, qty, price, account) }
         )
     }
 
@@ -425,8 +430,9 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         val holding = holdingToEdit!!
         EditHoldingDialog(
             holding = holding,
+            defaultCurrency = userSettings.currency,
             onDismiss = { holdingToEdit = null },
-            onSave = { symbol, name, type, shares, avgBuy, current ->
+            onSave = { symbol, name, type, shares, avgBuy, current, currencyCode ->
                 viewModel.updateHolding(
                     holding.copy(
                         symbol = symbol,
@@ -434,7 +440,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
                         type = type,
                         shares = shares,
                         avgBuyPrice = avgBuy,
-                        currentPrice = current
+                        currentPrice = current,
+                        currencyCode = currencyCode
                     )
                 )
             }
@@ -488,20 +495,20 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     }
 
     if (showAddLoanDialog) {
-        AddLoanDialog(onDismiss = { showAddLoanDialog = false }) { name, lender, total, remaining, emi, apr, months ->
-            viewModel.addLoan(name, lender, total, remaining, emi, apr, months)
+        AddLoanDialog(defaultCurrency = userSettings.currency, onDismiss = { showAddLoanDialog = false }) { name, lender, total, remaining, emi, apr, months, currencyCode ->
+            viewModel.addLoan(name, lender, total, remaining, emi, apr, months, currencyCode)
         }
     }
 
     if (showAddCreditCardDialog) {
-        AddCreditCardDialog(onDismiss = { showAddCreditCardDialog = false }) { name, balance, limit, apr, due ->
-            viewModel.addCreditCard(name, balance, limit, apr, due)
+        AddCreditCardDialog(defaultCurrency = userSettings.currency, onDismiss = { showAddCreditCardDialog = false }) { name, balance, limit, apr, due, currencyCode ->
+            viewModel.addCreditCard(name, balance, limit, apr, due, currencyCode)
         }
     }
 
     if (showAddGoalDialog) {
-        AddGoalDialog(onDismiss = { showAddGoalDialog = false }) { title, category, target, current, monthly ->
-            viewModel.addGoal(title, category, target, current, monthly)
+        AddGoalDialog(defaultCurrency = userSettings.currency, onDismiss = { showAddGoalDialog = false }) { title, category, target, current, monthly, currencyCode ->
+            viewModel.addGoal(title, category, target, current, monthly, currencyCode)
         }
     }
 
@@ -518,15 +525,17 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     if (loanToPay != null) {
         val loan = loanToPay!!
         ConfirmLoanPaymentDialog(
+            accounts = accounts,
             loanName = loan.loanName,
             paymentAmount = loan.emiAmount.coerceAtLeast(0.0).coerceAtMost(
                 loan.remainingBalance + loan.remainingBalance * loan.interestRate.coerceAtLeast(0.0) / 1200.0
             ),
-            currencySymbol = userSettings.currency.symbol,
+            currencySymbol = com.example.data.models.SupportedCurrency.values().firstOrNull { it.code == loan.currencyCode }?.symbol ?: "",
+            currencyCode = loan.currencyCode,
             remainingBalance = loan.remainingBalance,
             interestRate = loan.interestRate,
             onDismiss = { loanToPay = null },
-            onConfirm = { viewModel.payLoanEmi(loan) }
+            onConfirm = { account -> viewModel.payLoanEmi(loan, account) }
         )
     }
 
@@ -540,9 +549,10 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     if (cardToPay != null) {
         PayCreditCardDialog(
             card = cardToPay!!,
+            accounts = accounts,
             onDismiss = { cardToPay = null },
-            onPay = { amt ->
-                viewModel.payCreditCard(cardToPay!!, amt)
+            onPay = { amt, account ->
+                viewModel.payCreditCard(cardToPay!!, amt, account)
             }
         )
     }
@@ -575,8 +585,9 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     if (showImportedTransactionsDialog) {
         ImportedTransactionsDialog(
             transactions = transactions.filter { it.importStatus == "PENDING_REVIEW" },
-            formatAmount = { viewModel.formatAmount(it) },
-            onConfirm = viewModel::confirmImportedTransaction,
+            accounts = accounts,
+            formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
+            onConfirm = { transaction, account -> viewModel.confirmImportedTransaction(transaction, account) },
             onIgnore = viewModel::ignoreImportedTransaction,
             onDismiss = { showImportedTransactionsDialog = false }
         )
