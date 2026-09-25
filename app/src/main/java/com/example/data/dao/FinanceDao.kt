@@ -207,6 +207,39 @@ interface FinanceDao {
         return true
     }
 
+    @Transaction
+    suspend fun recordGoalContribution(goalId: Long, transaction: TransactionEntity): Boolean {
+        val goal = getGoal(goalId) ?: return false
+        val account = transaction.accountId?.let { getAccount(it) } ?: return false
+        val amount = transaction.amount
+        if (!account.isActive || account.currencyCode.isNullOrBlank() || account.currencyCode != goal.currencyCode ||
+            transaction.account != account.name || transaction.currencyCode != account.currencyCode ||
+            transaction.category != Category.GOAL_SAVINGS || transaction.type != TransactionType.EXPENSE ||
+            transaction.transactionKind != TransactionKind.ASSET_CONVERSION || transaction.creditCardId != null ||
+            transaction.loanId != null || !amount.isFinite() || amount <= 0.0 ||
+            transaction.sourceReference != "goal-contribution:${goal.id}") return false
+        if (!AccountLedger.hasSufficientBalance(account, getTransactionsSnapshot(), amount, transaction.dateMillis + 1L)) return false
+        val newCurrentAmount = goal.currentAmount + amount
+        if (!newCurrentAmount.isFinite()) return false
+        updateGoal(goal.copy(currentAmount = newCurrentAmount))
+        insertTransaction(transaction)
+        return true
+    }
+
+    @Transaction
+    suspend fun deleteGoalContribution(transactionId: Long): Boolean {
+        val transaction = getTransactionById(transactionId) ?: return false
+        val prefix = "goal-contribution:"
+        if (!transaction.sourceReference.orEmpty().startsWith(prefix)) return false
+        val goalId = transaction.sourceReference!!.removePrefix(prefix).toLongOrNull() ?: return false
+        val goal = getGoal(goalId) ?: return false
+        if (transaction.category != Category.GOAL_SAVINGS || transaction.type != TransactionType.EXPENSE ||
+            transaction.transactionKind != TransactionKind.ASSET_CONVERSION || !transaction.amount.isFinite() || transaction.amount <= 0.0) return false
+        updateGoal(goal.copy(currentAmount = (goal.currentAmount - transaction.amount).coerceAtLeast(0.0)))
+        deleteTransaction(transaction)
+        return true
+    }
+
     @Query("SELECT * FROM transactions WHERE statementFingerprint = :fingerprint LIMIT 1")
     suspend fun findTransactionByFingerprint(fingerprint: String): TransactionEntity?
 
@@ -356,6 +389,9 @@ interface FinanceDao {
 
     @Query("SELECT * FROM goals ORDER BY currentAmount / targetAmount DESC")
     suspend fun getGoalsSnapshot(): List<GoalEntity>
+
+    @Query("SELECT * FROM goals WHERE id = :id LIMIT 1")
+    suspend fun getGoal(id: Long): GoalEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGoal(goal: GoalEntity): Long
