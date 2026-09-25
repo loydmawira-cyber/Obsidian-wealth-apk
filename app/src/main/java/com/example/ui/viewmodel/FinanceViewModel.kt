@@ -111,7 +111,8 @@ data class MonthCashFlow(
 )
 
 /** Categories that move money into something you own rather than spend it. */
-private val nonSpendingCategories = setOf(Category.INVESTMENT_SIP, Category.GOAL_SAVINGS)
+private val investmentCategories = setOf(Category.INVESTMENT_SIP, Category.GOAL_SAVINGS)
+private val nonSpendingCategories = investmentCategories + Category.DEBT_PAYMENT
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val billingManager = BillingManager(application)
@@ -240,15 +241,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _isPinEnabled.value = preferencesManager.isPinEnabled()
         _isPinLocked.value = preferencesManager.isPinEnabled() && preferencesManager.isLoggedIn()
 
-        // Catch up any recurring SIP debits that have come due since this ViewModel was last
-        // alive (the background worker in SipDebitScheduler covers gaps while the app is
-        // closed; this covers the moment the app is opened, without waiting on WorkManager).
-        viewModelScope.launch {
-            val debited = com.example.alerts.SipDebitEngine.processDueDebits(database.financeDao())
-            if (debited > 0) {
-                syncVaultToCloud()
-            }
-        }
+        // Recurring investment plans are reminders only. Do not create ledger entries or
+        // increase invested value unless an actual contribution is confirmed or imported.
     }
 
     /**
@@ -638,11 +632,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedMonthStart = MutableStateFlow(currentMonthStart())
 
     val summary: StateFlow<FinanceSummary> = combine(
-        transactions, combine(holdings, sips, _startingBalance) { h, sp, sb -> Triple(h, sp, sb) }, creditCards, loans, goals
-    ) { txList, holdingsAndSips, cList, lList, gList ->
-        val hList = holdingsAndSips.first
-        val sList = holdingsAndSips.second
-        val startBalance = holdingsAndSips.third
+        transactions, combine(holdings, _startingBalance) { h, sb -> Pair(h, sb) }, creditCards, loans, goals
+    ) { txList, holdingsAndBalance, cList, lList, gList ->
+        val hList = holdingsAndBalance.first
+        val startBalance = holdingsAndBalance.second
         // No demo-value substitution. A zero total means the user has recorded nothing, and that
         // is what the UI and the advisor must both be told.
         val confirmedTransactions = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
@@ -662,10 +655,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             .filter { it.type == TransactionType.EXPENSE && it.category !in nonSpendingCategories }.sumOf { it.amount }
         val savingsRate = if (operatingIn > 0) ((operatingIn - operatingOut) / operatingIn) * 100.0 else 0.0
 
-        // SIPs count toward the portfolio at the amount invested so far (both value and cost).
-        val sipInvested = sList.sumOf { it.totalInvested }
-        val portVal = hList.sumOf { it.totalValue } + sipInvested
-        val portCost = hList.sumOf { it.totalCost } + sipInvested
+        // Contribution plans are not market-valued assets. Include only recorded holdings.
+        val portVal = hList.sumOf { it.totalValue }
+        val portCost = hList.sumOf { it.totalCost }
         val dayGain = hList.sumOf { it.totalValue * (it.dailyChangePercent / 100.0) }
         val dayGainPct = if (portVal > 0) (dayGain / portVal) * 100.0 else 0.0
         // Simple return on cost basis. Not XIRR — contribution dates are not recorded.
@@ -707,7 +699,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             monthlyDebtServicing = monthlyDebt,
             dtiRatio = dti,
             transactionCount = confirmedTransactions.size,
-            holdingCount = hList.size + sList.size,
+            holdingCount = hList.size,
             debtAccountCount = cList.size + lList.size,
             goalCount = gList.size
         )
@@ -725,7 +717,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val inMonth = confirmed.filter { it.dateMillis >= monthStart && it.dateMillis < monthEnd }
         val inflow = inMonth.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
         val outflow = inMonth.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
-        val invested = inMonth.filter { it.type == TransactionType.EXPENSE && it.category in nonSpendingCategories }.sumOf { it.amount }
+        val invested = inMonth.filter { it.type == TransactionType.EXPENSE && it.category in investmentCategories }.sumOf { it.amount }
         MonthCashFlow(
             monthStart = monthStart,
             monthEnd = monthEnd,
@@ -824,7 +816,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         listOf(
             ChatMessage(
                 sender = "AI",
-                text = "Welcome to Obsidian Financial Intelligence. I have synchronized your portfolios, credit utilization, and recurring cash flows. How can I optimize your capital allocation today?"
+                text = "Welcome to Obsidian's finance assistant. I can help explain the financial records you choose to share. My responses are informational and may be incomplete or incorrect."
             )
         )
     )
@@ -1173,40 +1165,20 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         fundName: String,
         category: String,
         monthlyAmount: Double,
-        debitDayOfMonth: Int,
-        annualizedReturnPercent: Double
+        debitDayOfMonth: Int
     ) {
         viewModelScope.launch {
-            val sipId = repository.addSip(
+            repository.addSip(
                 SipEntity(
                     fundName = fundName,
                     category = category,
                     monthlyAmount = monthlyAmount,
                     debitDayOfMonth = debitDayOfMonth,
                     isActive = true,
-                    // A brand-new SIP has had exactly one debit so far: the one that starts it.
-                    // (Previously this was `monthlyAmount * 6`, pre-aging every new SIP by six
-                    // months it never actually had.)
-                    totalInvested = monthlyAmount,
-                    annualizedReturnPercent = annualizedReturnPercent,
-                    // First debit is recorded below, so mark this month as already charged.
-                    lastDebitedYearMonth = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US)
-                        .format(java.util.Date())
-                )
-            )
-            // The SIP's first debit happens immediately, so record it as a cash outflow
-            // right away — it should hit the Cash Flow tab and reduce available cash,
-            // just like any other expense.
-            repository.addTransaction(
-                TransactionEntity(
-                    title = "SIP: $fundName",
-                    amount = monthlyAmount,
-                    type = TransactionType.EXPENSE,
-                    category = Category.INVESTMENT_SIP,
-                    account = "Cash / selected account",
-                    note = "Automated SIP investment recorded in Obsidian Wealth",
-                    isRecurring = true,
-                    sourceReference = "sip:$sipId"
+                    // Creating a plan does not mean a contribution has happened.
+                    totalInvested = 0.0,
+                    annualizedReturnPercent = 0.0,
+                    lastDebitedYearMonth = null
                 )
             )
             syncVaultToCloud()
@@ -1260,15 +1232,17 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun payCreditCard(card: CreditCardEntity, paymentAmount: Double) {
+        val actualPayment = paymentAmount.coerceAtLeast(0.0).coerceAtMost(card.currentBalance)
+        if (actualPayment <= 0.0) return
         viewModelScope.launch {
-            repository.payCreditCard(card, paymentAmount)
+            repository.payCreditCard(card, actualPayment)
             repository.addTransaction(
                 TransactionEntity(
                     title = "Payment to ${card.cardName}",
-                    amount = paymentAmount,
+                    amount = actualPayment,
                     type = TransactionType.EXPENSE,
-                    category = Category.OTHER,
-                    account = "Chase Checking",
+                    category = Category.DEBT_PAYMENT,
+                    account = "Cash / selected account",
                     note = "Card debt reduction"
                 )
             )
@@ -1317,7 +1291,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             title = "EMI: ${loan.loanName}",
                             amount = paymentAmount,
                             type = TransactionType.EXPENSE,
-                            category = Category.LOAN_EMI,
+                            category = Category.DEBT_PAYMENT,
                             account = "Cash / selected account",
                             note = "Manual EMI payment recorded in Obsidian Wealth",
                             isRecurring = false
