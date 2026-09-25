@@ -110,6 +110,7 @@ fun CashFlowScreen(
     val budgets by viewModel.budgets.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
+    val creditCards by viewModel.creditCards.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val accountCurrencyById = accounts.associate { it.id to it.currencyCode }
     fun transactionCurrency(tx: TransactionEntity): String? =
@@ -141,12 +142,21 @@ fun CashFlowScreen(
         matchesSearch && matchesFilter && inMonth
     }
 
-    // Dynamic Donut chart slices for expenses
-    val expenseTransactions = transactions.filter {
-        it.type == TransactionType.EXPENSE && transactionCurrency(it) == userSettings.currency.code && it.transactionKind in setOf(com.example.data.models.TransactionKind.STANDARD, com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE) && it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
-            it.category != Category.INVESTMENT_SIP && it.category != Category.GOAL_SAVINGS &&
-            it.category != Category.DEBT_PAYMENT && it.category != Category.ACCOUNT_TRANSFER && it.category != Category.ACCOUNT_ADJUSTMENT &&
-            it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
+    // Keep the breakdown in lockstep with monthly outflow. Card repayments are cash movements,
+    // not new spending: the original card purchase is counted once, when it was made.
+    val cashAccountIds = accounts.filter { it.isActive && it.currencyCode == userSettings.currency.code }.map { it.id }.toSet()
+    val cashFlowCardIds = creditCards.filter { it.currencyCode == userSettings.currency.code }.map { it.id }.toSet()
+    val expenseTransactions = transactions.filter { tx ->
+        tx.type == TransactionType.EXPENSE && transactionCurrency(tx) == userSettings.currency.code &&
+            tx.importStatus != "PENDING_REVIEW" && tx.importStatus != "IGNORED" &&
+            tx.dateMillis >= month.monthStart && tx.dateMillis < month.monthEnd &&
+            tx.transactionKind !in setOf(
+                com.example.data.models.TransactionKind.TRANSFER,
+                com.example.data.models.TransactionKind.ASSET_CONVERSION,
+                com.example.data.models.TransactionKind.ADJUSTMENT
+            ) && !(tx.transactionKind == com.example.data.models.TransactionKind.DEBT_SETTLEMENT && tx.creditCardId != null) &&
+            (tx.accountId in cashAccountIds ||
+                (tx.transactionKind == com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE && tx.creditCardId in cashFlowCardIds))
     }
     val donutSlices = if (expenseTransactions.isNotEmpty()) {
         val categoryColors = mapOf(
@@ -155,6 +165,9 @@ fun CashFlowScreen(
             Category.TRANSPORT to CyanAccent,
             Category.SHOPPING to Color(0xFFF59E0B),
             Category.INVESTMENT_SIP to Color(0xFF34D399),
+            Category.LOAN_EMI to CrimsonDebt,
+            Category.DEBT_PAYMENT to Color(0xFFFB7185),
+            Category.GOAL_SAVINGS to Color(0xFF06B6D4),
             Category.UTILITIES to Color(0xFFEC4899),
             Category.SUBSCRIPTIONS to Color(0xFFA855F7),
             Category.HEALTHCARE to Color(0xFF38BDF8),
@@ -166,7 +179,12 @@ fun CashFlowScreen(
                     Category.HOUSING -> "Housing & Rent"
                     Category.FOOD_DINING -> "Food & Dining"
                     Category.TRANSPORT -> "Transport & Fuel"
-                    Category.INVESTMENT_SIP -> "Investment & SIP"
+                    Category.INVESTMENT_SIP -> "Investments"
+                    Category.LOAN_EMI -> "Loan EMI"
+                    Category.DEBT_PAYMENT -> "Debt Payments"
+                    Category.GOAL_SAVINGS -> "Goal Savings"
+                    Category.ACCOUNT_TRANSFER -> "Transfers"
+                    Category.ACCOUNT_ADJUSTMENT -> "Adjustments"
                     Category.UTILITIES -> "Utilities & Power"
                     Category.SUBSCRIPTIONS -> "Subscriptions"
                     Category.SHOPPING -> "Shopping"
@@ -423,7 +441,7 @@ fun CashFlowScreen(
                         DonutChart(
                             slices = donutSlices,
                             sizeDp = 120.dp,
-                            centerTitle = "Total Spent",
+                            centerTitle = "Total Outflow",
                             centerSubtitle = viewModel.formatCompact(expenseTransactions.sumOf { it.amount })
                         )
 
@@ -433,7 +451,7 @@ fun CashFlowScreen(
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            donutSlices.take(4).forEach { slice ->
+                            donutSlices.forEach { slice ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
