@@ -109,7 +109,11 @@ fun CashFlowScreen(
     val month by viewModel.monthCashFlow.collectAsState()
     val budgets by viewModel.budgets.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
+    val accounts by viewModel.accounts.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
+    val accountCurrencyById = accounts.associate { it.id to it.currencyCode }
+    fun transactionCurrency(tx: TransactionEntity): String? =
+        tx.currencyCode ?: tx.accountId?.let { accountCurrencyById[it] }
     val sym = userSettings.currency.symbol
     val isKenya = userSettings.region == GeographicRegion.EAST_AFRICA || userSettings.currency == SupportedCurrency.KES
 
@@ -139,9 +143,9 @@ fun CashFlowScreen(
 
     // Dynamic Donut chart slices for expenses
     val expenseTransactions = transactions.filter {
-        it.type == TransactionType.EXPENSE && it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
+        it.type == TransactionType.EXPENSE && transactionCurrency(it) == userSettings.currency.code && it.transactionKind == com.example.data.models.TransactionKind.STANDARD && it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
             it.category != Category.INVESTMENT_SIP && it.category != Category.GOAL_SAVINGS &&
-            it.category != Category.DEBT_PAYMENT &&
+            it.category != Category.DEBT_PAYMENT && it.category != Category.ACCOUNT_TRANSFER && it.category != Category.ACCOUNT_ADJUSTMENT &&
             it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
     }
     val donutSlices = if (expenseTransactions.isNotEmpty()) {
@@ -182,13 +186,15 @@ fun CashFlowScreen(
 
     val hasCashFlowData = summary.totalInflow > 0 || summary.totalOutflow > 0 || summary.transactionCount > 0
     // The monthly cap is the sum of the user's own budgets; nothing is assumed.
-    val budgetCap = budgets.sumOf { it.monthlyLimit }
-    val budgetedCategories = budgets.map { it.category }.toSet()
+    val selectedBudgets = budgets.filter { it.currencyCode == userSettings.currency.code }
+    val budgetCap = selectedBudgets.sumOf { it.monthlyLimit }
+    val budgetedCategories = selectedBudgets.map { it.category }.toSet()
     val budgetSpent = transactions
         .filter {
-            it.type == TransactionType.EXPENSE && it.category in budgetedCategories &&
+            it.type == TransactionType.EXPENSE && transactionCurrency(it) == userSettings.currency.code && it.category in budgetedCategories &&
                 it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
-                it.category != Category.DEBT_PAYMENT &&
+                it.transactionKind == com.example.data.models.TransactionKind.STANDARD &&
+                it.category != Category.DEBT_PAYMENT && it.category != Category.ACCOUNT_TRANSFER && it.category != Category.ACCOUNT_ADJUSTMENT &&
                 it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
         }
         .sumOf { it.amount }
@@ -216,6 +222,7 @@ fun CashFlowScreen(
                 }
             }
         }
+        item { AccountManagementCard(viewModel = viewModel) }
         // Month switcher with opening / closing balances
         item { MonthCashFlowCard(viewModel = viewModel) }
 
@@ -591,9 +598,10 @@ fun CashFlowScreen(
         // Transactions list: newest first, grouped by day, limited to what has been revealed so far.
         val dayHeaderFormat = SimpleDateFormat("EEE d MMM", Locale.getDefault())
         filteredTransactions.take(visibleCount)
-            .groupBy { dayHeaderFormat.format(Date(it.dateMillis)) }
-            .forEach { (dayLabel, dayTx) ->
-        item(key = "day_$dayLabel") {
+            .groupBy { tx -> dayHeaderFormat.format(Date(tx.dateMillis)) to transactionCurrency(tx) }
+            .forEach { (dayKey, dayTx) ->
+        val (dayLabel, dayCurrency) = dayKey
+        item(key = "day_${dayLabel}_${dayCurrency ?: "unknown"}") {
             val dayNet = dayTx.sumOf { if (it.type == TransactionType.INCOME) it.amount else -it.amount }
             Row(
                 modifier = Modifier
@@ -601,9 +609,9 @@ fun CashFlowScreen(
                     .padding(top = 6.dp, start = 4.dp, end = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(dayLabel, color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("$dayLabel · ${dayCurrency ?: "currency unresolved"}", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    text = if (dayNet >= 0) "+${viewModel.formatAmount(dayNet)}" else "-${viewModel.formatAmount(-dayNet)}",
+                    text = if (dayCurrency == null) "No combined total" else if (dayNet >= 0) "+${viewModel.formatAmount(dayNet, dayCurrency)}" else "-${viewModel.formatAmount(-dayNet, dayCurrency)}",
                     color = if (dayNet >= 0) EmeraldLight else TextMuted,
                     fontSize = 11.sp
                 )
@@ -714,7 +722,7 @@ fun CashFlowScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.End
                     ) {
-                        val formattedAmt = viewModel.formatAmount(tx.amount)
+                        val formattedAmt = viewModel.formatAmount(tx.amount, transactionCurrency(tx))
                         val displayAmt = if (isIncome) "+$formattedAmt" else "-$formattedAmt"
                         Text(
                             text = displayAmt,
@@ -763,7 +771,7 @@ fun CashFlowScreen(
     actionTx?.let { tx ->
         com.example.ui.components.TransactionActionDialog(
             transaction = tx,
-            formatAmount = { viewModel.formatAmount(it) },
+            formatAmount = { viewModel.formatAmount(it, transactionCurrency(tx)) },
             onDismiss = { actionTx = null },
             onEdit = { editTx = tx },
             onDelete = { viewModel.deleteTransaction(tx) }
@@ -773,6 +781,7 @@ fun CashFlowScreen(
     editTx?.let { tx ->
         com.example.ui.components.EditTransactionDialog(
             transaction = tx,
+            accounts = accounts,
             onDismiss = { editTx = null },
             onSave = { viewModel.updateTransaction(it) }
         )

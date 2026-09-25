@@ -217,6 +217,28 @@ fun OverviewScreen(
             }
         }
 
+        if (summary.hasUnresolvedLedgerData) {
+            item {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = userSettings.enableCashFlow) {
+                            viewModel.selectTab(FinanceTab.CASH_FLOW)
+                        },
+                    shape = RoundedCornerShape(12.dp),
+                    color = AmberWarning.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, AmberWarning.copy(alpha = 0.45f))
+                ) {
+                    Text(
+                        "Some legacy records lack a confirmed currency or account link and are excluded from these totals. Review accounts, holdings, and debts; no currency conversion is applied.",
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+        }
+
         // Quick Actions Row
         item {
             Row(

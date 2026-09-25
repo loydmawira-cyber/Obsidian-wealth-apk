@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.TimeToLeave
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
@@ -82,15 +84,18 @@ fun DebtCenterScreen(
     val summary by viewModel.summary.collectAsState()
     val creditCards by viewModel.creditCards.collectAsState()
     val loans by viewModel.loans.collectAsState()
+    val accounts by viewModel.accounts.collectAsState()
     val strategy by viewModel.payoffStrategy.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val sym = userSettings.currency.symbol
     val isKenya = userSettings.region == GeographicRegion.EAST_AFRICA || userSettings.currency == SupportedCurrency.KES
 
-    val totalCardBalance = creditCards.sumOf { it.currentBalance }
-    val totalLoanBalance = loans.sumOf { it.remainingBalance }
+    val selectedCards = creditCards.filter { it.currencyCode == userSettings.currency.code }
+    val selectedLoans = loans.filter { it.currencyCode == userSettings.currency.code }
+    val totalCardBalance = selectedCards.sumOf { it.currentBalance }
+    val totalLoanBalance = selectedLoans.sumOf { it.remainingBalance }
     val aggregateDebt = totalCardBalance + totalLoanBalance
-    val totalLimit = creditCards.sumOf { it.creditLimit }
+    val totalLimit = selectedCards.sumOf { it.creditLimit }
     val overallUtilization = if (totalLimit > 0) (totalCardBalance / totalLimit) * 100.0 else 0.0
 
     LazyColumn(
@@ -102,6 +107,8 @@ fun DebtCenterScreen(
         // Hero Debt Card
         item {
             HeroGradientCard {
+                Text("${userSettings.currency.code} only; other currencies are shown separately and not converted.", color = TextMuted, fontSize = 10.sp)
+                Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -123,10 +130,9 @@ fun DebtCenterScreen(
                             fontWeight = FontWeight.ExtraBold
                         )
                     }
-
-                    val hasRecentIncome = summary.recentInflow > 0
+                    val hasRecentIncome = summary.recentInflow > 0 && selectedLoans.isNotEmpty()
                     MetricBadge(
-                        text = if (!hasRecentIncome) "Pay/income: N/A" else "Pay/income: ${"%.1f".format(summary.dtiRatio)}% est.",
+                        text = if (!hasRecentIncome) "Loan EMI/inflow: N/A" else "Loan EMI/inflow: ${"%.1f".format(summary.dtiRatio)}% est.",
                         isPositive = false
                     )
                 }
@@ -142,7 +148,7 @@ fun DebtCenterScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
-                        Text("Estimated monthly payments", color = TextMuted, fontSize = 11.sp)
+                        Text("Recorded loan EMIs", color = TextMuted, fontSize = 11.sp)
                         Text("${viewModel.formatCompact(summary.monthlyDebtServicing)}/mo", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -249,8 +255,8 @@ fun DebtCenterScreen(
         item {
             // No fallback demo numbers: a debt-free/new vault must show blank inputs, not a
             // fabricated $15,000 balance / 16.5% APR / $450 payment as if it were the user's own.
-            val maxApr = creditCards.maxByOrNull { it.apr }?.apr
-                ?: (loans.maxByOrNull { it.interestRate }?.interestRate ?: 0.0)
+            val maxApr = selectedCards.maxByOrNull { it.apr }?.apr
+                ?: (selectedLoans.maxByOrNull { it.interestRate }?.interestRate ?: 0.0)
             val suggestedPayment = if (summary.monthlyDebtServicing > 50.0) summary.monthlyDebtServicing else 0.0
 
             DebtPayoffCalculator(
@@ -258,7 +264,7 @@ fun DebtCenterScreen(
                 initialApr = maxApr,
                 initialMonthlyPayment = suggestedPayment,
                 currencySymbol = sym,
-                formatAmount = { viewModel.formatAmount(it) },
+                formatAmount = { viewModel.formatAmount(it, summary.currencyCode) },
                 totalVaultDebt = aggregateDebt
             )
         }
@@ -328,6 +334,7 @@ fun DebtCenterScreen(
 
                     Button(
                         onClick = { onPayCard(card) },
+                        enabled = !card.currencyCode.isNullOrBlank() && accounts.any { it.isActive && it.currencyCode == card.currencyCode },
                         colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.height(32.dp)
@@ -343,13 +350,13 @@ fun DebtCenterScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Balance: ${viewModel.formatAmount(card.currentBalance)}",
+                        text = "Balance: ${viewModel.formatAmount(card.currentBalance, card.currencyCode)}",
                         color = TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Limit: ${viewModel.formatCompact(card.creditLimit)} (${"%.1f".format(card.utilizationPercent)}% used)",
+                        text = "Limit: ${viewModel.formatAmount(card.creditLimit, card.currencyCode)} (${"%.1f".format(card.utilizationPercent)}% used)",
                         color = if (util > 30f) AmberWarning else EmeraldLight,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -367,6 +374,14 @@ fun DebtCenterScreen(
                     color = if (util > 30f) AmberWarning else CyanAccent,
                     trackColor = ObsidianBorderSubtle
                 )
+                if (card.currencyCode.isNullOrBlank()) {
+                    Text("Confirm this legacy balance's currency before including it in totals or recording a payment:", color = AmberWarning, fontSize = 10.sp)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(SupportedCurrency.values().toList()) { currency ->
+                            FilterChip(selected = false, onClick = { viewModel.resolveCardCurrency(card, currency.code) }, label = { Text(currency.code, fontSize = 10.sp) })
+                        }
+                    }
+                }
             }
         }
 
@@ -440,6 +455,7 @@ fun DebtCenterScreen(
 
                     Button(
                         onClick = { onPayLoan(loan) },
+                        enabled = !loan.currencyCode.isNullOrBlank() && accounts.any { it.isActive && it.currencyCode == loan.currencyCode },
                         colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.height(32.dp)
@@ -455,13 +471,13 @@ fun DebtCenterScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Remaining: ${viewModel.formatAmount(loan.remainingBalance)}",
+                        text = "Remaining: ${viewModel.formatAmount(loan.remainingBalance, loan.currencyCode)}",
                         color = TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "EMI: ${viewModel.formatCompact(loan.emiAmount)}/mo (${"%.0f".format(loan.paidPercent)}% Paid)",
+                        text = "EMI: ${viewModel.formatAmount(loan.emiAmount, loan.currencyCode)}/mo (${"%.0f".format(loan.paidPercent)}% Paid)",
                         color = EmeraldLight,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -479,6 +495,14 @@ fun DebtCenterScreen(
                     color = EmeraldGrowth,
                     trackColor = ObsidianBorderSubtle
                 )
+                if (loan.currencyCode.isNullOrBlank()) {
+                    Text("Confirm this legacy balance's currency before including it in totals or recording an EMI:", color = AmberWarning, fontSize = 10.sp)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(SupportedCurrency.values().toList()) { currency ->
+                            FilterChip(selected = false, onClick = { viewModel.resolveLoanCurrency(loan, currency.code) }, label = { Text(currency.code, fontSize = 10.sp) })
+                        }
+                    }
+                }
             }
         }
 

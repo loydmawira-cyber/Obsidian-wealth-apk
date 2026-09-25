@@ -60,8 +60,6 @@ import com.example.ui.viewmodel.FinanceViewModel
 @Composable
 fun MonthCashFlowCard(viewModel: FinanceViewModel) {
     val month by viewModel.monthCashFlow.collectAsState()
-    val promptDone by viewModel.startingBalancePromptDone.collectAsState()
-    var showBalanceDialog by remember { mutableStateOf(false) }
 
     FinCard(border = BorderStroke(1.dp, GoldBorder)) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -91,6 +89,9 @@ fun MonthCashFlowCard(viewModel: FinanceViewModel) {
             BalanceLine("Opening balance", viewModel.formatAmount(month.opening), TextPrimary, bold = true)
             BalanceLine("+ Inflow", viewModel.formatAmount(month.inflow), EmeraldLight)
             BalanceLine("\u2212 Outflow", viewModel.formatAmount(month.outflow), Color(0xFFFB7185))
+            if (kotlin.math.abs(month.adjustments) > 0.005) {
+                BalanceLine("± Reconciliation adjustments", viewModel.formatAmount(month.adjustments), SovereignGold)
+            }
             if (month.invested > 0) {
                 BalanceLine("   of which invested & saved", viewModel.formatAmount(month.invested), TextMuted, small = true)
             }
@@ -102,46 +103,15 @@ fun MonthCashFlowCard(viewModel: FinanceViewModel) {
                 bold = true
             )
 
-            if (!promptDone) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = SovereignGold.copy(alpha = 0.10f),
-                    border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Text("Start from your real balance?", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "Enter the cash you have right now so your balances match reality, or start from zero.",
-                            color = TextSecondary,
-                            fontSize = 11.sp
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { showBalanceDialog = true }) { Text("Set balance", color = SovereignGold) }
-                            TextButton(onClick = { viewModel.dismissStartingBalancePrompt() }) { Text("Start from 0", color = TextSecondary) }
-                        }
-                    }
-                }
-            } else {
-                Text(
-                    text = "Change current balance",
-                    color = TextMuted,
-                    fontSize = 11.sp,
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .clickable { showBalanceDialog = true }
-                )
-            }
+            Text(
+                "Balances include only active accounts in ${viewModel.userSettings.value.currency.code}. Add and reconcile each account in the Cash Flow account panel below.",
+                color = TextMuted,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
     }
 
-    if (showBalanceDialog) {
-        SetBalanceDialog(
-            onDismiss = { showBalanceDialog = false },
-            onSave = { viewModel.setCurrentCashBalance(it) }
-        )
-    }
 }
 
 @Composable
@@ -161,56 +131,5 @@ private fun BalanceLine(label: String, value: String, valueColor: Color, bold: B
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-    }
-}
-
-@Composable
-private fun SetBalanceDialog(onDismiss: () -> Unit, onSave: (Double) -> Unit) {
-    var text by remember { mutableStateOf("") }
-    val value = text.toDoubleOrNull()
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = ObsidianSurface,
-            border = BorderStroke(1.dp, ObsidianBorder),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("Your current cash balance", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    "Add up the cash you have right now: bank accounts, wallet and mobile money. " +
-                        "Balances for earlier months are worked back from this figure.",
-                    color = TextSecondary,
-                    fontSize = 12.sp
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text("Current balance", color = TextSecondary) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = EmeraldGrowth,
-                        unfocusedBorderColor = ObsidianBorder
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-                Button(
-                    onClick = { onSave(value ?: 0.0); onDismiss() },
-                    enabled = value != null,
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Save balance", color = Color.Black, fontWeight = FontWeight.Bold) }
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
-            }
-        }
     }
 }

@@ -51,6 +51,7 @@ import com.example.data.models.BudgetEntity
 import com.example.data.models.Category
 import com.example.data.models.TransactionEntity
 import com.example.data.models.TransactionType
+import com.example.data.models.SupportedCurrency
 import com.example.ui.components.FinCard
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonDebt
@@ -135,13 +136,16 @@ fun BudgetsCard(
     monthEnd: Long
 ) {
     val budgets by viewModel.budgets.collectAsState()
+    val userSettings by viewModel.userSettings.collectAsState()
+    val selectedBudgets = budgets.filter { it.currencyCode == userSettings.currency.code }
     var dialogFor by remember { mutableStateOf<BudgetEntity?>(null) }
     var showDialog by remember { mutableStateOf(false) }
 
     val spentByCategory = transactions
         .filter {
-            it.type == TransactionType.EXPENSE && it.dateMillis >= monthStart && it.dateMillis < monthEnd &&
-                it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED"
+            it.type == TransactionType.EXPENSE && it.currencyCode == userSettings.currency.code && it.dateMillis >= monthStart && it.dateMillis < monthEnd &&
+                it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
+                it.transactionKind == com.example.data.models.TransactionKind.STANDARD
         }
         .groupBy { it.category }
         .mapValues { entry -> entry.value.sumOf { it.amount } }
@@ -160,12 +164,12 @@ fun BudgetsCard(
                 SmallAddButton("Set budget") { dialogFor = null; showDialog = true }
             }
 
-            if (budgets.isEmpty()) {
+            if (selectedBudgets.isEmpty()) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Text("No budgets yet. Set a limit for a category to track it here.", color = TextMuted, fontSize = 12.sp)
             }
 
-            budgets.forEach { b ->
+            selectedBudgets.forEach { b ->
                 val spent = spentByCategory[b.category] ?: 0.0
                 val fraction = if (b.monthlyLimit > 0) (spent / b.monthlyLimit).toFloat() else 0f
                 val barColor = when {
@@ -185,7 +189,7 @@ fun BudgetsCard(
                     ) {
                         Text(prettyCategory(b.category), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "${viewModel.formatAmount(spent)} / ${viewModel.formatAmount(b.monthlyLimit)}",
+                            "${viewModel.formatAmount(spent, b.currencyCode)} / ${viewModel.formatAmount(b.monthlyLimit, b.currencyCode)}",
                             color = if (fraction >= 1f) Color(0xFFFB7185) else TextSecondary,
                             fontSize = 12.sp,
                             maxLines = 1,
@@ -208,7 +212,7 @@ fun BudgetsCard(
                     }
                     if (fraction >= 1f) {
                         Text(
-                            "Over budget by ${viewModel.formatAmount(spent - b.monthlyLimit)}",
+                            "Over budget by ${viewModel.formatAmount(spent - b.monthlyLimit, b.currencyCode)}",
                             color = Color(0xFFFB7185),
                             fontSize = 10.sp
                         )
@@ -221,8 +225,9 @@ fun BudgetsCard(
     if (showDialog) {
         SetBudgetDialog(
             existing = dialogFor,
+            defaultCurrency = userSettings.currency,
             onDismiss = { showDialog = false },
-            onSave = { cat, limit -> viewModel.saveBudget(cat, limit) },
+            onSave = { cat, limit, currencyCode -> viewModel.saveBudget(cat, limit, currencyCode) },
             onRemove = { dialogFor?.let { viewModel.deleteBudget(it) } }
         )
     }
@@ -231,12 +236,14 @@ fun BudgetsCard(
 @Composable
 private fun SetBudgetDialog(
     existing: BudgetEntity?,
+    defaultCurrency: SupportedCurrency,
     onDismiss: () -> Unit,
-    onSave: (Category, Double) -> Unit,
+    onSave: (Category, Double, String) -> Unit,
     onRemove: () -> Unit
 ) {
     var category by remember { mutableStateOf(existing?.category ?: Category.FOOD_DINING) }
     var limitText by remember { mutableStateOf(existing?.monthlyLimit?.toString() ?: "") }
+    var currency by remember { mutableStateOf(SupportedCurrency.values().firstOrNull { it.code == existing?.currencyCode } ?: defaultCurrency) }
     val limit = limitText.toDoubleOrNull()
 
     Dialog(onDismissRequest = onDismiss) {
@@ -270,9 +277,14 @@ private fun SetBudgetDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+                Text("Budget currency", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(SupportedCurrency.values().toList()) { c -> ChoiceChip(c.code, currency == c) { currency = c } }
+                }
+                Text("Only transactions recorded in this currency count; no FX conversion is applied.", color = TextMuted, fontSize = 10.sp)
                 Spacer(modifier = Modifier.height(14.dp))
                 Button(
-                    onClick = { onSave(category, limit ?: 0.0); onDismiss() },
+                    onClick = { onSave(category, limit ?: 0.0, currency.code); onDismiss() },
                     enabled = limit != null && limit > 0.0,
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
                     shape = RoundedCornerShape(12.dp),

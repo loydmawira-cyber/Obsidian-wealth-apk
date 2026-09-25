@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.filled.Calculate
@@ -86,10 +88,11 @@ fun GoalsAndReportsScreen(
     val goals by viewModel.goals.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val sym = userSettings.currency.symbol
+    val selectedGoals = goals.filter { it.currencyCode == userSettings.currency.code }
     val isKenya = userSettings.region == GeographicRegion.EAST_AFRICA || userSettings.currency == SupportedCurrency.KES
 
-    val totalGoalTarget = goals.sumOf { it.targetAmount }
-    val totalGoalSaved = goals.sumOf { it.currentAmount }
+    val totalGoalTarget = selectedGoals.sumOf { it.targetAmount }
+    val totalGoalSaved = selectedGoals.sumOf { it.currentAmount }
     val overallGoalProgress = if (totalGoalTarget > 0) (totalGoalSaved / totalGoalTarget) * 100.0 else 0.0
     // Which goal the deposit / withdraw dialog is open for (second value: true = deposit).
     var goalMoneyTarget by remember { mutableStateOf<Pair<com.example.data.models.GoalEntity, Boolean>?>(null) }
@@ -98,7 +101,7 @@ fun GoalsAndReportsScreen(
             goalTitle = targetGoal.title,
             isDeposit = isDeposit,
             maxAmount = if (isDeposit) null else targetGoal.currentAmount,
-            formatAmount = { viewModel.formatAmount(it) },
+            formatAmount = { viewModel.formatAmount(it, targetGoal.currencyCode) },
             onDismiss = { goalMoneyTarget = null },
             onConfirm = { amt ->
                 if (isDeposit) viewModel.contributeGoal(targetGoal, amt) else viewModel.withdrawFromGoal(targetGoal, amt)
@@ -160,9 +163,9 @@ summary to produce an updated view of your recorded position.
 4. DEBT SUMMARY & PAYMENT ESTIMATE
    • Debt Accounts Recorded:    ${summary.debtAccountCount}
    • Total Outstanding:         ${viewModel.formatAmount(summary.totalDebt)}
-   • Debt Servicing / Mo:       ${viewModel.formatAmount(summary.monthlyDebtServicing)}
-   • Payments / Recent Inflow:  ${if (summary.recentInflow > 0) "%.1f%% (estimate)".format(summary.dtiRatio) else "not computable (no recent income recorded)"}
-   • Note: card payments use 3% of recorded balances; this is not a lender-standard DTI.
+   • Recorded loan EMIs / Mo:   ${viewModel.formatAmount(summary.monthlyDebtServicing, summary.currencyCode)}
+   • Loan EMI / recent inflow:  ${if (summary.recentInflow > 0 && summary.monthlyDebtServicing > 0) "%.1f%% (estimate)".format(summary.dtiRatio) else "not computable (no recorded loan EMI or recent income)"}
+   • Note: credit-card minimums are excluded because issuer terms are unknown; this is not a lender-standard DTI.
    • Note: the revolving/term split is not itemised here because it is not
      derivable from the recorded totals alone.
 
@@ -190,7 +193,7 @@ summary to produce an updated view of your recorded position.
                 ) {
                     Column {
                         Text(
-                            text = "TOTAL CAPITAL ACCUMULATED",
+                            text = "GOAL PROGRESS TRACKER · ${userSettings.currency.code}",
                             color = TextSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -227,14 +230,20 @@ summary to produce an updated view of your recorded position.
                         Text("${goals.size} Milestones", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Monthly Inflow", color = TextMuted, fontSize = 11.sp)
-                        Text("+${viewModel.formatCompact(goals.sumOf { it.monthlyContribution })}/mo", color = EmeraldLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("Planned monthly contribution", color = TextMuted, fontSize = 11.sp)
+                        Text("${viewModel.formatAmount(selectedGoals.sumOf { it.monthlyContribution }, userSettings.currency.code)}/mo", color = EmeraldLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Next Milestone", color = TextMuted, fontSize = 11.sp)
-                        Text(if (goals.isEmpty()) "No Goals Set" else "${goals.maxByOrNull { it.currentAmount / it.targetAmount.coerceAtLeast(1.0) }?.title ?: "Goal"} (${"%.0f".format((goals.maxByOrNull { it.currentAmount / it.targetAmount.coerceAtLeast(1.0) }?.let { it.currentAmount / it.targetAmount } ?: 0.0) * 100)}%)", color = GoldLight, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(if (goals.isEmpty()) "No Goals Set" else "${selectedGoals.maxByOrNull { it.currentAmount / it.targetAmount.coerceAtLeast(1.0) }?.title ?: "Goal"} (${"%.0f".format((selectedGoals.maxByOrNull { it.currentAmount / it.targetAmount.coerceAtLeast(1.0) }?.let { it.currentAmount / it.targetAmount } ?: 0.0) * 100)}%)", color = GoldLight, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
+            }
+        }
+
+        item {
+            FinCard {
+                Text("Goal totals show ${userSettings.currency.code} only. Goals are tracking targets, not separately verified assets; other currencies are not converted.", color = TextMuted, fontSize = 11.sp)
             }
         }
 
@@ -313,7 +322,7 @@ summary to produce an updated view of your recorded position.
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         androidx.compose.material3.OutlinedButton(
                             onClick = { goalMoneyTarget = goal to false },
-                            enabled = goal.currentAmount > 0,
+                            enabled = goal.currentAmount > 0 && !goal.currencyCode.isNullOrBlank(),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.height(32.dp)
@@ -322,6 +331,7 @@ summary to produce an updated view of your recorded position.
                         }
                         Button(
                             onClick = { goalMoneyTarget = goal to true },
+                            enabled = !goal.currencyCode.isNullOrBlank(),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
                             shape = RoundedCornerShape(8.dp),
@@ -339,7 +349,7 @@ summary to produce an updated view of your recorded position.
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "${viewModel.formatCompact(goal.currentAmount)} / ${viewModel.formatCompact(goal.targetAmount)}",
+                        text = "${viewModel.formatAmount(goal.currentAmount, goal.currencyCode)} / ${viewModel.formatAmount(goal.targetAmount, goal.currencyCode)}",
                         color = TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
@@ -363,13 +373,21 @@ summary to produce an updated view of your recorded position.
                     color = EmeraldGrowth,
                     trackColor = ObsidianBorderSubtle
                 )
+                if (goal.currencyCode.isNullOrBlank()) {
+                    Text("Confirm this legacy goal's currency before adding to its progress:", color = GoldLight, fontSize = 10.sp)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(SupportedCurrency.values().toList()) { currency ->
+                            FilterChip(selected = false, onClick = { viewModel.resolveGoalCurrency(goal, currency.code) }, label = { Text(currency.code, fontSize = 10.sp) })
+                        }
+                    }
+                }
             }
         }
 
         item {
             WhatIfCalculatorCard(
                 summary = summary,
-                goals = goals,
+                goals = selectedGoals,
                 viewModel = viewModel,
                 onAskAiToExplain = onAskAiToExplain
             )

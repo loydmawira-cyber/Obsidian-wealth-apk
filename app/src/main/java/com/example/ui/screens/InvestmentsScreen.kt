@@ -89,27 +89,28 @@ fun InvestmentsScreen(
     val sips by viewModel.sips.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val sym = userSettings.currency.symbol
+    val selectedHoldings = holdings.filter { it.currencyCode == userSettings.currency.code }
 
-    val totalPortfolioValue = holdings.sumOf { it.totalValue }
-    val totalUnrealizedGain = holdings.sumOf { it.unrealizedGain }
+    val totalPortfolioValue = selectedHoldings.sumOf { it.totalValue }
+    val totalUnrealizedGain = selectedHoldings.sumOf { it.unrealizedGain }
 
     // Compute dynamic allocation across Equities, Mutual Funds, and Gold
-    val equityHoldings = holdings.filter {
+    val equityHoldings = selectedHoldings.filter {
         it.type == HoldingType.STOCK || (it.type == HoldingType.ETF && it.symbol != "GLD" && it.symbol != "BND" && !it.symbol.startsWith("IFB"))
     }
     val equityVal = equityHoldings.sumOf { it.totalValue }
 
-    val mutualFundHoldings = holdings.filter {
+    val mutualFundHoldings = selectedHoldings.filter {
         it.type == HoldingType.MUTUAL_FUND || it.symbol == "BND" || it.symbol.startsWith("IFB")
     }
     val mutualFundVal = mutualFundHoldings.sumOf { it.totalValue }
 
-    val goldHoldings = holdings.filter {
+    val goldHoldings = selectedHoldings.filter {
         it.type == HoldingType.GOLD || it.symbol == "GLD"
     }
     val goldVal = goldHoldings.sumOf { it.totalValue }
 
-    val cryptoHoldings = holdings.filter { it.type == HoldingType.CRYPTO }
+    val cryptoHoldings = selectedHoldings.filter { it.type == HoldingType.CRYPTO }
     val cryptoVal = cryptoHoldings.sumOf { it.totalValue }
 
     val allocationSlices = buildList {
@@ -233,7 +234,7 @@ fun InvestmentsScreen(
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = "${if (totalUnrealizedGain > 0) "+" else ""}${viewModel.formatCompact(totalUnrealizedGain)}",
+                            text = "${if (totalUnrealizedGain > 0) "+" else ""}${viewModel.formatAmount(totalUnrealizedGain, userSettings.currency.code)}",
                         color = CyanAccent,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -246,6 +247,12 @@ fun InvestmentsScreen(
                     color = TextMuted,
                     fontSize = 11.sp
                 )
+            }
+        }
+
+        item {
+            FinCard {
+                Text("Values are grouped by ${userSettings.currency.code}. Other or unresolved currency holdings remain listed below and are excluded from these totals; no FX conversion is applied.", color = TextMuted, fontSize = 11.sp)
             }
         }
 
@@ -343,9 +350,9 @@ fun InvestmentsScreen(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )
-                        val activeSipSum = sips.filter { it.isActive }.sumOf { it.monthlyAmount }
+                        val activeSipSum = sips.filter { it.isActive && it.currencyCode == userSettings.currency.code }.sumOf { it.monthlyAmount }
                         Text(
-                            text = "${viewModel.formatAmount(activeSipSum)}/month planned — not debited by the app",
+                            text = "${viewModel.formatAmount(activeSipSum, userSettings.currency.code)}/month planned — not debited by the app",
                             color = EmeraldLight,
                             fontSize = 11.sp
                         )
@@ -431,7 +438,7 @@ fun InvestmentsScreen(
 
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = "${viewModel.formatCompact(sip.monthlyAmount)}/mo",
+                            text = "${viewModel.formatAmount(sip.monthlyAmount, sip.currencyCode)}/mo",
                             color = TextPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
@@ -550,23 +557,26 @@ fun InvestmentsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "${if (h.shares % 1.0 == 0.0) h.shares.toInt() else h.shares} shares @ ${sym}${"%,.2f".format(h.currentPrice)} (Avg ${sym}${"%,.2f".format(h.avgBuyPrice)})",
+                                text = "${if (h.shares % 1.0 == 0.0) h.shares.toInt() else h.shares} units • ${h.currencyCode ?: "currency unknown"} ${"%,.2f".format(h.currentPrice)} current (Avg ${"%,.2f".format(h.avgBuyPrice)})",
                                 color = TextSecondary,
                                 fontSize = 11.sp
                             )
+                            if (h.currencyCode.isNullOrBlank()) {
+                                Text("Currency unresolved — long-press, then Edit to confirm; amounts are not converted.", color = SovereignGold, fontSize = 9.sp)
+                            }
                         }
                     }
 
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = viewModel.formatAmount(h.totalValue),
+                            text = viewModel.formatAmount(h.totalValue, h.currencyCode),
                             color = TextPrimary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = (if (isPositive) "+$sym" else "-$sym") + "%,.0f".format(Math.abs(h.unrealizedGain)) + " (${if (isPositive) "+" else ""}${"%.1f".format(h.unrealizedGainPercent)}%)",
+                            text = (if (isPositive) "+" else "−") + viewModel.formatAmount(Math.abs(h.unrealizedGain), h.currencyCode) + " (${if (isPositive) "+" else ""}${"%.1f".format(h.unrealizedGainPercent)}%)",
                             color = if (isPositive) EmeraldLight else Color(0xFFFB7185),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
