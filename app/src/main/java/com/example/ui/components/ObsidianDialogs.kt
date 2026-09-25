@@ -276,11 +276,11 @@ fun AddTransactionDialog(
                             FilterChip(
                                 selected = candidate.id == account?.id,
                                 onClick = { account = candidate },
-                                label = { Text("${candidate.name} · ${candidate.currencyCode ?: "?"}", fontSize = 10.sp) }
+                                label = { Text("${candidate.name} Â· ${candidate.currencyCode ?: "?"}", fontSize = 10.sp) }
                             )
                         }
                     }
-                    Text("Amount currency: ${account?.currencyCode ?: "unknown—resolve this account first"}", color = if (account?.currencyCode == null) SovereignGold else TextMuted, fontSize = 10.sp)
+                    Text("Amount currency: ${account?.currencyCode ?: "unknownâ€”resolve this account first"}", color = if (account?.currencyCode == null) SovereignGold else TextMuted, fontSize = 10.sp)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -377,8 +377,8 @@ fun AiSmartLogDialog(
                         val presets = listOf(
                             "Spent $45 on groceries at Supermarket",
                             "Received $4,500 consulting retainer deposit",
-                            "Paid Ã¢â€šÂ¬85 for electricity bill",
-                            "Spent Ã‚Â£65 on transport and rail ticket",
+                            "Paid ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬85 for electricity bill",
+                            "Spent Ãƒâ€šÃ‚Â£65 on transport and rail ticket",
                             "Invested $500 into Index Fund ETF",
                             "Paid $120 for Internet & Mobile bill"
                         )
@@ -453,7 +453,7 @@ fun AiSmartLogDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Extracting DraftÃ¢â‚¬Â¦", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("Extracting DraftÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                         } else {
                             Text("Extract & Review Draft", color = Color.Black, fontWeight = FontWeight.Bold)
@@ -561,7 +561,7 @@ fun AiSmartLogDialog(
                                 FilterChip(
                                     selected = candidate.id == account?.id,
                                     onClick = { account = candidate },
-                                    label = { Text("${candidate.name} · ${candidate.currencyCode}", fontSize = 10.sp) }
+                                    label = { Text("${candidate.name} Â· ${candidate.currencyCode}", fontSize = 10.sp) }
                                 )
                             }
                         }
@@ -827,7 +827,7 @@ fun ObsidianAiAdvisorSheet(
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Ã°Å¸Å½Â¯ Create Goal (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¯ Create Goal (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -844,7 +844,7 @@ fun ObsidianAiAdvisorSheet(
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Ã¢Å¾â€¢ Log Transaction (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("ÃƒÂ¢Ã…Â¾Ã¢â‚¬Â¢ Log Transaction (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1031,8 +1031,9 @@ private fun SupportedCurrencyChips(selected: SupportedCurrency?, onSelect: (Supp
 @Composable
 fun AddHoldingDialog(
     defaultCurrency: SupportedCurrency,
+    accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
-    onAdd: (symbol: String, name: String, type: HoldingType, shares: Double, avgBuy: Double, current: Double, currencyCode: String) -> Unit
+    onAdd: (symbol: String, name: String, type: HoldingType, shares: Double, avgBuy: Double, current: Double, currencyCode: String, purchaseAccount: AccountEntity?) -> Unit
 ) {
     var symbol by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
@@ -1041,6 +1042,12 @@ fun AddHoldingDialog(
     var avgBuyText by remember { mutableStateOf("") }
     var currentPriceText by remember { mutableStateOf("") }
     var currency by remember { mutableStateOf(defaultCurrency) }
+    var purchaseAccount by remember { mutableStateOf<AccountEntity?>(null) }
+    val matchingAccounts = accounts.filter { it.isActive && it.currencyCode == currency.code }
+    // Switching currency can leave a previously chosen account mismatched; clear it rather than submit a mismatch.
+    androidx.compose.runtime.LaunchedEffect(currency) {
+        if (purchaseAccount != null && purchaseAccount?.currencyCode != currency.code) purchaseAccount = null
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1142,6 +1149,44 @@ fun AddHoldingDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                if (matchingAccounts.isNotEmpty()) {
+                    Text("Pay from account (optional)", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Pick a bank to deduct this purchase from your cash and list it on Cash Flow for you to confirm. Leave unselected to just track the holding.",
+                        color = TextMuted,
+                        fontSize = 10.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(matchingAccounts) { candidate ->
+                            val isSelected = purchaseAccount?.id == candidate.id
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { purchaseAccount = if (isSelected) null else candidate },
+                                color = if (isSelected) EmeraldGrowth.copy(alpha = 0.2f) else ObsidianSurfaceVariant,
+                                border = BorderStroke(1.dp, if (isSelected) EmeraldGrowth else ObsidianBorderSubtle)
+                            ) {
+                                Text(
+                                    text = "${candidate.name} Â· ${candidate.currencyCode}",
+                                    color = if (isSelected) EmeraldLight else TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                } else {
+                    Text(
+                        "Add an active account in this currency (Settings) to deduct a purchase from cash and list it on Cash Flow.",
+                        color = TextMuted,
+                        fontSize = 10.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = sharesText,
@@ -1179,7 +1224,7 @@ fun AddHoldingDialog(
                         val current = currentPriceText.toDoubleOrNull() ?: 0.0
                         val avg = avgBuyText.toDoubleOrNull() ?: current
                         if (symbol.isNotBlank() && shares > 0) {
-                            onAdd(symbol, name.ifBlank { symbol }, selectedType, shares, avg, current, currency.code)
+                            onAdd(symbol, name.ifBlank { symbol }, selectedType, shares, avg, current, currency.code, purchaseAccount)
                             onDismiss()
                         }
                     },
@@ -1187,7 +1232,11 @@ fun AddHoldingDialog(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Add to Portfolio", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (purchaseAccount != null) "Add & Record Purchase" else "Add to Portfolio",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -1212,7 +1261,7 @@ fun HoldingActionDialog(
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(holding.name, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("${holding.symbol} Ã¢â‚¬Â¢ ${if (holding.shares % 1.0 == 0.0) holding.shares.toInt() else holding.shares} units", color = TextSecondary, fontSize = 13.sp)
+                Text("${holding.symbol} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${if (holding.shares % 1.0 == 0.0) holding.shares.toInt() else holding.shares} units", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = { onEdit(); onDismiss() },
@@ -1543,7 +1592,7 @@ fun AddSipDialog(
                         val amount = amountText.toDoubleOrNull() ?: 0.0
                         val day = debitDayText.toIntOrNull() ?: 1
                         if (fundName.isNotBlank() && amount > 0) {
-                            onAdd(fundName, category, amount, day)
+                            onAdd(fundName, category, amount, day, currency.code, contributionAccount)
                             onDismiss()
                         }
                     },
@@ -1551,7 +1600,11 @@ fun AddSipDialog(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Save plan", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (contributionAccount != null) "Add Plan & Record Contribution" else "Save plan",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -1575,7 +1628,7 @@ fun SipActionDialog(
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(sip.fundName, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("${sip.category} Ã¢â‚¬Â¢ ${sip.monthlyAmount.let { "%,.2f".format(it) }}/mo", color = TextSecondary, fontSize = 13.sp)
+                Text("${sip.category} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${sip.monthlyAmount.let { "%,.2f".format(it) }}/mo", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = { onEdit(); onDismiss() },
