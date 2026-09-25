@@ -112,6 +112,8 @@ fun D3InteractiveDonutChart(
     chartSize: Dp = 230.dp,
     baseStrokeWidth: Dp = 22.dp,
     selectedStrokeWidth: Dp = 32.dp,
+    centerTitle: String = "TOTAL PORTFOLIO",
+    aggregateDetail: String? = null,
     initialSelectedIndex: Int? = null,
     onSliceSelected: ((D3AllocationSlice?) -> Unit)? = null
 ) {
@@ -279,7 +281,7 @@ fun D3InteractiveDonutChart(
                     ) {
                         if (slice == null) {
                             Text(
-                                text = "TOTAL PORTFOLIO",
+                                text = centerTitle,
                                 color = TextMuted,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
@@ -301,7 +303,7 @@ fun D3InteractiveDonutChart(
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
-                                    text = "100% • ${slices.size} Asset Classes",
+                                    text = aggregateDetail ?: "100% • ${slices.size} Asset Classes",
                                     color = EmeraldLight,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold
