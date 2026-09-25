@@ -11,7 +11,7 @@ import androidx.work.WorkerParameters
 class SipDebitWorker(
     context: Context,
     workerParams: WorkerParameters
-) : CoroutineWorker(appContext, workerParams) {
+) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
         return Result.success()
