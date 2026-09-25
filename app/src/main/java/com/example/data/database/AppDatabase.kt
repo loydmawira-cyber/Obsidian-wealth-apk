@@ -104,7 +104,7 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         NetWorthSnapshotEntity::class,
         BudgetEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -120,7 +120,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "obsidian_wealth_v3.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance
@@ -597,5 +597,12 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
         db.execSQL("UPDATE transactions SET importStatus = 'PENDING_REVIEW' WHERE transactionKind = 'DEBT_SETTLEMENT'")
         db.execSQL("INSERT INTO accounts (name, accountType, currencyCode, openingBalance, openingBalanceMillis, statementBalance, lastReconciledMillis, isActive, openingBalanceConfirmed) SELECT DISTINCT account, 'LEGACY', NULL, 0, 0, NULL, NULL, 1, 0 FROM transactions WHERE TRIM(account) != '' AND transactionKind = 'STANDARD' AND sourceReference IS NULL")
         db.execSQL("UPDATE transactions SET accountId = (SELECT accounts.id FROM accounts WHERE accounts.name = transactions.account LIMIT 1) WHERE accountId IS NULL")
+    }
+}
+
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE transactions ADD COLUMN creditCardId INTEGER DEFAULT NULL")
+        db.execSQL("ALTER TABLE transactions ADD COLUMN loanId INTEGER DEFAULT NULL")
     }
 }
