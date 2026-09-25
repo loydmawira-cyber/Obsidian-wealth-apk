@@ -89,6 +89,44 @@ interface FinanceDao {
         insertTransaction(transaction)
     }
 
+    @Transaction
+    suspend fun recordCreditCardPurchase(cardId: Long, transaction: TransactionEntity): Boolean {
+        val card = getCreditCard(cardId) ?: return false
+        val amount = transaction.amount
+        if (!amount.isFinite() || amount <= 0.0 || card.currentBalance < 0.0 || card.creditLimit <= 0.0 ||
+            card.currentBalance + amount > card.creditLimit + 0.000001 ||
+            card.currencyCode.isNullOrBlank() || transaction.currencyCode != card.currencyCode ||
+            transaction.creditCardId != card.id || transaction.loanId != null || transaction.accountId != null ||
+            transaction.account != card.cardName || transaction.type != TransactionType.EXPENSE ||
+            transaction.transactionKind != TransactionKind.CREDIT_CARD_PURCHASE ||
+            transaction.category !in setOf(Category.HOUSING, Category.FOOD_DINING, Category.UTILITIES, Category.TRANSPORT,
+                Category.SHOPPING, Category.HEALTHCARE, Category.SUBSCRIPTIONS, Category.ENTERTAINMENT, Category.OTHER)) return false
+        val newBalance = card.currentBalance + amount
+        if (!newBalance.isFinite()) return false
+        updateCreditCard(card.copy(currentBalance = newBalance))
+        insertTransaction(transaction)
+        return true
+    }
+
+    @Transaction
+    suspend fun recordLoanTopUp(loanId: Long, accountId: Long, amount: Double, transaction: TransactionEntity): Boolean {
+        val loan = getLoan(loanId) ?: return false
+        val account = getAccount(accountId) ?: return false
+        if (!amount.isFinite() || amount <= 0.0 || loan.remainingBalance < 0.0 || loan.totalAmount <= 0.0 ||
+            loan.currencyCode.isNullOrBlank() || !account.isActive || account.currencyCode != loan.currencyCode ||
+            transaction.amount != amount || transaction.currencyCode != loan.currencyCode ||
+            transaction.accountId != account.id || transaction.account != account.name ||
+            transaction.loanId != loan.id || transaction.creditCardId != null ||
+            transaction.type != TransactionType.INCOME || transaction.category != Category.LOAN_TOP_UP ||
+            transaction.transactionKind != TransactionKind.LOAN_TOP_UP) return false
+        val newTotal = loan.totalAmount + amount
+        val newBalance = loan.remainingBalance + amount
+        if (!newTotal.isFinite() || !newBalance.isFinite()) return false
+        updateLoan(loan.copy(totalAmount = newTotal, remainingBalance = newBalance))
+        insertTransaction(transaction)
+        return true
+    }
+
     // --- Transactions ---
     @Query("SELECT * FROM transactions ORDER BY dateMillis DESC")
     fun getAllTransactions(): Flow<List<TransactionEntity>>
@@ -202,6 +240,9 @@ interface FinanceDao {
     @Query("SELECT * FROM credit_cards ORDER BY currentBalance DESC")
     suspend fun getCreditCardsSnapshot(): List<CreditCardEntity>
 
+    @Query("SELECT * FROM credit_cards WHERE id = :id LIMIT 1")
+    suspend fun getCreditCard(id: Long): CreditCardEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCreditCard(card: CreditCardEntity): Long
 
@@ -220,6 +261,9 @@ interface FinanceDao {
 
     @Query("SELECT * FROM loans ORDER BY remainingBalance DESC")
     suspend fun getLoansSnapshot(): List<LoanEntity>
+
+    @Query("SELECT * FROM loans WHERE id = :id LIMIT 1")
+    suspend fun getLoan(id: Long): LoanEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLoan(loan: LoanEntity): Long
