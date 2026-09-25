@@ -122,6 +122,7 @@ data class MonthCashFlow(
 
 private data class SummaryAssets(
     val holdings: List<HoldingEntity>,
+    val sips: List<SipEntity>,
     val accounts: List<AccountEntity>,
     val currencyCode: String
 )
@@ -806,8 +807,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     private val _selectedMonthStart = MutableStateFlow(currentMonthStart())
 
-    private val summaryAssets = combine(holdings, accounts, userSettings) { h, a, settings ->
-        SummaryAssets(h, a, settings.currency.code)
+    private val summaryAssets = combine(holdings, sips, accounts, userSettings) { h, sipList, a, settings ->
+        SummaryAssets(h, sipList, a, settings.currency.code)
     }
 
     val summary: StateFlow<FinanceSummary> = combine(
@@ -815,6 +816,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     ) { txList, assetContext, cList, lList, gList ->
         val baseCurrency = assetContext.currencyCode
         val hList = assetContext.holdings
+        val sipList = assetContext.sips
         val aList = assetContext.accounts
         val accountById = aList.associateBy { it.id }
         val cardById = cList.associateBy { it.id }
@@ -853,8 +855,22 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val savingsRate = if (operatingIn > 0) ((operatingIn - operatingOut) / operatingIn) * 100.0 else 0.0
 
         val baseHoldings = hList.filter { it.currencyCode == baseCurrency }
-        val portVal = baseHoldings.sumOf { it.totalValue }
-        val portCost = baseHoldings.sumOf { it.totalCost }
+        val baseSips = sipList.filter { it.currencyCode == baseCurrency }
+        val investedSipValue = baseSips.sumOf { sip ->
+            val storedValue = sip.totalInvested.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+            val linkedValue = confirmed.asSequence()
+                .filter {
+                    it.sourceReference == "sip:${sip.id}" &&
+                        it.category == Category.INVESTMENT_SIP && it.type == TransactionType.EXPENSE &&
+                        it.transactionKind == TransactionKind.ASSET_CONVERSION &&
+                        it.amount.isFinite() && it.amount > 0.0 && it.currencyCode == sip.currencyCode
+                }
+                .sumOf { it.amount }
+            maxOf(storedValue, linkedValue)
+        }
+        val holdingsValue = baseHoldings.sumOf { it.totalValue }
+        val portVal = holdingsValue + investedSipValue
+        val portCost = baseHoldings.sumOf { it.totalCost } + investedSipValue
         val dayGain = baseHoldings.sumOf { it.totalValue * (it.dailyChangePercent / 100.0) }
         val dayGainPct = if (portVal > 0) (dayGain / portVal) * 100.0 else 0.0
         val portReturnPct = if (portCost > 0) ((portVal - portCost) / portCost) * 100.0 else 0.0
@@ -870,14 +886,25 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
         val baseGoals = gList.filter { it.currencyCode == baseCurrency }
         val goalsSum = baseGoals.sumOf { it.currentAmount }
+        val baseGoalReferences = baseGoals.map { "goal-contribution:${it.id}" }.toSet()
+        val goalSavingsAssets = confirmed.asSequence()
+            .filter {
+                it.sourceReference?.let(baseGoalReferences::contains) == true &&
+                    it.accountId != null && it.creditCardId == null &&
+                    it.currencyCode == baseCurrency && it.category == Category.GOAL_SAVINGS &&
+                    it.type == TransactionType.EXPENSE && it.transactionKind == TransactionKind.ASSET_CONVERSION &&
+                    it.amount.isFinite() && it.amount > 0.0
+            }
+            .sumOf { it.amount }
         val liquidCash = aList.filter { it.isActive && it.currencyCode == baseCurrency }
             .sumOf { AccountLedger.currentBalance(it, confirmed) }
-        // A goal is a label/target, not a separate asset. Its saved amount may already be inside a cash account.
-        val totalAssetsVal = portVal + liquidCash
+        // Only account-debited goal deposits are additional assets; a manually entered goal balance may still be cash.
+        val totalAssetsVal = portVal + liquidCash + goalSavingsAssets
         val totalLiabilitiesVal = totalDebtVal
 
         val unresolved = aList.any { it.isActive && (it.currencyCode.isNullOrBlank() || (it.openingBalance != 0.0 && !it.openingBalanceConfirmed)) } ||
             hList.any { it.totalValue != 0.0 && it.currencyCode.isNullOrBlank() } ||
+            sipList.any { it.totalInvested != 0.0 && it.currencyCode.isNullOrBlank() } ||
             cList.any { it.currentBalance != 0.0 && it.currencyCode.isNullOrBlank() } ||
             lList.any { it.remainingBalance != 0.0 && it.currencyCode.isNullOrBlank() } ||
             gList.any { it.currentAmount != 0.0 && it.currencyCode.isNullOrBlank() } ||
