@@ -69,6 +69,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.ai.GeminiClient
 import com.example.data.models.Category
+import com.example.data.models.AccountEntity
 import com.example.data.models.TransactionEntity
 import com.example.data.util.StatementParser
 import kotlinx.coroutines.launch
@@ -82,6 +83,7 @@ import com.example.data.models.HoldingType
 import com.example.data.models.SipEntity
 import com.example.data.models.ThemeMode
 import com.example.data.models.TransactionType
+import com.example.data.models.SupportedCurrency
 import androidx.compose.material3.MaterialTheme
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.ElectricIndigo
@@ -102,15 +104,16 @@ import com.example.ui.viewmodel.ChatMessage
 
 @Composable
 fun AddTransactionDialog(
+    accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
-    onAdd: (title: String, amount: Double, type: TransactionType, category: Category, account: String, note: String) -> Unit,
+    onAdd: (title: String, amount: Double, type: TransactionType, category: Category, account: AccountEntity, note: String) -> Unit,
     onAiSmartLog: () -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
     var selectedCategory by remember { mutableStateOf(Category.FOOD_DINING) }
-    var account by remember { mutableStateOf("M-Pesa / Bank") }
+    var account by remember(accounts) { mutableStateOf(accounts.firstOrNull { it.isActive }) }
     var note by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -263,30 +266,33 @@ fun AddTransactionDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = account,
-                    onValueChange = { account = it },
-                    label = { Text("Account / Source", color = TextSecondary) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = EmeraldGrowth,
-                        unfocusedBorderColor = ObsidianBorder
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                Text("Paid into / from account", color = TextSecondary, fontSize = 11.sp)
+                if (accounts.none { it.isActive }) {
+                    Text("Create a cash account first. This transaction cannot affect balances until it is linked to an account.", color = TextMuted, fontSize = 11.sp)
+                } else {
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        accounts.filter { it.isActive }.forEach { candidate ->
+                            FilterChip(
+                                selected = candidate.id == account?.id,
+                                onClick = { account = candidate },
+                                label = { Text("${candidate.name} · ${candidate.currencyCode ?: "?"}", fontSize = 10.sp) }
+                            )
+                        }
+                    }
+                    Text("Amount currency: ${account?.currencyCode ?: "unknown—resolve this account first"}", color = if (account?.currencyCode == null) SovereignGold else TextMuted, fontSize = 10.sp)
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
                     onClick = {
                         val amt = amountText.toDoubleOrNull() ?: 0.0
-                        if (title.isNotBlank() && amt > 0) {
-                            onAdd(title, amt, selectedType, selectedCategory, account, note)
+                        if (title.isNotBlank() && amt > 0 && account?.isActive == true && !account?.currencyCode.isNullOrBlank()) {
+                            onAdd(title, amt, selectedType, selectedCategory, account!!, note)
                             onDismiss()
                         }
                     },
+                    enabled = title.isNotBlank() && amountText.toDoubleOrNull()?.let { it > 0.0 } == true && account?.isActive == true && !account?.currencyCode.isNullOrBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -300,6 +306,7 @@ fun AddTransactionDialog(
 
 @Composable
 fun AiSmartLogDialog(
+    accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
     onConfirm: (TransactionEntity) -> Unit
 ) {
@@ -311,7 +318,7 @@ fun AiSmartLogDialog(
     var amountText by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
     var selectedCategory by remember { mutableStateOf(Category.FOOD_DINING) }
-    var account by remember { mutableStateOf("M-PESA") }
+    var account by remember(accounts) { mutableStateOf(accounts.firstOrNull { it.isActive && !it.currencyCode.isNullOrBlank() }) }
     var note by remember { mutableStateOf("") }
     var dateMillis by remember { mutableStateOf(0L) }
     val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
@@ -424,7 +431,8 @@ fun AiSmartLogDialog(
                                         amountText = if (parsed.amount > 0.0) parsed.amount.toString() else ""
                                         selectedType = if (parsed.type == "INCOME") TransactionType.INCOME else TransactionType.EXPENSE
                                         selectedCategory = try { Category.valueOf(parsed.category) } catch (_: Exception) { Category.OTHER }
-                                        account = parsed.account
+                        account = accounts.firstOrNull { it.isActive && it.name.equals(parsed.account, ignoreCase = true) && !it.currencyCode.isNullOrBlank() }
+                            ?: accounts.firstOrNull { it.isActive && !it.currencyCode.isNullOrBlank() }
                                         note = "Natural Language Log: \"$prompt\""
                                         val parsedDate = parsed.dateMillis
                                         dateNeedsReview = parsed.dateNeedsReview || parsedDate == null
@@ -528,7 +536,7 @@ fun AiSmartLogDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.padding(vertical = 4.dp)
                     ) {
-                        items(Category.values()) { cat ->
+                        items(Category.values().filter { it != Category.ACCOUNT_TRANSFER && it != Category.ACCOUNT_ADJUSTMENT }) { cat ->
                             FilterChip(
                                 selected = selectedCategory == cat,
                                 onClick = { selectedCategory = cat },
@@ -543,18 +551,21 @@ fun AiSmartLogDialog(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    OutlinedTextField(
-                        value = account,
-                        onValueChange = { account = it },
-                        label = { Text("Account") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = CyanAccent,
-                            unfocusedBorderColor = ObsidianBorder
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Text("Account and currency", color = TextSecondary, fontSize = 11.sp)
+                    if (accounts.none { it.isActive && !it.currencyCode.isNullOrBlank() }) {
+                        Text("Add a cash account with a confirmed currency before saving.", color = SovereignGold, fontSize = 11.sp)
+                    } else {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() }) { candidate ->
+                                FilterChip(
+                                    selected = candidate.id == account?.id,
+                                    onClick = { account = candidate },
+                                    label = { Text("${candidate.name} · ${candidate.currencyCode}", fontSize = 10.sp) }
+                                )
+                            }
+                        }
+                        Text("Currency: ${account?.currencyCode ?: "choose an account"}", color = TextMuted, fontSize = 10.sp)
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -609,6 +620,8 @@ fun AiSmartLogDialog(
                                     validationError = "Please enter a valid positive amount."
                                 } else if (dateMillis <= 0L || StatementParser.parseDateString(dateText) == null) {
                                     validationError = "Please enter a valid transaction date."
+                                } else if (account?.isActive != true || account?.currencyCode.isNullOrBlank()) {
+                                    validationError = "Choose an active account with a confirmed currency."
                                 } else {
                                     onConfirm(
                                         TransactionEntity(
@@ -616,9 +629,11 @@ fun AiSmartLogDialog(
                                             amount = amt,
                                             type = selectedType,
                                             category = selectedCategory,
-                                            account = account.trim().ifEmpty { "Default" },
+                                            account = account!!.name,
                                             dateMillis = dateMillis,
-                                            note = note
+                                            note = note,
+                                            accountId = account!!.id,
+                                            currencyCode = account!!.currencyCode
                                         )
                                     )
                                 }
@@ -1000,9 +1015,23 @@ fun ExportReportDialog(
 }
 
 @Composable
+private fun SupportedCurrencyChips(selected: SupportedCurrency?, onSelect: (SupportedCurrency) -> Unit) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(SupportedCurrency.values().toList()) { currency ->
+            FilterChip(
+                selected = currency == selected,
+                onClick = { onSelect(currency) },
+                label = { Text(currency.code, fontSize = 10.sp) }
+            )
+        }
+    }
+}
+
+@Composable
 fun AddHoldingDialog(
+    defaultCurrency: SupportedCurrency,
     onDismiss: () -> Unit,
-    onAdd: (symbol: String, name: String, type: HoldingType, shares: Double, avgBuy: Double, current: Double) -> Unit
+    onAdd: (symbol: String, name: String, type: HoldingType, shares: Double, avgBuy: Double, current: Double, currencyCode: String) -> Unit
 ) {
     var symbol by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
@@ -1010,6 +1039,7 @@ fun AddHoldingDialog(
     var sharesText by remember { mutableStateOf("") }
     var avgBuyText by remember { mutableStateOf("") }
     var currentPriceText by remember { mutableStateOf("") }
+    var currency by remember { mutableStateOf(defaultCurrency) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1069,6 +1099,11 @@ fun AddHoldingDialog(
                     singleLine = true
                 )
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("Price currency", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                SupportedCurrencyChips(currency) { currency = it }
+                Text("Current and average prices are recorded in ${currency.code}. No FX conversion is applied.", color = TextMuted, fontSize = 10.sp)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text("Asset Class Category", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
@@ -1143,7 +1178,7 @@ fun AddHoldingDialog(
                         val current = currentPriceText.toDoubleOrNull() ?: 0.0
                         val avg = avgBuyText.toDoubleOrNull() ?: current
                         if (symbol.isNotBlank() && shares > 0) {
-                            onAdd(symbol, name.ifBlank { symbol }, selectedType, shares, avg, current)
+                            onAdd(symbol, name.ifBlank { symbol }, selectedType, shares, avg, current, currency.code)
                             onDismiss()
                         }
                     },
@@ -1216,8 +1251,9 @@ fun HoldingActionDialog(
 @Composable
 fun EditHoldingDialog(
     holding: HoldingEntity,
+    defaultCurrency: SupportedCurrency,
     onDismiss: () -> Unit,
-    onSave: (symbol: String, name: String, type: HoldingType, shares: Double, avgBuy: Double, current: Double) -> Unit
+    onSave: (symbol: String, name: String, type: HoldingType, shares: Double, avgBuy: Double, current: Double, currencyCode: String) -> Unit
 ) {
     var symbol by remember { mutableStateOf(holding.symbol) }
     var name by remember { mutableStateOf(holding.name) }
@@ -1225,6 +1261,7 @@ fun EditHoldingDialog(
     var sharesText by remember { mutableStateOf(holding.shares.toString()) }
     var avgBuyText by remember { mutableStateOf(holding.avgBuyPrice.toString()) }
     var currentPriceText by remember { mutableStateOf(holding.currentPrice.toString()) }
+    var currency by remember { mutableStateOf(SupportedCurrency.values().firstOrNull { it.code == holding.currencyCode } ?: defaultCurrency) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1282,6 +1319,11 @@ fun EditHoldingDialog(
                     singleLine = true
                 )
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("Price currency", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                SupportedCurrencyChips(currency) { currency = it }
+                Text("Choose the currency in which these prices were recorded; no FX conversion is applied.", color = TextMuted, fontSize = 10.sp)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text("Asset Class Category", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
@@ -1372,7 +1414,7 @@ fun EditHoldingDialog(
                         val current = currentPriceText.toDoubleOrNull() ?: holding.currentPrice
                         val avg = avgBuyText.toDoubleOrNull() ?: holding.avgBuyPrice
                         if (symbol.isNotBlank() && shares > 0) {
-                            onSave(symbol.uppercase(), name.ifBlank { symbol }, selectedType, shares, avg, current)
+                            onSave(symbol.uppercase(), name.ifBlank { symbol }, selectedType, shares, avg, current, currency.code)
                             onDismiss()
                         }
                     },
@@ -1691,10 +1733,12 @@ fun ConfirmDeleteSipDialog(
 @Composable
 fun PayCreditCardDialog(
     card: CreditCardEntity,
+    accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
-    onPay: (Double) -> Unit
+    onPay: (Double, AccountEntity) -> Unit
 ) {
     var amountText by remember { mutableStateOf(card.currentBalance.toString()) }
+    var sourceAccount by remember(accounts) { mutableStateOf(accounts.firstOrNull { it.currencyCode == card.currencyCode }) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1720,6 +1764,17 @@ fun PayCreditCardDialog(
                     color = TextMuted,
                     fontSize = 11.sp
                 )
+
+                Text("Paid from account (${card.currencyCode ?: "currency unknown"})", color = TextSecondary, fontSize = 11.sp)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(accounts.filter { it.isActive && it.currencyCode == card.currencyCode }) { candidate ->
+                        FilterChip(
+                            selected = candidate.id == sourceAccount?.id,
+                            onClick = { sourceAccount = candidate },
+                            label = { Text(candidate.name, fontSize = 10.sp) }
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -1780,10 +1835,11 @@ fun PayCreditCardDialog(
                     onClick = {
                         val amount = amountText.toDoubleOrNull() ?: 0.0
                         if (amount > 0) {
-                            onPay(amount)
+                            sourceAccount?.let { onPay(amount, it) }
                             onDismiss()
                         }
                     },
+                    enabled = sourceAccount != null && sourceAccount?.currencyCode == card.currencyCode && amountText.toDoubleOrNull()?.let { it > 0.0 && it <= card.currentBalance } == true,
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -1798,8 +1854,9 @@ fun PayCreditCardDialog(
 
 @Composable
 fun AddLoanDialog(
+    defaultCurrency: SupportedCurrency,
     onDismiss: () -> Unit,
-    onAdd: (String, String, Double, Double, Double, Double, Int) -> Unit
+    onAdd: (String, String, Double, Double, Double, Double, Int, String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var lender by remember { mutableStateOf("") }
@@ -1808,6 +1865,7 @@ fun AddLoanDialog(
     var emi by remember { mutableStateOf("") }
     var apr by remember { mutableStateOf("") }
     var months by remember { mutableStateOf("") }
+    var currency by remember { mutableStateOf(defaultCurrency) }
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(20.dp), color = ObsidianSurface, border = BorderStroke(1.dp, ObsidianBorder), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp)) {
@@ -1816,6 +1874,8 @@ fun AddLoanDialog(
                     IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary) }
                 }
                 Spacer(Modifier.height(12.dp))
+                Text("Loan currency", color = TextSecondary, fontSize = 11.sp)
+                SupportedCurrencyChips(currency) { currency = it }
                 listOf(
                     Triple("Loan name", name) { v: String -> name = v },
                     Triple("Lender", lender) { v: String -> lender = v },
@@ -1832,7 +1892,7 @@ fun AddLoanDialog(
                     val values = listOf(total.toDoubleOrNull(), remaining.toDoubleOrNull(), emi.toDoubleOrNull(), apr.toDoubleOrNull())
                     val term = months.toIntOrNull()
                     if (name.isNotBlank() && lender.isNotBlank() && values.all { it != null && it >= 0.0 } && term != null && term > 0) {
-                        onAdd(name, lender, values[0]!!, values[1]!!, values[2]!!, values[3]!!, term)
+                        onAdd(name, lender, values[0]!!, values[1]!!, values[2]!!, values[3]!!, term, currency.code)
                         onDismiss()
                     }
                 }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Add Loan", color = Color.Black, fontWeight = FontWeight.Bold) }
@@ -1843,14 +1903,16 @@ fun AddLoanDialog(
 
 @Composable
 fun AddCreditCardDialog(
+    defaultCurrency: SupportedCurrency,
     onDismiss: () -> Unit,
-    onAdd: (String, Double, Double, Double, Int) -> Unit
+    onAdd: (String, Double, Double, Double, Int, String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var balance by remember { mutableStateOf("") }
     var limit by remember { mutableStateOf("") }
     var apr by remember { mutableStateOf("") }
     var due by remember { mutableStateOf("15") }
+    var currency by remember { mutableStateOf(defaultCurrency) }
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(20.dp), color = ObsidianSurface, border = BorderStroke(1.dp, ObsidianBorder), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp)) {
@@ -1859,6 +1921,8 @@ fun AddCreditCardDialog(
                     IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary) }
                 }
                 Spacer(Modifier.height(12.dp))
+                Text("Card balance currency", color = TextSecondary, fontSize = 11.sp)
+                SupportedCurrencyChips(currency) { currency = it }
                 listOf(
                     Triple("Card name", name) { v: String -> name = v },
                     Triple("Current balance", balance) { v: String -> balance = v },
@@ -1871,7 +1935,7 @@ fun AddCreditCardDialog(
                 }
                 Button(onClick = {
                     val b = balance.toDoubleOrNull(); val l = limit.toDoubleOrNull(); val a = apr.toDoubleOrNull(); val d = due.toIntOrNull()
-                    if (name.isNotBlank() && b != null && l != null && a != null && d != null && b >= 0 && l > 0 && d in 1..31) { onAdd(name, b, l, a, d); onDismiss() }
+                    if (name.isNotBlank() && b != null && l != null && a != null && d != null && b >= 0 && l > 0 && d in 1..31) { onAdd(name, b, l, a, d, currency.code); onDismiss() }
                 }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Add Credit Card", color = Color.Black, fontWeight = FontWeight.Bold) }
             }
         }
@@ -1880,17 +1944,21 @@ fun AddCreditCardDialog(
 
 @Composable
 fun AddGoalDialog(
+    defaultCurrency: SupportedCurrency,
     onDismiss: () -> Unit,
-    onAdd: (String, String, Double, Double, Double) -> Unit
+    onAdd: (String, String, Double, Double, Double, String) -> Unit
 ) {
-    var title by remember { mutableStateOf("") }; var category by remember { mutableStateOf("Savings") }; var target by remember { mutableStateOf("") }; var current by remember { mutableStateOf("0") }; var monthly by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("") }; var category by remember { mutableStateOf("Savings") }; var target by remember { mutableStateOf("") }; var current by remember { mutableStateOf("0") }; var monthly by remember { mutableStateOf("") }; var currency by remember { mutableStateOf(defaultCurrency) }
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(20.dp), color = ObsidianSurface, border = BorderStroke(1.dp, ObsidianBorder), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("Add Financial Goal", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold); IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary) } }
                 Spacer(Modifier.height(12.dp))
                 listOf(Triple("Goal name", title) { v: String -> title = v }, Triple("Category", category) { v: String -> category = v }, Triple("Target amount", target) { v: String -> target = v }, Triple("Current amount", current) { v: String -> current = v }, Triple("Monthly contribution", monthly) { v: String -> monthly = v }).forEach { (label, value, setter) -> OutlinedTextField(value = value, onValueChange = setter, label = { Text(label, color = TextSecondary) }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedBorderColor = EmeraldGrowth, unfocusedBorderColor = ObsidianBorder)); Spacer(Modifier.height(7.dp)) }
-                Button(onClick = { val t = target.toDoubleOrNull(); val c = current.toDoubleOrNull(); val m = monthly.toDoubleOrNull(); if (title.isNotBlank() && t != null && c != null && m != null && t > 0 && c >= 0 && m >= 0) { onAdd(title, category, t, c, m); onDismiss() } }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Add Goal", color = Color.Black, fontWeight = FontWeight.Bold) }
+                Text("Tracking currency", color = TextSecondary, fontSize = 11.sp)
+                SupportedCurrencyChips(currency) { currency = it }
+                Text("Goal progress is a tracker, not proof of a separate cash asset or money movement.", color = TextMuted, fontSize = 10.sp)
+                Button(onClick = { val t = target.toDoubleOrNull(); val c = current.toDoubleOrNull(); val m = monthly.toDoubleOrNull(); if (title.isNotBlank() && t != null && c != null && m != null && t > 0 && c >= 0 && m >= 0) { onAdd(title, category, t, c, m, currency.code); onDismiss() } }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Add Goal", color = Color.Black, fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -1898,14 +1966,17 @@ fun AddGoalDialog(
 
 @Composable
 fun ConfirmLoanPaymentDialog(
+    accounts: List<AccountEntity>,
     loanName: String,
     paymentAmount: Double,
     currencySymbol: String,
+    currencyCode: String?,
     remainingBalance: Double,
     interestRate: Double,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: (AccountEntity) -> Unit
 ) {
+    var sourceAccount by remember(accounts, currencyCode) { mutableStateOf(accounts.firstOrNull { it.isActive && it.currencyCode == currencyCode }) }
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(18.dp), color = ObsidianSurface, border = BorderStroke(1.dp, ElectricIndigo), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp)) {
@@ -1919,10 +1990,16 @@ fun ConfirmLoanPaymentDialog(
                 Text("Estimated balance after payment: $currencySymbol${String.format("%,.2f", (remainingBalance - principalPaid).coerceAtLeast(0.0))}", color = TextMuted, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
                 Text("This does not run automatically. Tap once for one payment; use it again only for a separate payment period.", color = TextMuted, fontSize = 11.sp)
+                Text("Paid from account (${currencyCode ?: "currency unknown"})", color = TextSecondary, fontSize = 11.sp)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(accounts.filter { it.isActive && it.currencyCode == currencyCode }) { candidate ->
+                        FilterChip(selected = candidate.id == sourceAccount?.id, onClick = { sourceAccount = candidate }, label = { Text(candidate.name, fontSize = 10.sp) })
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                    Button(onClick = { onConfirm(); onDismiss() }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo)) { Text("Record payment", color = Color.White) }
+                    Button(onClick = { sourceAccount?.let(onConfirm); onDismiss() }, enabled = sourceAccount != null, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo)) { Text("Record payment", color = Color.White) }
                 }
             }
         }
@@ -1951,15 +2028,17 @@ fun ConfirmClearDataDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
 @Composable
 fun SellHoldingDialog(
     holding: HoldingEntity,
-    formatAmount: (Double) -> String,
+    accounts: List<AccountEntity>,
+    formatAmount: (Double, String?) -> String,
     onDismiss: () -> Unit,
-    onSell: (shares: Double, price: Double) -> Unit
+    onSell: (shares: Double, price: Double, proceedsAccount: AccountEntity) -> Unit
 ) {
+    var proceedsAccount by remember(accounts, holding.currencyCode) { mutableStateOf(accounts.firstOrNull { it.isActive && it.currencyCode == holding.currencyCode }) }
     var sharesText by remember { mutableStateOf(holding.shares.toString()) }
     var priceText by remember { mutableStateOf(holding.currentPrice.toString()) }
     val shares = sharesText.toDoubleOrNull()
     val price = priceText.toDoubleOrNull()
-    val valid = shares != null && price != null && shares > 0.0 && shares <= holding.shares + 1e-9 && price >= 0.0
+    val valid = shares != null && price != null && shares > 0.0 && shares <= holding.shares + 1e-9 && price >= 0.0 && proceedsAccount != null
     val proceeds = if (valid) shares!! * price!! else 0.0
     val gain = if (valid) shares!! * (price!! - holding.avgBuyPrice) else 0.0
 
@@ -1973,7 +2052,8 @@ fun SellHoldingDialog(
             Column(modifier = Modifier.padding(20.dp)) {
                 Text("Sell ${holding.symbol}", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("You hold ${holding.shares} units. Proceeds are added to Cash Flow as income.", color = TextSecondary, fontSize = 12.sp)
+                Text("You hold ${holding.shares} units. Record sale proceeds as a same-currency transfer into a cash account, not income.", color = TextSecondary, fontSize = 12.sp)
+                Text("Sale price and proceeds currency: ${holding.currencyCode ?: "unknown"}", color = TextMuted, fontSize = 11.sp)
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = sharesText,
@@ -2004,18 +2084,24 @@ fun SellHoldingDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+                Text("Proceeds account", color = TextSecondary, fontSize = 11.sp)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(accounts.filter { it.isActive && it.currencyCode == holding.currencyCode }) { candidate ->
+                        FilterChip(selected = candidate.id == proceedsAccount?.id, onClick = { proceedsAccount = candidate }, label = { Text(candidate.name, fontSize = 10.sp) })
+                    }
+                }
                 Spacer(Modifier.height(10.dp))
                 if (valid) {
-                    Text("Proceeds: ${formatAmount(proceeds)}", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Proceeds: ${formatAmount(proceeds, holding.currencyCode)}", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "${if (gain >= 0) "Realised gain" else "Realised loss"}: ${formatAmount(Math.abs(gain))}",
+                        "${if (gain >= 0) "Recorded gain estimate" else "Recorded loss estimate"}: ${formatAmount(Math.abs(gain), holding.currencyCode)}",
                         color = if (gain >= 0) EmeraldLight else Color(0xFFFB7185),
                         fontSize = 12.sp
                     )
                 }
                 Spacer(Modifier.height(14.dp))
                 Button(
-                    onClick = { onSell(shares!!, price!!); onDismiss() },
+                    onClick = { proceedsAccount?.let { onSell(shares!!, price!!, it) }; onDismiss() },
                     enabled = valid,
                     colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
                     shape = RoundedCornerShape(12.dp),

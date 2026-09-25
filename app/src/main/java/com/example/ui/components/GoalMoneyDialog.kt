@@ -34,8 +34,7 @@ import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
 /**
- * Moves money between the user's cash and a goal. A deposit takes it out of cash; a withdrawal
- * puts it back. Either way the move is recorded on Cash Flow as savings, not as spending.
+ * Updates a goal's tracking balance only. It does not move funds in a financial account.
  */
 @Composable
 fun GoalMoneyDialog(
@@ -66,8 +65,8 @@ fun GoalMoneyDialog(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    if (isDeposit) "This is taken out of your cash and recorded as savings, not spending."
-                    else "This goes back into your cash. Available in the goal: ${formatAmount(maxAmount ?: 0.0)}.",
+                    if (isDeposit) "This updates goal progress only; no cash is moved. If you transferred funds between accounts, record that separately."
+                    else "This reduces the tracked goal balance only; it does not move cash. Available in the goal: ${formatAmount(maxAmount ?: 0.0)}.",
                     color = TextSecondary,
                     fontSize = 12.sp
                 )

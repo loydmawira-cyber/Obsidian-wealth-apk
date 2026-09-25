@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ai.ParsedTransaction
 import com.example.data.models.Category
+import com.example.data.models.AccountEntity
 import com.example.data.models.TransactionType
 import com.example.data.util.StatementParser
 import com.example.ui.theme.CyanAccent
@@ -86,6 +87,7 @@ fun StatementImportDialog(
     viewModel: FinanceViewModel,
     onDismiss: () -> Unit
 ) {
+    val accounts by viewModel.accounts.collectAsState()
     var rawText by remember { mutableStateOf("") }
     var isParsing by remember { mutableStateOf(false) }
     var parsedList by remember { mutableStateOf<List<com.example.data.util.ParsedTransaction>?>(null) }
@@ -94,8 +96,9 @@ fun StatementImportDialog(
     if (parsedList != null) {
         StatementPreviewDialog(
             parsedTransactions = parsedList!!,
-            onConfirm = { selected ->
-                viewModel.addImportedTransactions(selected)
+            accounts = accounts,
+            onConfirm = { selected, account ->
+                viewModel.addImportedTransactions(selected, account)
                 onDismiss()
             },
             onDismiss = { parsedList = null }
@@ -175,7 +178,8 @@ fun StatementImportDialog(
 @Composable
 fun StatementPreviewDialog(
     parsedTransactions: List<com.example.data.util.ParsedTransaction>,
-    onConfirm: (List<com.example.data.util.ParsedTransaction>) -> Unit,
+    accounts: List<AccountEntity>,
+    onConfirm: (List<com.example.data.util.ParsedTransaction>, AccountEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
     // Only pre-select transactions that are not duplicates and not ambiguous
@@ -191,6 +195,7 @@ fun StatementPreviewDialog(
     }
 
     val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
+    var selectedAccount by remember(accounts) { mutableStateOf(accounts.firstOrNull { it.isActive && !it.currencyCode.isNullOrBlank() }) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -283,9 +288,9 @@ fun StatementPreviewDialog(
             Button(
                 onClick = {
                     val selected = selectedIndices.map { parsedTransactions[it] }
-                    onConfirm(selected)
+                    selectedAccount?.let { onConfirm(selected, it) }
                 },
-                enabled = selectedIndices.isNotEmpty(),
+                enabled = selectedIndices.isNotEmpty() && selectedAccount != null,
                 colors = ButtonDefaults.buttonColors(containerColor = SovereignGold)
             ) {
                 Text("Confirm Import (${selectedIndices.size})", color = Color.Black, fontWeight = FontWeight.Bold)
@@ -305,6 +310,7 @@ fun ReceiptPhotoDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val accounts by viewModel.accounts.collectAsState()
     var isAnalyzing by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<ParsedTransaction?>(null) }
 
@@ -333,6 +339,7 @@ fun ReceiptPhotoDialog(
     if (draft != null) {
         ReceiptReviewDialog(
             draft = draft!!,
+            accounts = accounts,
             onConfirm = { merchant, amount, categoryStr, account, dateMillis ->
                 val cat = try { Category.valueOf(categoryStr) } catch (_: Exception) { Category.SHOPPING }
                 viewModel.addTransaction(
@@ -405,12 +412,13 @@ fun ReceiptPhotoDialog(
 @Composable
 fun ReceiptReviewDialog(
     draft: ParsedTransaction,
-    onConfirm: (merchant: String, amount: Double, category: String, account: String, dateMillis: Long) -> Unit,
+    accounts: List<AccountEntity>,
+    onConfirm: (merchant: String, amount: Double, category: String, account: AccountEntity, dateMillis: Long) -> Unit,
     onDismiss: () -> Unit
 ) {
     var merchant by remember { mutableStateOf(draft.title) }
     var amountText by remember { mutableStateOf(if (draft.amount > 0) draft.amount.toString() else "") }
-    var account by remember { mutableStateOf(draft.account) }
+    var account by remember(accounts) { mutableStateOf(accounts.firstOrNull { it.isActive && it.name.equals(draft.account, true) && !it.currencyCode.isNullOrBlank() } ?: accounts.firstOrNull { it.isActive && !it.currencyCode.isNullOrBlank() }) }
     var selectedCategory by remember { mutableStateOf(draft.category) }
     val initialDateMillis = draft.dateMillis ?: System.currentTimeMillis()
     var dateMillis by remember { mutableStateOf(initialDateMillis) }
@@ -507,26 +515,23 @@ fun ReceiptReviewDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                OutlinedTextField(
-                    value = account,
-                    onValueChange = { account = it },
-                    label = { Text("Account / Payment Source") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = SovereignGold,
-                        unfocusedBorderColor = ObsidianBorder
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Text("Cash account and currency", color = TextSecondary, fontSize = 11.sp)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() }) { candidate ->
+                        FilterChip(selected = candidate.id == account?.id, onClick = { account = candidate }, label = { Text("${candidate.name} · ${candidate.currencyCode}", fontSize = 10.sp) })
+                    }
+                }
+                if (accounts.none { it.isActive && !it.currencyCode.isNullOrBlank() }) {
+                    Text("Create a cash account with a confirmed currency before saving this receipt.", color = Color(0xFFF59E0B), fontSize = 11.sp)
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    onConfirm(merchant, amountValue, selectedCategory, account, dateMillis)
+                    account?.let { onConfirm(merchant, amountValue, selectedCategory, it, dateMillis) }
                 },
-                enabled = merchant.isNotBlank() && amountValue > 0,
+                enabled = merchant.isNotBlank() && amountValue.isFinite() && amountValue > 0 && account != null,
                 colors = ButtonDefaults.buttonColors(containerColor = SovereignGold)
             ) {
                 Text("Confirm & Save", color = Color.Black, fontWeight = FontWeight.Bold)
@@ -539,3 +544,17 @@ fun ReceiptReviewDialog(
         }
     )
 }
+                    item {
+                        Column {
+                            Text("Import account and currency", color = TextSecondary, fontSize = 11.sp)
+                            if (accounts.none { it.isActive && !it.currencyCode.isNullOrBlank() }) {
+                                Text("Create an account with a confirmed currency before importing.", color = Color(0xFFF59E0B), fontSize = 11.sp)
+                            }
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() }) { account ->
+                                    FilterChip(selected = account.id == selectedAccount?.id, onClick = { selectedAccount = account }, label = { Text("${account.name} · ${account.currencyCode}", fontSize = 10.sp) })
+                                }
+                            }
+                        }
+                    }
+                    items(parsedTransactions.size) { idx ->

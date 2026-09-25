@@ -342,7 +342,7 @@ fun ObsidianSettingsSheet(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Quickly adapt currency, fiscal periods, and numbering to your country",
+                            text = "Changes display currency, fiscal periods, and numbering only. Existing amounts keep their record currency and are not converted or replaced.",
                             color = TextMuted,
                             fontSize = 11.sp
                         )

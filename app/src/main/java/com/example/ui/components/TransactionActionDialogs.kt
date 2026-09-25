@@ -76,19 +76,24 @@ fun TransactionActionDialog(
                     fontSize = 13.sp
                 )
                 Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = { onEdit(); onDismiss() },
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Edit entry", color = Color.Black, fontWeight = FontWeight.Bold) }
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = { onDelete(); onDismiss() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Delete entry", color = Color.White, fontWeight = FontWeight.Bold) }
+                if (transaction.transactionKind == com.example.data.models.TransactionKind.STANDARD && transaction.sourceReference == null) {
+                    Button(
+                        onClick = { onEdit(); onDismiss() },
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Edit entry", color = Color.Black, fontWeight = FontWeight.Bold) }
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { onDelete(); onDismiss() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Delete entry", color = Color.White, fontWeight = FontWeight.Bold) }
+                } else {
+                    Text("This entry is linked to another account, debt, or generated record. Edit it through the related action to keep balances reconciled.", color = TextMuted, fontSize = 11.sp)
+                    Spacer(Modifier.height(8.dp))
+                }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
             }
@@ -127,6 +132,7 @@ private fun editFieldColors() = OutlinedTextFieldDefaults.colors(
 @Composable
 fun EditTransactionDialog(
     transaction: TransactionEntity,
+    accounts: List<com.example.data.models.AccountEntity>,
     onDismiss: () -> Unit,
     onSave: (TransactionEntity) -> Unit
 ) {
@@ -137,14 +143,16 @@ fun EditTransactionDialog(
     var amountText by remember { mutableStateOf(transaction.amount.toString()) }
     var type by remember { mutableStateOf(transaction.type) }
     var category by remember { mutableStateOf(transaction.category) }
-    var account by remember { mutableStateOf(transaction.account) }
+    var account by remember(accounts, transaction.accountId) {
+        mutableStateOf(accounts.firstOrNull { it.id == transaction.accountId } ?: accounts.firstOrNull { it.name.equals(transaction.account, true) })
+    }
     var note by remember { mutableStateOf(transaction.note) }
     var dateText by remember { mutableStateOf(originalDate) }
 
     val amount = amountText.toDoubleOrNull()
     val parsedDate = if (dateText == originalDate) transaction.dateMillis
     else try { dateFormat.parse(dateText)?.time?.plus(12L * 3_600_000L) } catch (e: Exception) { null }
-    val valid = title.isNotBlank() && amount != null && amount > 0.0 && parsedDate != null
+    val valid = title.isNotBlank() && amount != null && amount.isFinite() && amount > 0.0 && parsedDate != null && account != null
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -196,19 +204,18 @@ fun EditTransactionDialog(
                 Text("Category", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(Category.values().toList()) { c ->
+                    items(Category.values().filter { it !in setOf(Category.ACCOUNT_TRANSFER, Category.ACCOUNT_ADJUSTMENT, Category.INVESTMENT_SALE) }) { c ->
                         EditChip(c.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }, category == c) { category = c }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = account,
-                    onValueChange = { account = it },
-                    label = { Text("Account / Source", color = TextSecondary) },
-                    colors = editFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                Text("Account and currency", color = TextSecondary, fontSize = 11.sp)
+                Text("Selecting an account applies its currency to this amount; the numeric value is not converted.", color = TextMuted, fontSize = 10.sp)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() }) { candidate ->
+                        EditChip("${candidate.name} · ${candidate.currencyCode}", account?.id == candidate.id) { account = candidate }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = dateText,
@@ -230,13 +237,16 @@ fun EditTransactionDialog(
                 Spacer(Modifier.height(14.dp))
                 Button(
                     onClick = {
+                        val selectedAccount = account ?: return@Button
                         onSave(
                             transaction.copy(
                                 title = title.trim(),
                                 amount = amount ?: transaction.amount,
                                 type = type,
                                 category = category,
-                                account = account.trim(),
+                                account = selectedAccount.name,
+                                accountId = selectedAccount.id,
+                                currencyCode = selectedAccount.currencyCode,
                                 note = note,
                                 dateMillis = parsedDate ?: transaction.dateMillis
                             )
