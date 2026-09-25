@@ -131,8 +131,6 @@ fun ObsidianSettingsSheet(
     val isPinEnabled by viewModel.isPinEnabled.collectAsState()
     val userEmail by viewModel.userEmail.collectAsState()
     val isDemoAccount = userEmail.equals(FinanceViewModel.DEMO_SEED_EMAIL, ignoreCase = true)
-    val isPremium by viewModel.isPremium.collectAsState()
-    val billingMessage by viewModel.billingMessage.collectAsState()
     val context = LocalContext.current
 
     var activeTab by remember { mutableStateOf(0) } // 0: Regional, 1: Modules, 2: AI & Privacy, 3: Cloud Vault
@@ -234,7 +232,7 @@ fun ObsidianSettingsSheet(
                 ) {
                     Column {
                         Text(
-                            text = "LIVE REGIONAL PREVIEW",
+                            text = "CURRENT REGIONAL SETTINGS",
                             color = SovereignGold,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.ExtraBold,
@@ -577,7 +575,7 @@ fun ObsidianSettingsSheet(
                     item {
                         ModuleToggleCard(
                             title = "Investments & Portfolio",
-                            description = "Stock holdings, mutual funds, automated SIPs, XIRR returns, and asset allocation breakdown.",
+                            description = "Record stock, fund, and other holdings; view your manually priced asset allocation.",
                             icon = Icons.AutoMirrored.Filled.ShowChart,
                             isEnabled = settings.enableInvestments,
                             onToggle = { viewModel.toggleModule("investments", it) }
@@ -659,7 +657,7 @@ fun ObsidianSettingsSheet(
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Text(
-                                                text = if (settings.enableNotifications) "Automated wealth intelligence active" else "System alerts currently paused",
+                                                text = if (settings.enableNotifications) "Financial alerts are enabled" else "Financial alerts are paused",
                                                 color = if (settings.enableNotifications) EmeraldGrowth else TextMuted,
                                                 fontSize = 11.sp
                                             )
@@ -708,7 +706,7 @@ fun ObsidianSettingsSheet(
 
                     item {
                         Text(
-                            text = "AUTOMATED REMINDERS & SCHEDULES",
+                            text = "REMINDERS & ALERTS",
                             color = SovereignGold,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
@@ -733,14 +731,13 @@ fun ObsidianSettingsSheet(
                         )
                     }
 
-                    // SIP Investment Reminders
                     item {
-                        ModuleToggleCard(
-                            title = "SIP Standing Order Reminders",
-                            description = "Timely notifications when scheduled monthly mutual fund and equity SIP debits are upcoming.",
-                            icon = Icons.AutoMirrored.Filled.ShowChart,
-                            isEnabled = settings.enableSipReminders && settings.enableNotifications,
-                            onToggle = { viewModel.toggleNotificationOption("sips", it) }
+                        Text(
+                            text = "Recurring contribution plans are for manual tracking only; the app does not initiate payments or send plan reminders yet.",
+                            color = TextMuted,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
                         )
                     }
 
@@ -913,37 +910,25 @@ fun ObsidianSettingsSheet(
                                 ) {
                                     Icon(
                                         Icons.Default.Lock,
-                                        contentDescription = "Biometrics",
+                                        contentDescription = "Device security",
                                         tint = EmeraldGrowth,
                                         modifier = Modifier.size(22.dp)
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
                                         Text(
-                                            text = "Biometric Vault Security",
+                                            text = "Biometric unlock",
                                             color = TextPrimary,
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            text = "Require fingerprint/face authentication on resume",
+                                            text = "Not available yet. The app currently uses the optional PIN lock.",
                                             color = TextMuted,
                                             fontSize = 11.sp
                                         )
                                     }
                                 }
-                                Switch(
-                                    checked = settings.biometricProtection,
-                                    onCheckedChange = {
-                                        viewModel.updateUserSettings(settings.copy(biometricProtection = it))
-                                    },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = EmeraldGrowth,
-                                        checkedTrackColor = EmeraldGrowth.copy(alpha = 0.3f),
-                                        uncheckedThumbColor = TextMuted,
-                                        uncheckedTrackColor = ObsidianSurface
-                                    )
-                                )
                             }
                         }
                     }
@@ -1028,7 +1013,7 @@ fun ObsidianSettingsSheet(
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = ObsidianSurfaceVariant,
-                            border = BorderStroke(1.dp, if (isPremium) EmeraldGrowth else SovereignGold.copy(alpha = 0.5f)),
+                            border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.5f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
@@ -1039,39 +1024,20 @@ fun ObsidianSettingsSheet(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = if (isPremium) "PREMIUM MARKET PRICES ACTIVE" else "PREMIUM MARKET PRICES",
-                                            color = if (isPremium) EmeraldGrowth else SovereignGold,
+                                            text = "AUTOMATIC MARKET PRICES UNAVAILABLE",
+                                            color = SovereignGold,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             letterSpacing = 0.7.sp
                                         )
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = if (isPremium) "Automatic stock and crypto price updates are enabled." else "All finance features remain unlimited. Premium only adds automatic market prices.",
+                                            text = "Holdings use manually entered prices. Automatic stock and crypto quotes are not currently available.",
                                             color = TextMuted,
                                             fontSize = 11.sp,
                                             lineHeight = 15.sp
                                         )
                                     }
-                                    if (!isPremium) {
-                                        Button(
-                                            onClick = { (context as? android.app.Activity)?.let(viewModel::launchPremiumPurchase) },
-                                            colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
-                                            Text("GO PREMIUM", color = ObsidianBg, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                                        }
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = if (isPremium) "Google Play subscription: premium_annual" else "Annual subscription • Managed by Google Play",
-                                    color = if (isPremium) EmeraldGrowth else TextSecondary,
-                                    fontSize = 10.sp
-                                )
-                                billingMessage?.let { message ->
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(text = message, color = Color(0xFFFCA5A5), fontSize = 10.sp)
                                 }
                             }
                         }
@@ -1462,7 +1428,7 @@ fun ObsidianSettingsSheet(
                                 val schemaItems = listOf(
                                     "wealth_vaults/{vaultId}/transactions" to "Transactions, dates, accounts, notes",
                                     "wealth_vaults/{vaultId}/holdings" to "Equities, MMFs, bonds, real-time gain/loss",
-                                    "wealth_vaults/{vaultId}/sips" to "Automated standing orders, monthly debit days",
+                                    "wealth_vaults/{vaultId}/sips" to "Recurring contribution plans, planned calendar days",
                                     "wealth_vaults/{vaultId}/credit_cards" to "Balances, limits, APR, due dates",
                                     "wealth_vaults/{vaultId}/loans" to "Principal, EMI servicing, amortizations",
                                     "wealth_vaults/{vaultId}/goals" to "Accumulation milestones, FIRE progress",

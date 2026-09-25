@@ -712,9 +712,9 @@ fun ObsidianAiAdvisorSheet(
                 modifier = Modifier.padding(vertical = 4.dp)
             ) {
                 val alphaPrompts = listOf(
-                    "Audit my cash drag yield",
+                    "Review my recorded cash flow",
                     "Simulate Debt Avalanche vs Snowball",
-                    "Review portfolio beta & XIRR",
+                    "Explain my recorded holdings",
                     "Check emergency fund runway"
                 )
                 items(alphaPrompts) { p ->
@@ -927,7 +927,7 @@ fun ExportReportDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Audited Financial Statement",
+                        text = "Personal Finance Summary",
                         color = TextPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
@@ -1412,13 +1412,12 @@ fun ConfirmDeleteHoldingDialog(
 @Composable
 fun AddSipDialog(
     onDismiss: () -> Unit,
-    onAdd: (fundName: String, category: String, amount: Double, debitDay: Int, annualizedReturnPercent: Double) -> Unit
+    onAdd: (fundName: String, category: String, amount: Double, plannedDay: Int) -> Unit
 ) {
     var fundName by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Index Fund") }
     var amountText by remember { mutableStateOf("") }
     var debitDayText by remember { mutableStateOf("1") }
-    var returnPercentText by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1434,7 +1433,7 @@ fun AddSipDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Schedule New SIP Mandate",
+                        text = "Add recurring contribution plan",
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -1480,7 +1479,7 @@ fun AddSipDialog(
                     OutlinedTextField(
                         value = debitDayText,
                         onValueChange = { debitDayText = it },
-                        label = { Text("Debit Day", color = TextSecondary) },
+                        label = { Text("Planned day of month", color = TextSecondary) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
@@ -1494,30 +1493,14 @@ fun AddSipDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = returnPercentText,
-                    onValueChange = { returnPercentText = it },
-                    label = { Text("Expected Annual Return %", color = TextSecondary) },
-                    placeholder = { Text("e.g. 12.5", color = TextMuted) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = EmeraldGrowth,
-                        unfocusedBorderColor = ObsidianBorder
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
                     onClick = {
                         val amount = amountText.toDoubleOrNull() ?: 0.0
                         val day = debitDayText.toIntOrNull() ?: 1
-                        val returnPercent = returnPercentText.toDoubleOrNull() ?: 0.0
                         if (fundName.isNotBlank() && amount > 0) {
-                            onAdd(fundName, category, amount, day, returnPercent)
+                            onAdd(fundName, category, amount, day)
                             onDismiss()
                         }
                     },
@@ -1525,7 +1508,7 @@ fun AddSipDialog(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Activate SIP Mandate", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text("Save plan", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1581,13 +1564,12 @@ fun SipActionDialog(
 fun EditSipDialog(
     sip: SipEntity,
     onDismiss: () -> Unit,
-    onSave: (fundName: String, category: String, amount: Double, debitDay: Int, annualizedReturnPercent: Double) -> Unit
+    onSave: (fundName: String, category: String, amount: Double, plannedDay: Int) -> Unit
 ) {
     var fundName by remember { mutableStateOf(sip.fundName) }
     var category by remember { mutableStateOf(sip.category) }
     var amountText by remember { mutableStateOf(sip.monthlyAmount.toString()) }
     var debitDayText by remember { mutableStateOf(sip.debitDayOfMonth.toString()) }
-    var returnPercentText by remember { mutableStateOf(sip.annualizedReturnPercent.toString()) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1603,7 +1585,7 @@ fun EditSipDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Edit SIP Mandate",
+                        text = "Edit contribution plan",
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -1648,7 +1630,7 @@ fun EditSipDialog(
                     OutlinedTextField(
                         value = debitDayText,
                         onValueChange = { debitDayText = it },
-                        label = { Text("Debit Day", color = TextSecondary) },
+                        label = { Text("Planned day of month", color = TextSecondary) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
@@ -1662,29 +1644,14 @@ fun EditSipDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = returnPercentText,
-                    onValueChange = { returnPercentText = it },
-                    label = { Text("Expected Annual Return %", color = TextSecondary) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = EmeraldGrowth,
-                        unfocusedBorderColor = ObsidianBorder
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
                     onClick = {
                         val amount = amountText.toDoubleOrNull() ?: sip.monthlyAmount
                         val day = debitDayText.toIntOrNull() ?: sip.debitDayOfMonth
-                        val returnPercent = returnPercentText.toDoubleOrNull() ?: sip.annualizedReturnPercent
                         if (fundName.isNotBlank() && amount > 0) {
-                            onSave(fundName, category, amount, day, returnPercent)
+                            onSave(fundName, category, amount, day)
                             onDismiss()
                         }
                     },
@@ -1738,7 +1705,7 @@ fun PayCreditCardDialog(
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
-                    text = "Pay ${card.cardName}",
+                    text = "Record payment to ${card.cardName}",
                     color = TextPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
@@ -1747,6 +1714,11 @@ fun PayCreditCardDialog(
                     text = "Current statement balance: ${"%,.2f".format(card.currentBalance)}",
                     color = TextSecondary,
                     fontSize = 13.sp
+                )
+                Text(
+                    text = "This updates your records only; it does not send a payment to your bank or card issuer.",
+                    color = TextMuted,
+                    fontSize = 11.sp
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -1772,12 +1744,12 @@ fun PayCreditCardDialog(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { amountText = (card.currentBalance * 0.1).coerceAtLeast(35.0).toString() },
+                            .clickable { amountText = (card.currentBalance * 0.5).toString() },
                         color = ObsidianSurfaceVariant,
                         border = BorderStroke(1.dp, ObsidianBorderSubtle)
                     ) {
                         Text(
-                            text = "Minimum Due",
+                            text = "Half Balance",
                             color = CyanAccent,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -1816,7 +1788,7 @@ fun PayCreditCardDialog(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Authorize Payment", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text("Record payment", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1930,24 +1902,27 @@ fun ConfirmLoanPaymentDialog(
     paymentAmount: Double,
     currencySymbol: String,
     remainingBalance: Double,
+    interestRate: Double,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(18.dp), color = ObsidianSurface, border = BorderStroke(1.dp, ElectricIndigo), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp)) {
+                val monthlyInterest = remainingBalance * (interestRate.coerceAtLeast(0.0) / 100.0) / 12.0
+                val principalPaid = (paymentAmount - monthlyInterest).coerceIn(0.0, remainingBalance)
                 Text("Confirm EMI payment", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Text("Record one manual payment for $loanName?", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
                 Text("Payment: $currencySymbol${String.format("%,.2f", paymentAmount)}", color = EmeraldLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text("Balance after payment: $currencySymbol${String.format("%,.2f", (remainingBalance - paymentAmount).coerceAtLeast(0.0))}", color = TextMuted, fontSize = 12.sp)
+                Text("Estimated balance after payment: $currencySymbol${String.format("%,.2f", (remainingBalance - principalPaid).coerceAtLeast(0.0))}", color = TextMuted, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
                 Text("This does not run automatically. Tap once for one payment; use it again only for a separate payment period.", color = TextMuted, fontSize = 11.sp)
                 Spacer(Modifier.height(16.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                    Button(onClick = { onConfirm(); onDismiss() }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo)) { Text("Confirm EMI", color = Color.White) }
+                    Button(onClick = { onConfirm(); onDismiss() }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo)) { Text("Record payment", color = Color.White) }
                 }
             }
         }

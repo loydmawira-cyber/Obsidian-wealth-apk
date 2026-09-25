@@ -41,14 +41,14 @@ fun ImportedTransactionsDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = ObsidianSurface,
-        title = { Text("Review detected transactions", color = GoldBright, fontWeight = FontWeight.Bold) },
+        title = { Text("Review transactions", color = GoldBright, fontWeight = FontWeight.Bold) },
         text = {
             if (transactions.isEmpty()) {
-                Text("No imported notifications are waiting for review.", color = TextSecondary)
+                Text("No transactions are waiting for review.", color = TextSecondary)
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     item {
-                        Text("These were detected locally. Confirm only the transactions you recognize.", color = TextMuted, fontSize = 12.sp)
+                        Text("Confirm only transactions that actually happened. Unconfirmed records are excluded from your totals.", color = TextMuted, fontSize = 12.sp)
                     }
                     items(transactions, key = { it.id }) { transaction ->
                         Column(modifier = Modifier.fillMaxWidth()) {
