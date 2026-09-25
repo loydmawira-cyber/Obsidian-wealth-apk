@@ -12,6 +12,7 @@ import com.example.alerts.NotificationReminderManager
 import com.example.data.billing.BillingManager
 import com.example.data.database.AppDatabase
 import com.example.data.models.Category
+import com.example.data.models.CashFlowTransactionRules
 import com.example.data.models.AccountEntity
 import com.example.data.models.AccountLedger
 import com.example.data.models.CreditCardEntity
@@ -816,13 +817,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val hList = assetContext.holdings
         val aList = assetContext.accounts
         val accountById = aList.associateBy { it.id }
-        fun currency(tx: TransactionEntity): String? = tx.currencyCode ?: tx.accountId?.let { accountById[it]?.currencyCode }
+        val cardById = cList.associateBy { it.id }
+        fun currency(tx: TransactionEntity): String? =
+            tx.currencyCode ?: tx.accountId?.let { accountById[it]?.currencyCode } ?: tx.creditCardId?.let { cardById[it]?.currencyCode }
         val confirmed = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
         val activeBaseAccountIds = aList.filter { it.isActive && it.currencyCode == baseCurrency }.map { it.id }.toSet()
         val activeBaseCardIds = cList.filter { it.currencyCode == baseCurrency }.map { it.id }.toSet()
         val selected = confirmed.filter { tx ->
-            (tx.accountId in activeBaseAccountIds && currency(tx) == baseCurrency) ||
-                (tx.transactionKind == TransactionKind.CREDIT_CARD_PURCHASE && tx.creditCardId in activeBaseCardIds && currency(tx) == baseCurrency)
+            (tx.accountId != null && tx.accountId in activeBaseAccountIds && currency(tx) == baseCurrency) ||
+                (tx.transactionKind == TransactionKind.CREDIT_CARD_PURCHASE && tx.creditCardId != null &&
+                    tx.creditCardId in activeBaseCardIds && currency(tx) == baseCurrency)
         }
         val operatingIncome = selected.filter {
             it.type == TransactionType.INCOME && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT, TransactionKind.ASSET_CONVERSION, TransactionKind.LOAN_TOP_UP)
@@ -918,25 +922,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     ) { txList, accountList, cardList, monthStart, settings ->
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = monthStart; add(java.util.Calendar.MONTH, 1) }
         val monthEnd = cal.timeInMillis
-        val confirmed = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
         val currency = settings.currency.code
         val selectedAccounts = accountList.filter { it.isActive && it.currencyCode == currency }
         val accountIds = selectedAccounts.map { it.id }.toSet()
         val selectedCardIds = cardList.filter { it.currencyCode == currency }.map { it.id }.toSet()
         val accountById = accountList.associateBy { it.id }
-        fun transactionCurrency(tx: TransactionEntity): String? = tx.currencyCode ?: tx.accountId?.let { accountById[it]?.currencyCode }
-        val selectedTransactions = confirmed.filter { tx ->
-            (tx.accountId in accountIds && transactionCurrency(tx) == currency) ||
-                (tx.transactionKind == TransactionKind.CREDIT_CARD_PURCHASE && tx.creditCardId in selectedCardIds && transactionCurrency(tx) == currency)
+        val cardById = cardList.associateBy { it.id }
+        fun transactionCurrency(tx: TransactionEntity): String? =
+            tx.currencyCode ?: tx.accountId?.let { accountById[it]?.currencyCode } ?: tx.creditCardId?.let { cardById[it]?.currencyCode }
+        val selectedTransactions = txList.filter { tx ->
+            CashFlowTransactionRules.isConfirmed(tx) && (
+            (tx.accountId != null && tx.accountId in accountIds && transactionCurrency(tx) == currency) ||
+                (tx.transactionKind == TransactionKind.CREDIT_CARD_PURCHASE && tx.creditCardId != null &&
+                    tx.creditCardId in selectedCardIds && transactionCurrency(tx) == currency))
         }
-        val inMonth = selectedTransactions.filter { it.dateMillis >= monthStart && it.dateMillis < monthEnd && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ASSET_CONVERSION) }
+        val inMonth = selectedTransactions.filter {
+            CashFlowTransactionRules.isConfirmedInRange(it, monthStart, monthEnd) && it.transactionKind != TransactionKind.TRANSFER
+        }
         val opening = selectedAccounts.sumOf { AccountLedger.balanceAt(it, selectedTransactions, monthStart) }
         val closing = selectedAccounts.sumOf { AccountLedger.balanceAt(it, selectedTransactions, monthEnd) }
         val operatingMonth = inMonth.filter { it.transactionKind != TransactionKind.ADJUSTMENT }
-        val inflow = operatingMonth.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-        val outflow = operatingMonth.filter {
-            it.type == TransactionType.EXPENSE && !(it.transactionKind == TransactionKind.DEBT_SETTLEMENT && it.creditCardId != null)
-        }.sumOf { it.amount }
+        val inflow = operatingMonth.filter(CashFlowTransactionRules::countsAsInflow).sumOf { it.amount }
+        val outflow = operatingMonth.filter(CashFlowTransactionRules::countsAsOutflow).sumOf { it.amount }
         val adjustments = inMonth.filter { it.transactionKind == TransactionKind.ADJUSTMENT }.sumOf(AccountLedger::signedEffect)
         val invested = inMonth.filter { it.type == TransactionType.EXPENSE && it.category in investmentCategories }.sumOf { it.amount }
         MonthCashFlow(
