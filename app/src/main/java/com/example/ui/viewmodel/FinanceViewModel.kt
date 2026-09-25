@@ -1301,7 +1301,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         shares: Double,
         avgBuyPrice: Double,
         currentPrice: Double,
-        currencyCode: String
+        currencyCode: String,
+        purchaseAccount: AccountEntity? = null
     ) {
         viewModelScope.launch {
             val holdingId = repository.addHolding(
@@ -1317,6 +1318,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 )
             )
             // Recording a holding is a portfolio snapshot, not proof that a purchase just occurred.
+            // If the user named the account it came from, list the cash side on Cash Flow, awaiting
+            // their confirmation, the same way an imported bank line waits before it counts.
+            if (purchaseAccount != null && purchaseAccount.isActive && purchaseAccount.currencyCode == currencyCode) {
+                val cost = shares * avgBuyPrice
+                if (cost > 0) {
+                    repository.addTransaction(
+                        TransactionEntity(
+                            title = "Investment purchase: ${symbol.uppercase()}",
+                            amount = cost,
+                            type = TransactionType.EXPENSE,
+                            category = Category.INVESTMENT_SIP,
+                            account = purchaseAccount.name,
+                            note = "Purchase of $shares x ${symbol.uppercase()}; confirm to deduct from cash",
+                            accountId = purchaseAccount.id,
+                            currencyCode = currencyCode,
+                            transactionKind = TransactionKind.ASSET_CONVERSION,
+                            sourceReference = "holding:$holdingId",
+                            importStatus = "PENDING_REVIEW"
+                        )
+                    )
+                }
+            }
             syncVaultToCloud()
         }
     }
@@ -1377,10 +1400,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         fundName: String,
         category: String,
         monthlyAmount: Double,
-        debitDayOfMonth: Int
+        debitDayOfMonth: Int,
+        currencyCode: String? = null,
+        contributionAccount: AccountEntity? = null
     ) {
         viewModelScope.launch {
-            repository.addSip(
+            val sipId = repository.addSip(
                 SipEntity(
                     fundName = fundName,
                     category = category,
@@ -1390,9 +1415,31 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     // Creating a plan does not mean a contribution has happened.
                     totalInvested = 0.0,
                     annualizedReturnPercent = 0.0,
-                    lastDebitedYearMonth = null
+                    lastDebitedYearMonth = null,
+                    currencyCode = currencyCode
                 )
             )
+            // If the user named the account funding this month's contribution, list it on Cash Flow,
+            // awaiting their confirmation, rather than assuming the debit already happened.
+            if (contributionAccount != null && contributionAccount.isActive &&
+                contributionAccount.currencyCode == currencyCode && monthlyAmount > 0
+            ) {
+                repository.addTransaction(
+                    TransactionEntity(
+                        title = "SIP contribution: $fundName",
+                        amount = monthlyAmount,
+                        type = TransactionType.EXPENSE,
+                        category = Category.INVESTMENT_SIP,
+                        account = contributionAccount.name,
+                        note = "Planned contribution to $fundName; confirm to deduct from cash",
+                        accountId = contributionAccount.id,
+                        currencyCode = currencyCode,
+                        transactionKind = TransactionKind.ASSET_CONVERSION,
+                        sourceReference = "sip:$sipId",
+                        importStatus = "PENDING_REVIEW"
+                    )
+                )
+            }
             syncVaultToCloud()
         }
     }
