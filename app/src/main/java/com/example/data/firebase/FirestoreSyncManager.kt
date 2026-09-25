@@ -5,6 +5,8 @@ import android.util.Log
 import com.example.data.dao.FinanceDao
 import com.example.data.models.BudgetEntity
 import com.example.data.models.Category
+import com.example.data.models.AccountEntity
+import com.example.data.models.TransactionKind
 import com.example.data.models.CreditCardEntity
 import com.example.data.models.FiscalCalendar
 import com.example.data.models.GeographicRegion
@@ -122,6 +124,7 @@ class FirestoreSyncManager(private val context: Context) {
                 SetOptions.merge()
             ).awaitTask()
             val transactions = dao.getTransactionsSnapshot()
+            val accounts = dao.getAccountsSnapshot()
             val holdings = dao.getHoldingsSnapshot()
             val sips = dao.getSipsSnapshot()
             val cards = dao.getCreditCardsSnapshot()
@@ -141,6 +144,7 @@ class FirestoreSyncManager(private val context: Context) {
                 "region" to settings.region.id,
                 "lastSyncMillis" to System.currentTimeMillis(),
                 "transactionsCount" to transactions.size,
+                "accountsCount" to accounts.size,
                 "holdingsCount" to holdings.size,
                 "sipsCount" to sips.size,
                 "cardsCount" to cards.size,
@@ -153,7 +157,7 @@ class FirestoreSyncManager(private val context: Context) {
             // 1b. Remove items the user deleted on this device. Only explicitly queued deletions are
             // applied; nothing is ever inferred from what is missing locally. Deleting a document
             // that is already gone succeeds, so a retry after a failed sync is harmless.
-            val deletableCollections = setOf("transactions", "holdings", "sips", "credit_cards", "loans", "goals", "budgets")
+            val deletableCollections = setOf("transactions", "accounts", "holdings", "sips", "credit_cards", "loans", "goals", "budgets")
             pendingDeletions.forEach { entry ->
                 val collectionName = entry.substringBefore('/')
                 val docId = entry.substringAfter('/', "")
@@ -178,9 +182,30 @@ class FirestoreSyncManager(private val context: Context) {
                     "statementFingerprint" to tx.statementFingerprint,
                     "importStatus" to tx.importStatus,
                     "importSource" to tx.importSource,
-                    "sourceReference" to tx.sourceReference
+                    "sourceReference" to tx.sourceReference,
+                    "accountId" to tx.accountId,
+                    "currencyCode" to tx.currencyCode,
+                    "transactionKind" to tx.transactionKind.name,
+                    "transferGroupId" to tx.transferGroupId
                 )
                 txCollection.document(tx.id.toString()).set(txMap, SetOptions.merge()).awaitTask()
+            }
+
+            val accountCollection = vaultRef.collection("accounts")
+            accounts.forEach { account ->
+                val accountMap = hashMapOf(
+                    "id" to account.id,
+                    "name" to account.name,
+                    "accountType" to account.accountType,
+                    "currencyCode" to account.currencyCode,
+                    "openingBalance" to account.openingBalance,
+                    "openingBalanceMillis" to account.openingBalanceMillis,
+                    "openingBalanceConfirmed" to account.openingBalanceConfirmed,
+                    "statementBalance" to account.statementBalance,
+                    "lastReconciledMillis" to account.lastReconciledMillis,
+                    "isActive" to account.isActive
+                )
+                accountCollection.document(account.id.toString()).set(accountMap, SetOptions.merge()).awaitTask()
             }
 
             // 3. Sync Holdings
@@ -194,7 +219,8 @@ class FirestoreSyncManager(private val context: Context) {
                     "shares" to h.shares,
                     "avgBuyPrice" to h.avgBuyPrice,
                     "currentPrice" to h.currentPrice,
-                    "dailyChangePercent" to h.dailyChangePercent
+                    "dailyChangePercent" to h.dailyChangePercent,
+                    "currencyCode" to h.currencyCode
                 )
                 holdingsCollection.document(h.id.toString()).set(hMap, SetOptions.merge()).awaitTask()
             }
@@ -211,7 +237,8 @@ class FirestoreSyncManager(private val context: Context) {
                     "isActive" to s.isActive,
                     "totalInvested" to s.totalInvested,
                     "annualizedReturnPercent" to s.annualizedReturnPercent,
-                    "lastDebitedYearMonth" to s.lastDebitedYearMonth
+                    "lastDebitedYearMonth" to s.lastDebitedYearMonth,
+                    "currencyCode" to s.currencyCode
                 )
                 sipsCollection.document(s.id.toString()).set(sMap, SetOptions.merge()).awaitTask()
             }
@@ -227,7 +254,8 @@ class FirestoreSyncManager(private val context: Context) {
                     "creditLimit" to c.creditLimit,
                     "apr" to c.apr,
                     "dueDateDays" to c.dueDateDays,
-                    "colorHex" to c.colorHex
+                    "colorHex" to c.colorHex,
+                    "currencyCode" to c.currencyCode
                 )
                 cardsCollection.document(c.id.toString()).set(cMap, SetOptions.merge()).awaitTask()
             }
@@ -245,7 +273,8 @@ class FirestoreSyncManager(private val context: Context) {
                     "interestRate" to l.interestRate,
                     "totalMonths" to l.totalMonths,
                     "remainingMonths" to l.remainingMonths,
-                    "dueDayOfMonth" to l.dueDayOfMonth
+                    "dueDayOfMonth" to l.dueDayOfMonth,
+                    "currencyCode" to l.currencyCode
                 )
                 loansCollection.document(l.id.toString()).set(lMap, SetOptions.merge()).awaitTask()
             }
@@ -261,7 +290,8 @@ class FirestoreSyncManager(private val context: Context) {
                     "currentAmount" to g.currentAmount,
                     "monthlyContribution" to g.monthlyContribution,
                     "targetYear" to g.targetYear,
-                    "colorHex" to g.colorHex
+                    "colorHex" to g.colorHex,
+                    "currencyCode" to g.currencyCode
                 )
                 goalsCollection.document(g.id.toString()).set(gMap, SetOptions.merge()).awaitTask()
             }
@@ -270,7 +300,7 @@ class FirestoreSyncManager(private val context: Context) {
             val budgetsCollection = vaultRef.collection("budgets")
             budgets.forEach { b ->
                 budgetsCollection.document(b.category.name).set(
-                    hashMapOf("category" to b.category.name, "monthlyLimit" to b.monthlyLimit),
+                    hashMapOf("category" to b.category.name, "monthlyLimit" to b.monthlyLimit, "currencyCode" to b.currencyCode),
                     SetOptions.merge()
                 ).awaitTask()
             }
@@ -324,7 +354,7 @@ class FirestoreSyncManager(private val context: Context) {
             vaultRef.collection("settings").document("preferences")
                 .set(settingsMap, SetOptions.merge()).awaitTask()
 
-            val totalCount = transactions.size + holdings.size + sips.size + cards.size + loans.size + goals.size +
+            val totalCount = transactions.size + accounts.size + holdings.size + sips.size + cards.size + loans.size + goals.size +
                 budgets.size + netWorthSnapshots.size
             CloudSyncResult(
                 success = true,
@@ -362,6 +392,25 @@ class FirestoreSyncManager(private val context: Context) {
             val authUser = getAuthInstance()?.currentUser
                 ?: return@withContext CloudSyncResult(false, "Please sign in before restoring from Firestore.")
             val vaultRef = firestore.collection("wealth_vaults").document(authUser.uid)
+
+            // Restore cash accounts first because transaction rows reference these stable IDs.
+            val accountSnap = vaultRef.collection("accounts").get().awaitTask()
+            val accountList = accountSnap.documents.mapNotNull { doc ->
+                try {
+                    AccountEntity(
+                        id = doc.getLong("id") ?: doc.id.toLong(),
+                        name = doc.getString("name") ?: "Restored account",
+                        accountType = doc.getString("accountType") ?: "OTHER",
+                        currencyCode = doc.getString("currencyCode"),
+                        openingBalance = doc.getDouble("openingBalance") ?: 0.0,
+                        openingBalanceMillis = doc.getLong("openingBalanceMillis") ?: 0L,
+                        statementBalance = doc.getDouble("statementBalance"),
+                        lastReconciledMillis = doc.getLong("lastReconciledMillis"),
+                        isActive = doc.getBoolean("isActive") ?: true,
+                        openingBalanceConfirmed = doc.getBoolean("openingBalanceConfirmed") ?: false
+                    )
+                } catch (e: Exception) { null }
+            }
 
             // 1. Transactions
             val txSnap = vaultRef.collection("transactions").get().awaitTask()
@@ -401,7 +450,16 @@ class FirestoreSyncManager(private val context: Context) {
                             )
                         ) "PENDING_REVIEW" else "MANUAL",
                         importSource = doc.getString("importSource"),
-                        sourceReference = doc.getString("sourceReference")
+                        sourceReference = doc.getString("sourceReference"),
+                        accountId = doc.getLong("accountId") ?: accountList.firstOrNull {
+                            it.name == (doc.getString("account") ?: "")
+                        }?.id,
+                        currencyCode = doc.getString("currencyCode") ?: accountList.firstOrNull {
+                            it.id == doc.getLong("accountId")
+                        }?.currencyCode,
+                        transactionKind = try { TransactionKind.valueOf(doc.getString("transactionKind") ?: "STANDARD") }
+                            catch (e: Exception) { TransactionKind.STANDARD },
+                        transferGroupId = doc.getString("transferGroupId")
                     )
                 } catch (e: Exception) {
                     null
@@ -420,7 +478,8 @@ class FirestoreSyncManager(private val context: Context) {
                         shares = doc.getDouble("shares") ?: 0.0,
                         avgBuyPrice = doc.getDouble("avgBuyPrice") ?: 0.0,
                         currentPrice = doc.getDouble("currentPrice") ?: 0.0,
-                        dailyChangePercent = doc.getDouble("dailyChangePercent") ?: 0.0
+                        dailyChangePercent = doc.getDouble("dailyChangePercent") ?: 0.0,
+                        currencyCode = doc.getString("currencyCode")
                     )
                 } catch (e: Exception) {
                     null
@@ -440,7 +499,8 @@ class FirestoreSyncManager(private val context: Context) {
                         isActive = doc.getBoolean("isActive") ?: true,
                         totalInvested = doc.getDouble("totalInvested") ?: 0.0,
                         annualizedReturnPercent = doc.getDouble("annualizedReturnPercent") ?: 0.0,
-                        lastDebitedYearMonth = doc.getString("lastDebitedYearMonth")
+                        lastDebitedYearMonth = doc.getString("lastDebitedYearMonth"),
+                        currencyCode = doc.getString("currencyCode")
                     )
                 } catch (e: Exception) {
                     null
@@ -459,7 +519,8 @@ class FirestoreSyncManager(private val context: Context) {
                         creditLimit = doc.getDouble("creditLimit") ?: 0.0,
                         apr = doc.getDouble("apr") ?: 18.0,
                         dueDateDays = doc.getLong("dueDateDays")?.toInt() ?: 15,
-                        colorHex = doc.getString("colorHex") ?: "#1E293B"
+                        colorHex = doc.getString("colorHex") ?: "#1E293B",
+                        currencyCode = doc.getString("currencyCode")
                     )
                 } catch (e: Exception) {
                     null
@@ -480,7 +541,8 @@ class FirestoreSyncManager(private val context: Context) {
                         interestRate = doc.getDouble("interestRate") ?: 12.0,
                         totalMonths = doc.getLong("totalMonths")?.toInt() ?: 60,
                         remainingMonths = doc.getLong("remainingMonths")?.toInt() ?: 0,
-                        dueDayOfMonth = doc.getLong("dueDayOfMonth")?.toInt() ?: 15
+                        dueDayOfMonth = doc.getLong("dueDayOfMonth")?.toInt() ?: 15,
+                        currencyCode = doc.getString("currencyCode")
                     )
                 } catch (e: Exception) {
                     null
@@ -499,7 +561,8 @@ class FirestoreSyncManager(private val context: Context) {
                         currentAmount = doc.getDouble("currentAmount") ?: 0.0,
                         monthlyContribution = doc.getDouble("monthlyContribution") ?: 0.0,
                         targetYear = doc.getLong("targetYear")?.toInt() ?: 2026,
-                        colorHex = doc.getString("colorHex") ?: "#10B981"
+                        colorHex = doc.getString("colorHex") ?: "#10B981",
+                        currencyCode = doc.getString("currencyCode")
                     )
                 } catch (e: Exception) {
                     null
@@ -512,7 +575,8 @@ class FirestoreSyncManager(private val context: Context) {
                 try {
                     BudgetEntity(
                         category = Category.valueOf(doc.getString("category") ?: doc.id),
-                        monthlyLimit = doc.getDouble("monthlyLimit") ?: 0.0
+                        monthlyLimit = doc.getDouble("monthlyLimit") ?: 0.0,
+                        currencyCode = doc.getString("currencyCode")
                     )
                 } catch (e: Exception) {
                     null
@@ -541,6 +605,7 @@ class FirestoreSyncManager(private val context: Context) {
             }
 
             // Insert into Room
+            if (accountList.isNotEmpty()) dao.insertAccounts(accountList)
             if (txList.isNotEmpty()) dao.insertTransactions(txList)
             if (hList.isNotEmpty()) dao.insertHoldings(hList)
             if (sList.isNotEmpty()) dao.insertSips(sList)
