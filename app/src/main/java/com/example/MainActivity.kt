@@ -388,18 +388,21 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     if (showAddHoldingDialog) {
         AddHoldingDialog(
             defaultCurrency = userSettings.currency,
+            accounts = accounts,
             onDismiss = { showAddHoldingDialog = false },
-            onAdd = { sym, name, type, shares, avg, cur, currencyCode ->
-                viewModel.addHolding(sym, name, type, shares, avg, cur, currencyCode)
+            onAdd = { sym, name, type, shares, avg, cur, currencyCode, purchaseAccount ->
+                viewModel.addHolding(sym, name, type, shares, avg, cur, currencyCode, purchaseAccount)
             }
         )
     }
 
     if (showAddSipDialog) {
         AddSipDialog(
+            defaultCurrency = userSettings.currency,
+            accounts = accounts,
             onDismiss = { showAddSipDialog = false },
-            onAdd = { fund, cat, amt, day ->
-                viewModel.addSip(fund, cat, amt, day)
+            onAdd = { fund, cat, amt, day, currencyCode, contributionAccount ->
+                viewModel.addSip(fund, cat, amt, day, currencyCode, contributionAccount)
             }
         )
     }
