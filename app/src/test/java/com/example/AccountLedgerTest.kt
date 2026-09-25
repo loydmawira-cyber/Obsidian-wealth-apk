@@ -141,6 +141,28 @@ class AccountLedgerTest {
         assertEquals(1, original.size)
     }
 
+    @Test
+    fun cardPurchasesDoNotReduceCashButLoanProceedsIncreaseTheirDepositAccount() {
+        val account = AccountEntity(
+            id = 5, name = "Checking", currencyCode = "KES", openingBalance = 1_000.0,
+            openingBalanceMillis = 0L, openingBalanceConfirmed = true
+        )
+        val cardPurchase = TransactionEntity(
+            id = 20, title = "Groceries", amount = 100.0, type = TransactionType.EXPENSE,
+            category = Category.FOOD_DINING, account = "Everyday Card", currencyCode = "KES",
+            transactionKind = TransactionKind.CREDIT_CARD_PURCHASE, creditCardId = 3
+        )
+        val loanTopUp = TransactionEntity(
+            id = 21, title = "Loan proceeds", amount = 250.0, type = TransactionType.INCOME,
+            category = Category.LOAN_TOP_UP, account = "Checking", accountId = account.id,
+            currencyCode = "KES", transactionKind = TransactionKind.LOAN_TOP_UP, loanId = 8
+        )
+
+        assertEquals(1_250.0, AccountLedger.currentBalance(account, listOf(cardPurchase, loanTopUp)), 0.0001)
+        assertEquals(0.0, AccountLedger.signedEffect(cardPurchase), 0.0001)
+        assertEquals(250.0, AccountLedger.signedEffect(loanTopUp), 0.0001)
+    }
+
     private fun tx(accountId: Long, date: Long, amount: Double, type: TransactionType, status: String = "MANUAL") =
         TransactionEntity(
             id = date,
