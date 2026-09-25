@@ -6,6 +6,8 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Transaction
+import com.example.data.models.AccountEntity
 import com.example.data.models.CreditCardEntity
 import com.example.data.models.GoalEntity
 import com.example.data.models.HoldingEntity
@@ -14,10 +16,78 @@ import com.example.data.models.BudgetEntity
 import com.example.data.models.NetWorthSnapshotEntity
 import com.example.data.models.SipEntity
 import com.example.data.models.TransactionEntity
+import com.example.data.models.AccountLedger
+import com.example.data.models.TransactionKind
+import com.example.data.models.TransactionType
+import com.example.data.models.Category
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FinanceDao {
+
+    // --- Cash / bank / mobile-money accounts ---
+    @Query("SELECT * FROM accounts ORDER BY isActive DESC, name ASC")
+    fun getAllAccounts(): Flow<List<AccountEntity>>
+
+    @Query("SELECT * FROM accounts ORDER BY isActive DESC, name ASC")
+    suspend fun getAccountsSnapshot(): List<AccountEntity>
+
+    @Query("SELECT * FROM accounts WHERE id = :id LIMIT 1")
+    suspend fun getAccount(id: Long): AccountEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAccount(account: AccountEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAccounts(accounts: List<AccountEntity>)
+
+    @Update
+    suspend fun updateAccount(account: AccountEntity)
+
+    @Query("UPDATE transactions SET currencyCode = :currencyCode WHERE accountId = :accountId AND currencyCode IS NULL")
+    suspend fun resolveTransactionCurrency(accountId: Long, currencyCode: String)
+
+    @Query("DELETE FROM accounts")
+    suspend fun clearAllAccounts()
+
+    @Transaction
+    suspend fun recordTransfer(source: TransactionEntity, destination: TransactionEntity): Boolean {
+        val sourceId = source.accountId ?: return false
+        val destinationId = destination.accountId ?: return false
+        val from = getAccount(sourceId) ?: return false
+        val to = getAccount(destinationId) ?: return false
+        val amount = source.amount
+        if (!from.isActive || !to.isActive || sourceId == destinationId || amount <= 0.0 || !amount.isFinite() ||
+            destination.amount != amount || from.currencyCode.isNullOrBlank() || from.currencyCode != to.currencyCode ||
+            source.currencyCode != from.currencyCode || destination.currencyCode != to.currencyCode ||
+            source.transactionKind != TransactionKind.TRANSFER || destination.transactionKind != TransactionKind.TRANSFER ||
+            source.type != TransactionType.EXPENSE || destination.type != TransactionType.INCOME ||
+            source.category != Category.ACCOUNT_TRANSFER || destination.category != Category.ACCOUNT_TRANSFER ||
+            source.transferGroupId.isNullOrBlank() || source.transferGroupId != destination.transferGroupId) return false
+        val sourceBalance = AccountLedger.currentBalance(from, getTransactionsSnapshot())
+        if (!sourceBalance.isFinite() || sourceBalance + 0.000001 < amount) return false
+        insertTransaction(source)
+        insertTransaction(destination)
+        return true
+    }
+
+    @Transaction
+    suspend fun recordReconciliation(account: AccountEntity, adjustment: TransactionEntity) {
+        insertTransaction(adjustment)
+        updateAccount(account)
+    }
+
+    @Transaction
+    suspend fun recordCreditCardSettlement(card: CreditCardEntity, transaction: TransactionEntity) {
+        updateCreditCard(card)
+        insertTransaction(transaction)
+    }
+
+    @Transaction
+    suspend fun recordLoanSettlement(loan: LoanEntity, transaction: TransactionEntity) {
+        updateLoan(loan)
+        insertTransaction(transaction)
+    }
 
     // --- Transactions ---
     @Query("SELECT * FROM transactions ORDER BY dateMillis DESC")
