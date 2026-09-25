@@ -46,7 +46,10 @@ class FinanceRepository(private val dao: FinanceDao) {
     // Transaction Operations
     suspend fun deleteTransactionsBySourceReference(reference: String) = dao.deleteTransactionsBySourceReference(reference)
     suspend fun addTransaction(transaction: TransactionEntity): Long = dao.insertTransaction(transaction)
+    suspend fun addCashTransaction(transaction: TransactionEntity): Boolean = dao.insertCashTransaction(transaction)
     suspend fun updateTransaction(transaction: TransactionEntity) = dao.updateTransaction(transaction)
+    suspend fun updateCashTransaction(transaction: TransactionEntity): Boolean = dao.updateCashTransaction(transaction)
+    suspend fun confirmCashTransaction(transaction: TransactionEntity): Boolean = dao.confirmCashTransaction(transaction)
     suspend fun deleteTransaction(transaction: TransactionEntity) = dao.deleteTransaction(transaction)
     suspend fun isFingerprintImported(fingerprint: String): Boolean = dao.hasTransactionWithFingerprint(fingerprint) > 0
     suspend fun getTransactionByFingerprint(fingerprint: String): TransactionEntity? = dao.findTransactionByFingerprint(fingerprint)
@@ -73,11 +76,11 @@ class FinanceRepository(private val dao: FinanceDao) {
     suspend fun payCreditCard(card: CreditCardEntity, paymentAmount: Double, transaction: TransactionEntity): Double {
         val actualPayment = paymentAmount.coerceAtLeast(0.0).coerceAtMost(card.currentBalance)
         if (!actualPayment.isFinite() || actualPayment <= 0.0) return 0.0
-        dao.recordCreditCardSettlement(
+        val recorded = dao.recordCreditCardSettlement(
             card.copy(currentBalance = (card.currentBalance - actualPayment).coerceAtLeast(0.0)),
             transaction.copy(amount = actualPayment)
         )
-        return actualPayment
+        return if (recorded) actualPayment else 0.0
     }
 
     // Loan Operations
@@ -95,11 +98,11 @@ class FinanceRepository(private val dao: FinanceDao) {
         val principalPaid = (paymentAmount - monthlyInterest).coerceIn(0.0, loan.remainingBalance)
         val newBalance = (loan.remainingBalance - principalPaid).coerceAtLeast(0.0)
         val newRemainingMonths = if (principalPaid > 0.0) (loan.remainingMonths - 1).coerceAtLeast(0) else loan.remainingMonths
-        dao.recordLoanSettlement(
+        val recorded = dao.recordLoanSettlement(
             loan.copy(remainingBalance = newBalance, remainingMonths = newRemainingMonths),
             transaction.copy(amount = paymentAmount)
         )
-        return paymentAmount
+        return if (recorded) paymentAmount else 0.0
     }
 
     // Goal Operations
