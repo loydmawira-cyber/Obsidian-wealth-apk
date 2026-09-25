@@ -35,6 +35,29 @@ class AccountLedgerTest {
     }
 
     @Test
+    fun spendGuardAllowsOnlyAmountsCoveredByConfirmedCashBalance() {
+        val account = AccountEntity(
+            id = 12, name = "Spending account", currencyCode = "KES", openingBalance = 100.0,
+            openingBalanceMillis = 0L, openingBalanceConfirmed = true
+        )
+        val rows = listOf(
+            tx(12, 10L, 60.0, TransactionType.EXPENSE),
+            tx(12, 12L, 40.0, TransactionType.EXPENSE),
+            tx(12, 11L, 500.0, TransactionType.INCOME, status = "PENDING_REVIEW"),
+            TransactionEntity(
+                title = "Card purchase", amount = 900.0, type = TransactionType.EXPENSE,
+                category = Category.FOOD_DINING, account = "Credit card", currencyCode = "KES",
+                transactionKind = TransactionKind.CREDIT_CARD_PURCHASE, creditCardId = 5
+            )
+        )
+
+        assertTrue(AccountLedger.hasSufficientBalance(account, rows, 40.0, 12L))
+        assertFalse(AccountLedger.hasSufficientBalance(account, rows, 40.01, 12L))
+        assertFalse(AccountLedger.hasSufficientBalance(account, rows, 0.0, 12L))
+        assertFalse(AccountLedger.hasSufficientBalance(account, rows, 1.0, 12L + 1L))
+    }
+
+    @Test
     fun reconciliationDifferenceIsStatementLessLedgerBalance() {
         assertEquals(-125.5, AccountLedger.reconciliationAdjustment(1_000.0, 874.5), 0.0001)
         assertEquals(125.5, AccountLedger.reconciliationAdjustment(874.5, 1_000.0), 0.0001)
