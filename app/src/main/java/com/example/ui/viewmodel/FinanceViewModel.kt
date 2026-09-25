@@ -1373,9 +1373,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteTransaction(transaction: TransactionEntity) {
         viewModelScope.launch {
-            queueCloudDeletion("transactions", transaction.id)
-            repository.deleteTransaction(transaction)
-            syncVaultToCloud()
+            val deleted = if (transaction.sourceReference?.startsWith("goal-contribution:") == true) {
+                repository.deleteGoalContribution(transaction.id)
+            } else {
+                repository.deleteTransaction(transaction)
+                true
+            }
+            if (deleted) {
+                queueCloudDeletion("transactions", transaction.id)
+                syncVaultToCloud()
+            }
         }
     }
 
@@ -1796,12 +1803,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Updates goal progress only; this action does not move money in a cash account. */
-    fun contributeGoal(goal: GoalEntity, amount: Double) {
-        if (amount <= 0.0 || !amount.isFinite() || goal.currencyCode.isNullOrBlank()) return
+    /** Debits the selected cash account and increases goal progress in one database transaction. */
+    fun contributeGoal(goal: GoalEntity, amount: Double, sourceAccount: AccountEntity) {
+        if (amount <= 0.0 || !amount.isFinite() || goal.currencyCode.isNullOrBlank() ||
+            !sourceAccount.isActive || sourceAccount.currencyCode != goal.currencyCode) return
         viewModelScope.launch {
-            repository.contributeToGoal(goal, amount)
-            syncVaultToCloud()
+            val transaction = TransactionEntity(
+                title = "Goal deposit: ${goal.title}",
+                amount = amount,
+                type = TransactionType.EXPENSE,
+                category = Category.GOAL_SAVINGS,
+                account = sourceAccount.name,
+                note = "Deposit to goal ${goal.title}",
+                accountId = sourceAccount.id,
+                currencyCode = goal.currencyCode,
+                transactionKind = TransactionKind.ASSET_CONVERSION,
+                sourceReference = "goal-contribution:${goal.id}"
+            )
+            if (repository.recordGoalContribution(goal.id, transaction)) {
+                syncVaultToCloud()
+            } else {
+                _actionMessages.tryEmit("Goal deposit not recorded. Check the selected account's available balance and currency.")
+            }
         }
     }
 
