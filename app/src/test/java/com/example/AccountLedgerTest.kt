@@ -46,7 +46,7 @@ class AccountLedgerTest {
             id = 8, name = "New account", currencyCode = "USD", openingBalance = 300.0,
             openingBalanceMillis = 100L, openingBalanceConfirmed = true
         )
-        val openingInstantTransaction = tx(8, 100L, 25.0, TransactionType.EXPENSE)
+        val openingInstantTransaction = tx(8, 100L, 25.0, TransactionType.EXPENSE).copy(currencyCode = "USD")
 
         assertEquals(0.0, AccountLedger.balanceAt(account, listOf(openingInstantTransaction), 99L), 0.0001)
         assertEquals(300.0, AccountLedger.balanceAt(account, listOf(openingInstantTransaction), 100L), 0.0001)

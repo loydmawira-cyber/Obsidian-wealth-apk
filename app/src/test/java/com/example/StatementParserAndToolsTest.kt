@@ -4,12 +4,14 @@ import com.example.ai.AdvisorToolRegistry
 import com.example.ai.GeminiClient
 import com.example.data.dao.FinanceDao
 import com.example.data.models.AccountEntity
+import com.example.data.models.BudgetEntity
 import com.example.data.models.Category
 import com.example.data.models.CreditCardEntity
 import com.example.data.models.GoalEntity
 import com.example.data.models.HoldingEntity
 import com.example.data.models.HoldingType
 import com.example.data.models.LoanEntity
+import com.example.data.models.NetWorthSnapshotEntity
 import com.example.data.models.SipEntity
 import com.example.data.models.TransactionEntity
 import com.example.data.models.TransactionType
@@ -121,6 +123,20 @@ class StatementParserAndToolsTest {
             override suspend fun clearAllTransactions() {}
             override suspend fun findTransactionByFingerprint(fingerprint: String): TransactionEntity? = null
             override suspend fun hasTransactionWithFingerprint(fingerprint: String): Int = 0
+            override suspend fun hasTransactionWithSourceReference(reference: String): Int = 0
+            override suspend fun deleteTransactionsBySourceReference(reference: String) {}
+            override fun getAllSnapshots(): Flow<List<NetWorthSnapshotEntity>> = flowOf(emptyList())
+            override suspend fun upsertSnapshot(snapshot: NetWorthSnapshotEntity) {}
+            override suspend fun clearAllSnapshots() {}
+            override fun getAllBudgets(): Flow<List<BudgetEntity>> = flowOf(emptyList())
+            override suspend fun upsertBudget(budget: BudgetEntity) {}
+            override suspend fun deleteBudget(budget: BudgetEntity) {}
+            override suspend fun clearAllBudgets() {}
+            override suspend fun getBudgetsSnapshot(): List<BudgetEntity> = emptyList()
+            override suspend fun upsertBudgets(budgets: List<BudgetEntity>) {}
+            override suspend fun getNetWorthSnapshotsSnapshot(): List<NetWorthSnapshotEntity> = emptyList()
+            override suspend fun upsertSnapshots(snapshots: List<NetWorthSnapshotEntity>) {}
+            override suspend fun updateImportStatus(id: Long, status: String) {}
 
             override fun getAllHoldings(): Flow<List<HoldingEntity>> = flowOf(emptyList())
             override suspend fun getHoldingsSnapshot(): List<HoldingEntity> = listOf(
