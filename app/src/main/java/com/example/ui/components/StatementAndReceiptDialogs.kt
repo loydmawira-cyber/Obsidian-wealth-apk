@@ -38,6 +38,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -45,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -215,6 +217,23 @@ fun StatementPreviewDialog(
                     modifier = Modifier.heightIn(max = 320.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    item {
+                        Column {
+                            Text("Import account and currency", color = TextSecondary, fontSize = 11.sp)
+                            if (accounts.none { it.isActive && !it.currencyCode.isNullOrBlank() }) {
+                                Text("Create an account with a confirmed currency before importing.", color = Color(0xFFF59E0B), fontSize = 11.sp)
+                            }
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() }) { candidate ->
+                                    FilterChip(
+                                        selected = candidate.id == selectedAccount?.id,
+                                        onClick = { selectedAccount = candidate },
+                                        label = { Text("${candidate.name} · ${candidate.currencyCode}", fontSize = 10.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    }
                     items(parsedTransactions.size) { idx ->
                         val tx = parsedTransactions[idx]
                         val isSelected = selectedIndices.contains(idx)
@@ -544,17 +563,3 @@ fun ReceiptReviewDialog(
         }
     )
 }
-                    item {
-                        Column {
-                            Text("Import account and currency", color = TextSecondary, fontSize = 11.sp)
-                            if (accounts.none { it.isActive && !it.currencyCode.isNullOrBlank() }) {
-                                Text("Create an account with a confirmed currency before importing.", color = Color(0xFFF59E0B), fontSize = 11.sp)
-                            }
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() }) { account ->
-                                    FilterChip(selected = account.id == selectedAccount?.id, onClick = { selectedAccount = account }, label = { Text("${account.name} · ${account.currencyCode}", fontSize = 10.sp) })
-                                }
-                            }
-                        }
-                    }
-                    items(parsedTransactions.size) { idx ->
