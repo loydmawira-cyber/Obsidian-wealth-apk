@@ -68,6 +68,29 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Previous versions generated these records from a schedule, not an actual payment.
+        // Preserve them for customer confirmation and exclude them from totals until reviewed.
+        db.execSQL(
+            "UPDATE transactions SET importStatus = 'PENDING_REVIEW' " +
+                "WHERE category = 'INVESTMENT_SIP' AND type = 'EXPENSE' AND " +
+                "note IN ('Automated SIP investment recorded in Obsidian Wealth', " +
+                "'Automated recurring SIP debit recorded by Obsidian Wealth')"
+        )
+        db.execSQL(
+            "UPDATE transactions SET category = 'DEBT_PAYMENT' " +
+                "WHERE category = 'OTHER' AND type = 'EXPENSE' AND " +
+                "title LIKE 'Payment to %' AND note = 'Card debt reduction'"
+        )
+        db.execSQL(
+            "UPDATE transactions SET category = 'DEBT_PAYMENT' " +
+                "WHERE category = 'LOAN_EMI' AND type = 'EXPENSE' AND " +
+                "title LIKE 'EMI: %' AND note = 'Manual EMI payment recorded in Obsidian Wealth'"
+        )
+    }
+}
+
 @Database(
     entities = [
         TransactionEntity::class,
@@ -79,7 +102,7 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         NetWorthSnapshotEntity::class,
         BudgetEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -95,7 +118,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "obsidian_wealth_v3.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance
