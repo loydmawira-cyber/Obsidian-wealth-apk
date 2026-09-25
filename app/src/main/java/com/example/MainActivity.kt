@@ -57,6 +57,8 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 
 import androidx.compose.material3.FabPosition
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -65,6 +67,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -141,6 +144,7 @@ import com.example.ui.theme.TextSecondary
 
 import com.example.ui.viewmodel.FinanceTab
 import com.example.ui.viewmodel.FinanceViewModel
+import kotlinx.coroutines.flow.collect
 
 class MainActivity : ComponentActivity() {
     private val viewModel: FinanceViewModel by viewModels()
@@ -240,6 +244,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     val userSettings by viewModel.userSettings.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
+    val pendingReviewCount = transactions.count { it.importStatus == "PENDING_REVIEW" }
 
     // Dialog & Sheet States
     var showAddTransactionDialog by remember { mutableStateOf(false) }
@@ -266,9 +271,19 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     var holdingToEdit by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
     var holdingToDelete by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
 
+    LaunchedEffect(pendingReviewCount) {
+        showImportedTransactionsDialog = pendingReviewCount > 0
+    }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(viewModel) {
+        viewModel.actionMessages.collect { message -> snackbarHostState.showSnackbar(message) }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             ObsidianTopBar(
                 userSettings = userSettings,
@@ -363,6 +378,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     if (showAddTransactionDialog) {
         AddTransactionDialog(
             accounts = accounts,
+            availableBalance = viewModel::availableAccountBalance,
+            formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
             onDismiss = { showAddTransactionDialog = false },
             onAdd = { title, amt, type, cat, account, note ->
                 viewModel.addTransaction(title, amt, type, cat, account, note = note)
@@ -377,6 +394,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     if (showAiSmartLogDialog) {
         AiSmartLogDialog(
             accounts = accounts,
+            availableBalance = viewModel::availableAccountBalanceAt,
+            formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
             onDismiss = { showAiSmartLogDialog = false },
             onConfirm = { transaction ->
                 viewModel.addTransaction(transaction)
@@ -537,6 +556,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
             currencyCode = loan.currencyCode,
             remainingBalance = loan.remainingBalance,
             interestRate = loan.interestRate,
+            availableBalance = viewModel::availableAccountBalance,
+            formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
             onDismiss = { loanToPay = null },
             onConfirm = { account -> viewModel.payLoanEmi(loan, account) }
         )
@@ -553,6 +574,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         PayCreditCardDialog(
             card = cardToPay!!,
             accounts = accounts,
+            availableBalance = viewModel::availableAccountBalance,
+            formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
             onDismiss = { cardToPay = null },
             onPay = { amt, account ->
                 viewModel.payCreditCard(cardToPay!!, amt, account)
@@ -590,6 +613,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
             transactions = transactions.filter { it.importStatus == "PENDING_REVIEW" },
             accounts = accounts,
             formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
+            availableBalance = viewModel::availableAccountBalanceAt,
             onConfirm = { transaction, account -> viewModel.confirmImportedTransaction(transaction, account) },
             onIgnore = viewModel::ignoreImportedTransaction,
             onDismiss = { showImportedTransactionsDialog = false }
