@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Security
@@ -110,7 +111,6 @@ import com.example.ui.components.ConfirmDeleteSipDialog
 import com.example.ui.components.EditSipDialog
 import com.example.ui.components.SipActionDialog
 import com.example.ui.components.AddTransactionDialog
-import com.example.ui.components.AiSmartLogDialog
 import com.example.ui.components.ExportReportDialog
 import com.example.ui.components.ObsidianAiAdvisorSheet
 import com.example.ui.components.ObsidianSettingsSheet
@@ -123,6 +123,7 @@ import com.example.ui.screens.InvestmentsScreen
 import com.example.ui.screens.OverviewScreen
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.CyanLight
+import com.example.ui.theme.CrimsonDebt
 import com.example.ui.theme.ElectricIndigo
 import com.example.ui.theme.EmeraldGrowth
 import com.example.ui.theme.EmeraldLight
@@ -248,7 +249,6 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
 
     // Dialog & Sheet States
     var showAddTransactionDialog by remember { mutableStateOf(false) }
-    var showAiSmartLogDialog by remember { mutableStateOf(false) }
     var showAddHoldingDialog by remember { mutableStateOf(false) }
     var showAddSipDialog by remember { mutableStateOf(false) }
     var showAddLoanDialog by remember { mutableStateOf(false) }
@@ -271,10 +271,6 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     var holdingToEdit by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
     var holdingToDelete by remember { mutableStateOf<com.example.data.models.HoldingEntity?>(null) }
 
-    LaunchedEffect(pendingReviewCount) {
-        showImportedTransactionsDialog = pendingReviewCount > 0
-    }
-
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) {
         viewModel.actionMessages.collect { message -> snackbarHostState.showSnackbar(message) }
@@ -289,7 +285,9 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
                 userSettings = userSettings,
                 onOpenSettings = { showSettingsSheet = true },
                 onToggleHideBalances = { viewModel.toggleHideBalances() },
-                onOpenThemePicker = { showThemePickerDialog = true }
+                onOpenThemePicker = { showThemePickerDialog = true },
+                pendingApprovalCount = pendingReviewCount,
+                onOpenApprovals = { showImportedTransactionsDialog = true }
             )
         },
         floatingActionButton = {
@@ -332,9 +330,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
 
                     FinanceTab.CASH_FLOW -> CashFlowScreen(
                         viewModel = viewModel,
-                        onQuickAdd = { showAddTransactionDialog = true },
-                        onAiSmartLog = { showAiSmartLogDialog = true },
-                        onReviewImported = { showImportedTransactionsDialog = true }
+                        onQuickAdd = { showAddTransactionDialog = true }
                     )
 
                     FinanceTab.INVEST -> InvestmentsScreen(
@@ -383,26 +379,10 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
             onDismiss = { showAddTransactionDialog = false },
             onAdd = { title, amt, type, cat, account, note ->
                 viewModel.addTransaction(title, amt, type, cat, account, note = note)
-            },
-            onAiSmartLog = {
-                showAddTransactionDialog = false
-                showAiSmartLogDialog = true
             }
         )
     }
 
-    if (showAiSmartLogDialog) {
-        AiSmartLogDialog(
-            accounts = accounts,
-            availableBalance = viewModel::availableAccountBalanceAt,
-            formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
-            onDismiss = { showAiSmartLogDialog = false },
-            onConfirm = { transaction ->
-                viewModel.addTransaction(transaction)
-                showAiSmartLogDialog = false
-            }
-        )
-    }
 
     if (showAddHoldingDialog) {
         AddHoldingDialog(
@@ -626,7 +606,9 @@ fun ObsidianTopBar(
     userSettings: UserSettings,
     onOpenSettings: () -> Unit = {},
     onToggleHideBalances: () -> Unit = {},
-    onOpenThemePicker: () -> Unit = {}
+    onOpenThemePicker: () -> Unit = {},
+    pendingApprovalCount: Int = 0,
+    onOpenApprovals: () -> Unit = {}
 ) {
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
     val accent = MaterialTheme.colorScheme.primary
@@ -745,6 +727,43 @@ fun ObsidianTopBar(
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+                    }
+
+                    // Pending transaction approvals inbox
+                    Box(modifier = Modifier.size(32.dp)) {
+                        IconButton(
+                            onClick = onOpenApprovals,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(ObsidianSurfaceVariant, CircleShape)
+                                .border(1.dp, accent.copy(alpha = 0.45f), CircleShape)
+                                .testTag("open_approvals_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = if (pendingApprovalCount > 0) "Approvals, $pendingApprovalCount waiting" else "Approvals",
+                                tint = if (pendingApprovalCount > 0) SovereignGold else TextMuted,
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+                        if (pendingApprovalCount > 0) {
+                            Surface(
+                                shape = CircleShape,
+                                color = CrimsonDebt,
+                                border = BorderStroke(1.dp, barBg),
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(end = 1.dp)
+                            ) {
+                                Text(
+                                    text = if (pendingApprovalCount > 99) "99+" else pendingApprovalCount.toString(),
+                                    color = Color.White,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                     }
 
