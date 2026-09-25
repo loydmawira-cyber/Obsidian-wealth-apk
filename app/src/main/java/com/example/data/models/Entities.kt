@@ -7,6 +7,10 @@ enum class TransactionType {
     INCOME, EXPENSE
 }
 
+enum class TransactionKind {
+    STANDARD, TRANSFER, DEBT_SETTLEMENT, ADJUSTMENT, ASSET_CONVERSION
+}
+
 enum class HoldingType {
     STOCK, ETF, MUTUAL_FUND, CRYPTO, GOLD
 }
@@ -15,7 +19,7 @@ enum class Category {
     SALARY, FREELANCE, DIVIDENDS, RENTAL,
     HOUSING, FOOD_DINING, UTILITIES, TRANSPORT,
     SHOPPING, HEALTHCARE, SUBSCRIPTIONS, ENTERTAINMENT,
-    INVESTMENT_SIP, LOAN_EMI, DEBT_PAYMENT, OTHER,
+    INVESTMENT_SIP, INVESTMENT_SALE, LOAN_EMI, DEBT_PAYMENT, ACCOUNT_TRANSFER, ACCOUNT_ADJUSTMENT, OTHER,
     // Money moved into or out of a savings goal: a transfer, not spending.
     GOAL_SAVINGS
 }
@@ -34,7 +38,25 @@ data class TransactionEntity(
     val statementFingerprint: String? = null,
     val importStatus: String = "MANUAL",
     val importSource: String? = null,
-    val sourceReference: String? = null
+    val sourceReference: String? = null,
+    val accountId: Long? = null,
+    val currencyCode: String? = null,
+    val transactionKind: TransactionKind = TransactionKind.STANDARD,
+    val transferGroupId: String? = null
+)
+
+@Entity(tableName = "accounts")
+data class AccountEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val accountType: String = "OTHER",
+    val currencyCode: String? = null,
+    val openingBalance: Double = 0.0,
+    val openingBalanceMillis: Long = System.currentTimeMillis(),
+    val statementBalance: Double? = null,
+    val lastReconciledMillis: Long? = null,
+    val isActive: Boolean = true,
+    val openingBalanceConfirmed: Boolean = false
 )
 
 @Entity(tableName = "holdings")
@@ -46,7 +68,8 @@ data class HoldingEntity(
     val shares: Double,
     val avgBuyPrice: Double,
     val currentPrice: Double,
-    val dailyChangePercent: Double
+    val dailyChangePercent: Double,
+    val currencyCode: String? = null
 ) {
     val totalValue: Double get() = shares * currentPrice
     val totalCost: Double get() = shares * avgBuyPrice
@@ -67,7 +90,8 @@ data class SipEntity(
     // Legacy field retained for cloud/database compatibility; not shown as realized performance.
     val annualizedReturnPercent: Double = 0.0,
     // Legacy field retained for compatibility. New builds never run an automatic debit engine.
-    val lastDebitedYearMonth: String? = null
+    val lastDebitedYearMonth: String? = null,
+    val currencyCode: String? = null
 )
 
 @Entity(tableName = "credit_cards")
@@ -79,7 +103,8 @@ data class CreditCardEntity(
     val creditLimit: Double,
     val apr: Double,
     val dueDateDays: Int, // e.g. Due in 6 days
-    val colorHex: String = "#1E293B"
+    val colorHex: String = "#1E293B",
+    val currencyCode: String? = null
 ) {
     val utilizationPercent: Double get() = if (creditLimit > 0) (currentBalance / creditLimit) * 100.0 else 0.0
 }
@@ -95,7 +120,8 @@ data class LoanEntity(
     val interestRate: Double,
     val totalMonths: Int,
     val remainingMonths: Int,
-    val dueDayOfMonth: Int = 15
+    val dueDayOfMonth: Int = 15,
+    val currencyCode: String? = null
 ) {
     val paidPercent: Double get() = if (totalAmount > 0) ((totalAmount - remainingBalance) / totalAmount) * 100.0 else 0.0
 }
@@ -109,7 +135,8 @@ data class GoalEntity(
     val currentAmount: Double,
     val monthlyContribution: Double,
     val targetYear: Int = 2026,
-    val colorHex: String = "#10B981"
+    val colorHex: String = "#10B981",
+    val currencyCode: String? = null
 ) {
     val progressPercent: Double get() = if (targetAmount > 0) (currentAmount / targetAmount).coerceIn(0.0, 1.0) * 100.0 else 0.0
     val monthsRemaining: Int get() = if (monthlyContribution > 0) {
@@ -134,5 +161,6 @@ data class NetWorthSnapshotEntity(
 @Entity(tableName = "budgets")
 data class BudgetEntity(
     @PrimaryKey val category: Category,
-    val monthlyLimit: Double
+    val monthlyLimit: Double,
+    val currencyCode: String? = null
 )
