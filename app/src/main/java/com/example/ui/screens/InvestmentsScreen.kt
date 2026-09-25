@@ -198,6 +198,16 @@ fun InvestmentsScreen(
         )
     }
 
+    // Single combined donut: holdings slices plus SIP plan slices (labeled), so one chart
+    // shows all allocations across both holdings and active SIPs.
+    val combinedAllocationSlices = allocationSlices + sipPlanSlices.map { slice ->
+        slice.copy(
+            key = "${slice.key}_combined",
+            name = "${slice.name} (SIP)"
+        )
+    }
+    val combinedAllocationTotal = totalPortfolioValue + activeSipSum
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -295,7 +305,7 @@ fun InvestmentsScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "PORTFOLIO ASSET ALLOCATION",
+                            text = "PORTFOLIO & SIP ALLOCATION",
                             color = TextSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -331,7 +341,7 @@ fun InvestmentsScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                if (allocationSlices.isEmpty()) {
+                if (combinedAllocationSlices.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -339,18 +349,19 @@ fun InvestmentsScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No asset holdings found. Tap + Asset to build your portfolio.",
+                            text = "No holdings or active SIPs found. Tap + Asset or Add plan to build your portfolio.",
                             color = TextMuted,
                             fontSize = 12.sp
                         )
                     }
                 } else {
                     D3InteractiveDonutChart(
-                        slices = allocationSlices,
-                        totalPortfolioValue = totalPortfolioValue,
+                        slices = combinedAllocationSlices,
+                        totalPortfolioValue = combinedAllocationTotal,
                         currencySymbol = sym,
                         formatAmount = { viewModel.formatAmount(it) },
-                        chartSize = 220.dp
+                        chartSize = 220.dp,
+                        aggregateDetail = "${selectedHoldings.size} holdings • ${activeSips.size} active SIPs"
                     )
                 }
             }
@@ -395,36 +406,6 @@ fun InvestmentsScreen(
                             Text("Add plan", color = EmeraldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-                }
-            }
-        }
-
-        if (sipPlanSlices.isNotEmpty()) {
-            item {
-                FinCard {
-                    Text(
-                        text = "MONTHLY SIP PLAN ALLOCATION",
-                        color = TextSecondary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Planned contributions only — separate from holdings. Other or unresolved currencies stay out of this total.",
-                        color = TextMuted,
-                        fontSize = 11.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    D3InteractiveDonutChart(
-                        slices = sipPlanSlices,
-                        totalPortfolioValue = activeSipSum,
-                        currencySymbol = sym,
-                        formatAmount = { viewModel.formatAmount(it, userSettings.currency.code) },
-                        chartSize = 190.dp,
-                        centerTitle = "PLANNED / MONTH",
-                        aggregateDetail = "${activeSips.size} active plans"
-                    )
                 }
             }
         }
