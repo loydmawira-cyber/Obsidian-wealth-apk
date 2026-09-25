@@ -205,14 +205,16 @@ fun CashFlowScreen(
     val hasCashFlowData = summary.totalInflow > 0 || summary.totalOutflow > 0 || summary.transactionCount > 0
     // The monthly cap is the sum of the user's own budgets; nothing is assumed.
     val selectedBudgets = budgets.filter { it.currencyCode == userSettings.currency.code }
+    val unresolvedBudgetCount = budgets.count { it.currencyCode.isNullOrBlank() }
     val budgetCap = selectedBudgets.sumOf { it.monthlyLimit }
     val budgetedCategories = selectedBudgets.map { it.category }.toSet()
     val budgetSpent = transactions
         .filter {
             it.type == TransactionType.EXPENSE && transactionCurrency(it) == userSettings.currency.code && it.category in budgetedCategories &&
                 it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
-                it.transactionKind in setOf(com.example.data.models.TransactionKind.STANDARD, com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE) &&
-                it.category != Category.DEBT_PAYMENT && it.category != Category.ACCOUNT_TRANSFER && it.category != Category.ACCOUNT_ADJUSTMENT &&
+                it.transactionKind in setOf(com.example.data.models.TransactionKind.STANDARD, com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE, com.example.data.models.TransactionKind.DEBT_SETTLEMENT) &&
+                !(it.transactionKind == com.example.data.models.TransactionKind.DEBT_SETTLEMENT && it.creditCardId != null) &&
+                it.category != Category.ACCOUNT_TRANSFER && it.category != Category.ACCOUNT_ADJUSTMENT &&
                 it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
         }
         .sumOf { it.amount }
@@ -364,7 +366,12 @@ fun CashFlowScreen(
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = if (budgetCap > 0) "${viewModel.formatCompact(budgetSpent)} / ${viewModel.formatCompact(budgetCap)}" else "No budgets set",
+                        text = when {
+                            budgetCap > 0 && unresolvedBudgetCount > 0 -> "${viewModel.formatCompact(budgetSpent)} / ${viewModel.formatCompact(budgetCap)} · +$unresolvedBudgetCount need currency"
+                            budgetCap > 0 -> "${viewModel.formatCompact(budgetSpent)} / ${viewModel.formatCompact(budgetCap)}"
+                            unresolvedBudgetCount > 0 -> "$unresolvedBudgetCount budget(s) need currency confirmation"
+                            else -> "No budgets set"
+                        },
                         color = TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -398,7 +405,7 @@ fun CashFlowScreen(
                         text = if (budgetCap > 0) {
                             if (month.isCurrentMonth) "${viewModel.formatCompact(bufferRemaining)} left (${viewModel.formatCompact(dailyPace)}/day)"
                             else "${viewModel.formatCompact(bufferRemaining)} unspent"
-                        } else "Set budgets below to track a monthly cap",
+                        } else if (unresolvedBudgetCount > 0) "Set currency in the budget card below to enable pacing" else "Set budgets below to track a monthly cap",
                         color = if (budgetCap > 0) EmeraldLight else TextMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
@@ -800,6 +807,8 @@ fun CashFlowScreen(
         com.example.ui.components.EditTransactionDialog(
             transaction = tx,
             accounts = accounts,
+            availableBalance = { selected, date -> viewModel.availableBalanceIfTransactionRemovedAt(selected, tx, date) },
+            formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
             onDismiss = { editTx = null },
             onSave = { viewModel.updateTransaction(it) }
         )

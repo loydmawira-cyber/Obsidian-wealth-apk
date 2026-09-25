@@ -201,7 +201,9 @@ private fun TransferAccountsDialog(accounts: List<AccountEntity>, balance: (Acco
     var amountText by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     val amount = amountText.toDoubleOrNull()
-    val eligible = from != null && to != null && from!!.id != to!!.id && from!!.currencyCode == to!!.currencyCode && amount != null && amount > 0.0 && amount <= balance(from!!)
+    val available = from?.let { balance(it).coerceAtLeast(0.0) } ?: 0.0
+    val insufficientBalance = amount != null && amount > available + 0.000001
+    val eligible = from != null && to != null && from!!.id != to!!.id && from!!.currencyCode == to!!.currencyCode && amount != null && amount > 0.0 && !insufficientBalance
     SimpleAccountDialog(onDismiss) {
         Text("Transfer between your accounts", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text("Both entries are recorded together. Transfers are excluded from income, spending, and savings totals.", color = TextSecondary, fontSize = 11.sp)
@@ -211,7 +213,8 @@ private fun TransferAccountsDialog(accounts: List<AccountEntity>, balance: (Acco
         AccountChoices(accounts, to) { to = it }
         if (from != null && to != null && from!!.currencyCode != to!!.currencyCode) Text("Transfers require matching currencies; exchange conversion is not supported.", color = SovereignGold, fontSize = 11.sp)
         OutlinedTextField(value = amountText, onValueChange = { amountText = it }, label = { Text("Amount (${from?.currencyCode ?: "currency unknown"})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, colors = fieldColors(), modifier = Modifier.fillMaxWidth())
-        if (from != null) Text("Available: ${formatAmount(balance(from!!), from!!.currencyCode)}", color = TextMuted, fontSize = 10.sp)
+        if (from != null) Text("Available: ${formatAmount(available, from!!.currencyCode)}", color = TextMuted, fontSize = 10.sp)
+        if (insufficientBalance) Text("Not enough balance in the selected account.", color = Color(0xFFFB7185), fontSize = 11.sp)
         OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("Note (optional)") }, singleLine = true, colors = fieldColors(), modifier = Modifier.fillMaxWidth())
         Button(onClick = { onTransfer(from!!, to!!, amount!!, note); onDismiss() }, enabled = eligible, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth()) { Text("Record transfer", color = Color.Black, fontWeight = FontWeight.Bold) }
         OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }

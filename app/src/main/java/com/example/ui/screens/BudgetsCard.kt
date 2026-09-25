@@ -74,7 +74,7 @@ private fun prettyCategory(c: Category): String =
 private val budgetCategories = listOf(
     Category.HOUSING, Category.FOOD_DINING, Category.UTILITIES, Category.TRANSPORT,
     Category.SHOPPING, Category.HEALTHCARE, Category.SUBSCRIPTIONS, Category.ENTERTAINMENT,
-    Category.LOAN_EMI, Category.OTHER
+    Category.LOAN_EMI, Category.DEBT_PAYMENT, Category.OTHER
 )
 
 @Composable
@@ -137,15 +137,27 @@ fun BudgetsCard(
 ) {
     val budgets by viewModel.budgets.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
+    val accounts by viewModel.accounts.collectAsState()
+    val accountCurrencyById = accounts.associate { it.id to it.currencyCode }
+    fun transactionCurrency(tx: TransactionEntity): String? =
+        tx.currencyCode ?: tx.accountId?.let { accountCurrencyById[it] }
     val selectedBudgets = budgets.filter { it.currencyCode == userSettings.currency.code }
+    val unresolvedBudgets = budgets.filter { it.currencyCode.isNullOrBlank() }
+    val otherCurrencyBudgets = budgets.filter {
+        !it.currencyCode.isNullOrBlank() && it.currencyCode != userSettings.currency.code
+    }
     var dialogFor by remember { mutableStateOf<BudgetEntity?>(null) }
     var showDialog by remember { mutableStateOf(false) }
 
     val spentByCategory = transactions
         .filter {
-            it.type == TransactionType.EXPENSE && it.currencyCode == userSettings.currency.code && it.dateMillis >= monthStart && it.dateMillis < monthEnd &&
+            it.type == TransactionType.EXPENSE && transactionCurrency(it) == userSettings.currency.code && it.dateMillis >= monthStart && it.dateMillis < monthEnd &&
                 it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
-                it.transactionKind == com.example.data.models.TransactionKind.STANDARD
+                it.transactionKind in setOf(
+                    com.example.data.models.TransactionKind.STANDARD,
+                    com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE,
+                    com.example.data.models.TransactionKind.DEBT_SETTLEMENT
+                ) && !(it.transactionKind == com.example.data.models.TransactionKind.DEBT_SETTLEMENT && it.creditCardId != null)
         }
         .groupBy { it.category }
         .mapValues { entry -> entry.value.sumOf { it.amount } }
@@ -164,9 +176,24 @@ fun BudgetsCard(
                 SmallAddButton("Set budget") { dialogFor = null; showDialog = true }
             }
 
-            if (selectedBudgets.isEmpty()) {
+            if (selectedBudgets.isEmpty() && unresolvedBudgets.isEmpty()) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Text("No budgets yet. Set a limit for a category to track it here.", color = TextMuted, fontSize = 12.sp)
+            }
+
+            unresolvedBudgets.forEach { budget ->
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(prettyCategory(budget.category), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Saved limit: ${viewModel.formatCompact(budget.monthlyLimit)} · currency needs confirmation", color = AmberWarning, fontSize = 10.sp)
+                    }
+                    SmallAddButton("Set currency") { dialogFor = budget; showDialog = true }
+                }
             }
 
             selectedBudgets.forEach { b ->
@@ -217,6 +244,17 @@ fun BudgetsCard(
                             fontSize = 10.sp
                         )
                     }
+                }
+            }
+            if (otherCurrencyBudgets.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("Other currency limits (not converted into ${userSettings.currency.code})", color = TextMuted, fontSize = 10.sp)
+                otherCurrencyBudgets.forEach { budget ->
+                    Text(
+                        "${prettyCategory(budget.category)} · ${viewModel.formatAmount(budget.monthlyLimit, budget.currencyCode)}",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
                 }
             }
         }

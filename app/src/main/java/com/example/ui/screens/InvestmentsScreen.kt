@@ -427,12 +427,6 @@ fun InvestmentsScreen(
                                 color = TextSecondary,
                                 fontSize = 11.sp
                             )
-                            Text(
-                                text = "Plan only — record confirmed contributions in holdings or transactions",
-                                color = CyanAccent,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
-                            )
                         }
                     }
 
