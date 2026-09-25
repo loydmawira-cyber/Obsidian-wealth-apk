@@ -124,7 +124,7 @@ private data class SummaryAssets(
 
 /** Categories that move money into something you own rather than spend it. */
 private val investmentCategories = setOf(Category.INVESTMENT_SIP, Category.GOAL_SAVINGS)
-private val nonSpendingCategories = investmentCategories + Category.DEBT_PAYMENT
+private val nonSpendingCategories = investmentCategories + setOf(Category.DEBT_PAYMENT, Category.LOAN_TOP_UP)
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val billingManager = BillingManager(application)
@@ -793,22 +793,32 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         fun currency(tx: TransactionEntity): String? = tx.currencyCode ?: tx.accountId?.let { accountById[it]?.currencyCode }
         val confirmed = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
         val activeBaseAccountIds = aList.filter { it.isActive && it.currencyCode == baseCurrency }.map { it.id }.toSet()
-        val selected = confirmed.filter { it.accountId in activeBaseAccountIds && currency(it) == baseCurrency }
+        val activeBaseCardIds = cList.filter { it.currencyCode == baseCurrency }.map { it.id }.toSet()
+        val selected = confirmed.filter { tx ->
+            (tx.accountId in activeBaseAccountIds && currency(tx) == baseCurrency) ||
+                (tx.transactionKind == TransactionKind.CREDIT_CARD_PURCHASE && tx.creditCardId in activeBaseCardIds && currency(tx) == baseCurrency)
+        }
         val operatingIncome = selected.filter {
-            it.type == TransactionType.INCOME && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT, TransactionKind.ASSET_CONVERSION)
+            it.type == TransactionType.INCOME && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT, TransactionKind.ASSET_CONVERSION, TransactionKind.LOAN_TOP_UP)
         }
         val operatingExpense = selected.filter {
             it.type == TransactionType.EXPENSE && it.transactionKind != TransactionKind.TRANSFER && it.category !in nonSpendingCategories
         }
         val inflow = operatingIncome.sumOf { it.amount }
-        val outflow = selected.filter { it.type == TransactionType.EXPENSE && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT) }.sumOf { it.amount }
+        val outflow = selected.filter {
+            it.type == TransactionType.EXPENSE && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT) &&
+                !(it.transactionKind == TransactionKind.DEBT_SETTLEMENT && it.creditCardId != null)
+        }.sumOf { it.amount }
         val netCash = inflow - outflow
 
         val windowStart = System.currentTimeMillis() - 30L * 86_400_000L
         val recent = selected.filter { it.dateMillis >= windowStart }
-        val recentIn = recent.filter { it.type == TransactionType.INCOME && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT, TransactionKind.ASSET_CONVERSION) }.sumOf { it.amount }
-        val recentOut = recent.filter { it.type == TransactionType.EXPENSE && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT) }.sumOf { it.amount }
-        val operatingIn = recent.filter { it.type == TransactionType.INCOME && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT, TransactionKind.ASSET_CONVERSION) && it.category !in nonSpendingCategories }.sumOf { it.amount }
+        val recentIn = recent.filter { it.type == TransactionType.INCOME && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT, TransactionKind.ASSET_CONVERSION, TransactionKind.LOAN_TOP_UP) }.sumOf { it.amount }
+        val recentOut = recent.filter {
+            it.type == TransactionType.EXPENSE && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT) &&
+                !(it.transactionKind == TransactionKind.DEBT_SETTLEMENT && it.creditCardId != null)
+        }.sumOf { it.amount }
+        val operatingIn = recent.filter { it.type == TransactionType.INCOME && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT, TransactionKind.ASSET_CONVERSION, TransactionKind.LOAN_TOP_UP) && it.category !in nonSpendingCategories }.sumOf { it.amount }
         val operatingOut = recent.filter { it.type == TransactionType.EXPENSE && it.transactionKind != TransactionKind.TRANSFER && it.category !in nonSpendingCategories }.sumOf { it.amount }
         val savingsRate = if (operatingIn > 0) ((operatingIn - operatingOut) / operatingIn) * 100.0 else 0.0
 
@@ -841,9 +851,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             cList.any { it.currentBalance != 0.0 && it.currencyCode.isNullOrBlank() } ||
             lList.any { it.remainingBalance != 0.0 && it.currencyCode.isNullOrBlank() } ||
             gList.any { it.currentAmount != 0.0 && it.currencyCode.isNullOrBlank() } ||
-            confirmed.any { tx ->
+                confirmed.any { tx ->
                 val accountCurrency = tx.accountId?.let { accountById[it]?.currencyCode }
-                tx.amount != 0.0 && (tx.accountId == null || currency(tx).isNullOrBlank() ||
+                tx.amount != 0.0 && ((tx.accountId == null && tx.creditCardId == null) || currency(tx).isNullOrBlank() ||
                     (!accountCurrency.isNullOrBlank() && !tx.currencyCode.isNullOrBlank() && accountCurrency != tx.currencyCode))
             }
 
@@ -878,21 +888,27 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     /** One calendar month of cash flow with opening and closing balances. */
     val monthCashFlow: StateFlow<MonthCashFlow> = combine(
-        transactions, accounts, _selectedMonthStart, userSettings
-    ) { txList, accountList, monthStart, settings ->
+        transactions, accounts, creditCards, _selectedMonthStart, userSettings
+    ) { txList, accountList, cardList, monthStart, settings ->
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = monthStart; add(java.util.Calendar.MONTH, 1) }
         val monthEnd = cal.timeInMillis
         val confirmed = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
         val currency = settings.currency.code
         val selectedAccounts = accountList.filter { it.isActive && it.currencyCode == currency }
         val accountIds = selectedAccounts.map { it.id }.toSet()
-        val selectedTransactions = confirmed.filter { it.accountId in accountIds }
+        val selectedCardIds = cardList.filter { it.currencyCode == currency }.map { it.id }.toSet()
+        val selectedTransactions = confirmed.filter { tx ->
+            tx.accountId in accountIds ||
+                (tx.transactionKind == TransactionKind.CREDIT_CARD_PURCHASE && tx.creditCardId in selectedCardIds)
+        }
         val inMonth = selectedTransactions.filter { it.dateMillis >= monthStart && it.dateMillis < monthEnd && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ASSET_CONVERSION) }
         val opening = selectedAccounts.sumOf { AccountLedger.balanceAt(it, selectedTransactions, monthStart) }
         val closing = selectedAccounts.sumOf { AccountLedger.balanceAt(it, selectedTransactions, monthEnd) }
         val operatingMonth = inMonth.filter { it.transactionKind != TransactionKind.ADJUSTMENT }
         val inflow = operatingMonth.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-        val outflow = operatingMonth.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        val outflow = operatingMonth.filter {
+            it.type == TransactionType.EXPENSE && !(it.transactionKind == TransactionKind.DEBT_SETTLEMENT && it.creditCardId != null)
+        }.sumOf { it.amount }
         val adjustments = inMonth.filter { it.transactionKind == TransactionKind.ADJUSTMENT }.sumOf(AccountLedger::signedEffect)
         val invested = inMonth.filter { it.type == TransactionType.EXPENSE && it.category in investmentCategories }.sumOf { it.amount }
         MonthCashFlow(
@@ -1501,6 +1517,33 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private val cardPurchasesInFlight = mutableSetOf<Long>()
+
+    fun recordCreditCardPurchase(card: CreditCardEntity, merchant: String, amount: Double, category: Category, note: String = "") {
+        if (merchant.isBlank() || !amount.isFinite() || amount <= 0.0 || category in setOf(
+                Category.ACCOUNT_TRANSFER, Category.ACCOUNT_ADJUSTMENT, Category.INVESTMENT_SALE,
+                Category.INVESTMENT_SIP, Category.LOAN_EMI, Category.LOAN_TOP_UP, Category.DEBT_PAYMENT
+            )) return
+        synchronized(cardPurchasesInFlight) {
+            if (!cardPurchasesInFlight.add(card.id)) return
+        }
+        viewModelScope.launch {
+            try {
+                val freshCard = repository.creditCardsSnapshot().firstOrNull { it.id == card.id } ?: return@launch
+                if (freshCard.currencyCode.isNullOrBlank() || freshCard.currentBalance < 0.0 ||
+                    freshCard.currentBalance + amount > freshCard.creditLimit + 0.000001) return@launch
+                val transaction = TransactionEntity(
+                    title = merchant.trim(), amount = amount, type = TransactionType.EXPENSE, category = category,
+                    account = freshCard.cardName, note = note.trim(), currencyCode = freshCard.currencyCode,
+                    transactionKind = TransactionKind.CREDIT_CARD_PURCHASE, creditCardId = freshCard.id
+                )
+                if (repository.recordCreditCardPurchase(freshCard.id, transaction)) syncVaultToCloud()
+            } finally {
+                synchronized(cardPurchasesInFlight) { cardPurchasesInFlight.remove(card.id) }
+            }
+        }
+    }
+
     private val cardPaymentsInFlight = mutableSetOf<Long>()
 
     fun payCreditCard(card: CreditCardEntity, paymentAmount: Double, sourceAccount: AccountEntity) {
@@ -1527,7 +1570,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         note = "Card debt settlement recorded manually; no payment was initiated by the app",
                         accountId = freshAccount.id,
                         currencyCode = freshCard.currencyCode,
-                        transactionKind = TransactionKind.DEBT_SETTLEMENT
+                        transactionKind = TransactionKind.DEBT_SETTLEMENT,
+                        creditCardId = freshCard.id
                     )
                 )
                 syncVaultToCloud()
@@ -1571,6 +1615,33 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.updateLoan(loan.copy(currencyCode = currencyCode))
             syncVaultToCloud()
+        }
+    }
+
+    private val loanTopUpsInFlight = mutableSetOf<Long>()
+
+    fun recordLoanTopUp(loan: LoanEntity, amount: Double, depositAccount: AccountEntity, note: String = "") {
+        if (!amount.isFinite() || amount <= 0.0) return
+        synchronized(loanTopUpsInFlight) {
+            if (!loanTopUpsInFlight.add(loan.id)) return
+        }
+        viewModelScope.launch {
+            try {
+                val freshLoan = repository.loansSnapshot().firstOrNull { it.id == loan.id } ?: return@launch
+                val freshAccount = repository.account(depositAccount.id) ?: return@launch
+                if (freshLoan.currencyCode.isNullOrBlank() || !freshAccount.isActive ||
+                    freshAccount.currencyCode != freshLoan.currencyCode) return@launch
+                val transaction = TransactionEntity(
+                    title = "Loan top-up: ${freshLoan.loanName}", amount = amount, type = TransactionType.INCOME,
+                    category = Category.LOAN_TOP_UP, account = freshAccount.name,
+                    note = note.trim().ifBlank { "Loan proceeds recorded manually; no lender transfer was initiated" },
+                    accountId = freshAccount.id, currencyCode = freshLoan.currencyCode,
+                    transactionKind = TransactionKind.LOAN_TOP_UP, loanId = freshLoan.id
+                )
+                if (repository.recordLoanTopUp(freshLoan.id, freshAccount.id, amount, transaction)) syncVaultToCloud()
+            } finally {
+                synchronized(loanTopUpsInFlight) { loanTopUpsInFlight.remove(loan.id) }
+            }
         }
     }
 
