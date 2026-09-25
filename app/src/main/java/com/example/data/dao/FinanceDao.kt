@@ -64,8 +64,7 @@ interface FinanceDao {
             source.type != TransactionType.EXPENSE || destination.type != TransactionType.INCOME ||
             source.category != Category.ACCOUNT_TRANSFER || destination.category != Category.ACCOUNT_TRANSFER ||
             source.transferGroupId.isNullOrBlank() || source.transferGroupId != destination.transferGroupId) return false
-        val sourceBalance = AccountLedger.currentBalance(from, getTransactionsSnapshot())
-        if (!sourceBalance.isFinite() || sourceBalance + 0.000001 < amount) return false
+        if (!AccountLedger.hasSufficientBalance(from, getTransactionsSnapshot(), amount, source.dateMillis + 1L)) return false
         insertTransaction(source)
         insertTransaction(destination)
         return true
@@ -78,15 +77,46 @@ interface FinanceDao {
     }
 
     @Transaction
-    suspend fun recordCreditCardSettlement(card: CreditCardEntity, transaction: TransactionEntity) {
-        updateCreditCard(card)
-        insertTransaction(transaction)
+    suspend fun recordCreditCardSettlement(card: CreditCardEntity, transaction: TransactionEntity): Boolean {
+        val freshCard = getCreditCard(card.id) ?: return false
+        val account = transaction.accountId?.let { getAccount(it) } ?: return false
+        val amount = transaction.amount
+        if (!account.isActive || account.currencyCode.isNullOrBlank() || account.currencyCode != freshCard.currencyCode ||
+            transaction.account != account.name || transaction.loanId != null || transaction.category != Category.DEBT_PAYMENT ||
+            transaction.currencyCode != account.currencyCode || transaction.creditCardId != freshCard.id ||
+            transaction.transactionKind != TransactionKind.DEBT_SETTLEMENT || transaction.type != TransactionType.EXPENSE ||
+            !amount.isFinite() || amount <= 0.0 || amount > freshCard.currentBalance + 0.000001 ||
+            !AccountLedger.hasSufficientBalance(account, getTransactionsSnapshot(), amount, transaction.dateMillis + 1L)) return false
+        updateCreditCard(freshCard.copy(currentBalance = (freshCard.currentBalance - amount).coerceAtLeast(0.0)))
+        insertTransaction(transaction.copy(amount = amount))
+        return true
     }
 
     @Transaction
-    suspend fun recordLoanSettlement(loan: LoanEntity, transaction: TransactionEntity) {
+    suspend fun recordLoanSettlement(loan: LoanEntity, transaction: TransactionEntity): Boolean {
+        val freshLoan = getLoan(loan.id) ?: return false
+        val account = transaction.accountId?.let { getAccount(it) } ?: return false
+        val amount = transaction.amount
+        val monthlyInterest = freshLoan.remainingBalance * (freshLoan.interestRate.coerceAtLeast(0.0) / 100.0) / 12.0
+        val expectedPayment = freshLoan.emiAmount.coerceAtLeast(0.0)
+            .coerceAtMost(freshLoan.remainingBalance + monthlyInterest)
+        val principalPaid = (expectedPayment - monthlyInterest).coerceIn(0.0, freshLoan.remainingBalance)
+        val expectedBalance = (freshLoan.remainingBalance - principalPaid).coerceAtLeast(0.0)
+        val expectedMonths = if (principalPaid > 0.0) (freshLoan.remainingMonths - 1).coerceAtLeast(0) else freshLoan.remainingMonths
+        if (!account.isActive || account.currencyCode.isNullOrBlank() || account.currencyCode != freshLoan.currencyCode ||
+            transaction.account != account.name || transaction.currencyCode != account.currencyCode ||
+            transaction.loanId != freshLoan.id || transaction.creditCardId != null ||
+            transaction.transactionKind != TransactionKind.DEBT_SETTLEMENT || transaction.type != TransactionType.EXPENSE ||
+            transaction.category != Category.DEBT_PAYMENT || !amount.isFinite() || amount <= 0.0 ||
+            freshLoan.remainingMonths <= 0 || kotlin.math.abs(amount - expectedPayment) > 0.000001 ||
+            kotlin.math.abs(loan.remainingBalance - expectedBalance) > 0.000001 || loan.remainingMonths != expectedMonths ||
+            loan.totalAmount != freshLoan.totalAmount ||
+            !AccountLedger.hasSufficientBalance(account, getTransactionsSnapshot(), amount, transaction.dateMillis + 1L) ||
+            loan.remainingBalance > freshLoan.remainingBalance + 0.000001 || loan.remainingBalance < 0.0 ||
+            loan.remainingMonths > freshLoan.remainingMonths) return false
         updateLoan(loan)
         insertTransaction(transaction)
+        return true
     }
 
     @Transaction
@@ -133,6 +163,49 @@ interface FinanceDao {
 
     @Query("SELECT * FROM transactions ORDER BY dateMillis DESC")
     suspend fun getTransactionsSnapshot(): List<TransactionEntity>
+
+    @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
+    suspend fun getTransactionById(id: Long): TransactionEntity?
+
+    @Transaction
+    suspend fun insertCashTransaction(transaction: TransactionEntity): Boolean {
+        val account = transaction.accountId?.let { getAccount(it) } ?: return false
+        if (!account.isActive || account.currencyCode.isNullOrBlank() || account.currencyCode != transaction.currencyCode ||
+            !transaction.amount.isFinite() || transaction.amount <= 0.0 || transaction.transactionKind != TransactionKind.STANDARD ||
+            transaction.creditCardId != null || transaction.loanId != null) return false
+        if (transaction.type == TransactionType.EXPENSE &&
+            !AccountLedger.hasSufficientBalance(account, getTransactionsSnapshot(), transaction.amount, transaction.dateMillis + 1L)) return false
+        insertTransaction(transaction)
+        return true
+    }
+
+    @Transaction
+    suspend fun updateCashTransaction(transaction: TransactionEntity): Boolean {
+        val original = getTransactionById(transaction.id) ?: return false
+        val account = transaction.accountId?.let { getAccount(it) } ?: return false
+        if (!account.isActive || account.currencyCode.isNullOrBlank() || account.currencyCode != transaction.currencyCode ||
+            !transaction.amount.isFinite() || transaction.amount <= 0.0 || transaction.transactionKind != TransactionKind.STANDARD ||
+            transaction.creditCardId != null || transaction.loanId != null) return false
+        if (transaction.type == TransactionType.EXPENSE) {
+            val remainingLedger = getTransactionsSnapshot().filter { it.id != original.id }
+            if (!AccountLedger.hasSufficientBalance(account, remainingLedger, transaction.amount, transaction.dateMillis + 1L)) return false
+        }
+        updateTransaction(transaction)
+        return true
+    }
+
+    @Transaction
+    suspend fun confirmCashTransaction(transaction: TransactionEntity): Boolean {
+        val original = getTransactionById(transaction.id) ?: return false
+        if (original.importStatus != "PENDING_REVIEW") return false
+        val account = transaction.accountId?.let { getAccount(it) } ?: return false
+        if (!account.isActive || account.currencyCode.isNullOrBlank() || account.currencyCode != transaction.currencyCode ||
+            !transaction.amount.isFinite() || transaction.amount <= 0.0 || transaction.importStatus != "CONFIRMED") return false
+        if (transaction.type == TransactionType.EXPENSE &&
+            !AccountLedger.hasSufficientBalance(account, getTransactionsSnapshot(), transaction.amount, transaction.dateMillis + 1L)) return false
+        updateTransaction(transaction)
+        return true
+    }
 
     @Query("SELECT * FROM transactions WHERE statementFingerprint = :fingerprint LIMIT 1")
     suspend fun findTransactionByFingerprint(fingerprint: String): TransactionEntity?
