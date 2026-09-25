@@ -90,6 +90,17 @@ fun TransactionActionDialog(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Delete entry", color = Color.White, fontWeight = FontWeight.Bold) }
+                } else if (transaction.category == com.example.data.models.Category.GOAL_SAVINGS &&
+                    transaction.sourceReference?.startsWith("goal-contribution:") == true
+                ) {
+                    Text("Deleting this deposit restores the selected account balance and reduces this goal’s saved amount.", color = TextMuted, fontSize = 11.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { onDelete(); onDismiss() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Undo goal deposit", color = Color.White, fontWeight = FontWeight.Bold) }
                 } else {
                     Text("This entry is linked to another account, debt, or generated record. Edit it through the related action to keep balances reconciled.", color = TextMuted, fontSize = 11.sp)
                     Spacer(Modifier.height(8.dp))

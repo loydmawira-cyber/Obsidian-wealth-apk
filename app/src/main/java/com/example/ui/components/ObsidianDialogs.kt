@@ -109,8 +109,7 @@ fun AddTransactionDialog(
     availableBalance: (AccountEntity) -> Double,
     formatAmount: (Double, String?) -> String,
     onDismiss: () -> Unit,
-    onAdd: (title: String, amount: Double, type: TransactionType, category: Category, account: AccountEntity, note: String) -> Unit,
-    onAiSmartLog: () -> Unit
+    onAdd: (title: String, amount: Double, type: TransactionType, category: Category, account: AccountEntity, note: String) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
@@ -133,6 +132,7 @@ fun AddTransactionDialog(
                 modifier = Modifier
                     .padding(20.dp)
                     .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -140,44 +140,13 @@ fun AddTransactionDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Log Transaction",
+                        text = "Add transaction",
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // AI Smart Paste Trigger
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable { onAiSmartLog() },
-                    color = ElectricIndigo.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, ElectricIndigo.copy(alpha = 0.3f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = "AI",
-                            tint = CyanAccent,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "AI Smart Log: Paste or type natural note",
-                            color = CyanAccent,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
                     }
                 }
 
@@ -272,6 +241,26 @@ fun AddTransactionDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                Text("Category", color = TextSecondary, fontSize = 11.sp)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                ) {
+                    items(Category.values().filter { it != Category.ACCOUNT_TRANSFER && it != Category.ACCOUNT_ADJUSTMENT }) { category ->
+                        FilterChip(
+                            selected = selectedCategory == category,
+                            onClick = { selectedCategory = category },
+                            label = { Text(category.name.replace("_", " "), fontSize = 10.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = SovereignGold,
+                                selectedLabelColor = Color.Black
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Text("Paid into / from account", color = TextSecondary, fontSize = 11.sp)
                 if (accounts.none { it.isActive }) {
                     Text("Create a cash account first. This transaction cannot affect balances until it is linked to an account.", color = TextMuted, fontSize = 11.sp)
@@ -285,9 +274,18 @@ fun AddTransactionDialog(
                             )
                         }
                     }
+                    Text("Account balances", color = TextSecondary, fontSize = 10.sp)
+                    accounts.filter { it.isActive }.forEach { candidate ->
+                        Text(
+                            "${candidate.name}: ${formatAmount(availableBalance(candidate), candidate.currencyCode)}",
+                            color = TextMuted,
+                            fontSize = 10.sp
+                        )
+                    }
                     Text("Amount currency: ${account?.currencyCode ?: "unknownâ€”resolve this account first"}", color = if (account?.currencyCode == null) SovereignGold else TextMuted, fontSize = 10.sp)
-                    if (account != null && selectedType == TransactionType.EXPENSE) {
-                        Text("Available: ${formatAmount(selectedAccountBalance, account?.currencyCode)}", color = TextMuted, fontSize = 10.sp)
+                    if (account != null) {
+                        val balanceLabel = if (selectedType == TransactionType.EXPENSE) "Selected available" else "Selected current"
+                        Text("$balanceLabel: ${formatAmount(selectedAccountBalance, account?.currencyCode)}", color = TextMuted, fontSize = 10.sp)
                     }
                     if (insufficientBalance) Text("Not enough balance in the selected account.", color = Color(0xFFFB7185), fontSize = 11.sp)
                 }

@@ -49,9 +49,15 @@ fun ImportedTransactionsDialog(
     onDismiss: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = { if (transactions.isEmpty()) onDismiss() },
+        onDismissRequest = onDismiss,
         containerColor = ObsidianSurface,
-        title = { Text("Review transactions", color = GoldBright, fontWeight = FontWeight.Bold) },
+        title = {
+            Text(
+                if (transactions.isEmpty()) "Notifications" else "Pending transaction approvals (${transactions.size})",
+                color = GoldBright,
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             if (transactions.isEmpty()) {
                 Text("No transactions are waiting for review.", color = TextSecondary)
@@ -104,8 +110,6 @@ fun ImportedTransactionsDialog(
                 }
             }
         },
-        confirmButton = {
-            if (transactions.isEmpty()) Button(onClick = onDismiss) { Text("Done") }
-        }
+        confirmButton = { Button(onClick = onDismiss) { Text("Close") } }
     )
 }
