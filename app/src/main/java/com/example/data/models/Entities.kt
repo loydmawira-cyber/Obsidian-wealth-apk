@@ -8,7 +8,8 @@ enum class TransactionType {
 }
 
 enum class TransactionKind {
-    STANDARD, TRANSFER, DEBT_SETTLEMENT, ADJUSTMENT, ASSET_CONVERSION
+    STANDARD, TRANSFER, DEBT_SETTLEMENT, ADJUSTMENT, ASSET_CONVERSION,
+    CREDIT_CARD_PURCHASE, LOAN_TOP_UP
 }
 
 enum class HoldingType {
@@ -19,7 +20,7 @@ enum class Category {
     SALARY, FREELANCE, DIVIDENDS, RENTAL,
     HOUSING, FOOD_DINING, UTILITIES, TRANSPORT,
     SHOPPING, HEALTHCARE, SUBSCRIPTIONS, ENTERTAINMENT,
-    INVESTMENT_SIP, INVESTMENT_SALE, LOAN_EMI, DEBT_PAYMENT, ACCOUNT_TRANSFER, ACCOUNT_ADJUSTMENT, OTHER,
+    INVESTMENT_SIP, INVESTMENT_SALE, LOAN_EMI, LOAN_TOP_UP, DEBT_PAYMENT, ACCOUNT_TRANSFER, ACCOUNT_ADJUSTMENT, OTHER,
     // Money moved into or out of a savings goal: a transfer, not spending.
     GOAL_SAVINGS
 }
@@ -42,7 +43,9 @@ data class TransactionEntity(
     val accountId: Long? = null,
     val currencyCode: String? = null,
     val transactionKind: TransactionKind = TransactionKind.STANDARD,
-    val transferGroupId: String? = null
+    val transferGroupId: String? = null,
+    val creditCardId: Long? = null,
+    val loanId: Long? = null
 )
 
 @Entity(tableName = "accounts")
