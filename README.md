@@ -58,3 +58,8 @@ The accounting behavior and safeguards are implemented in the source files [1] [
 [1]: app/src/main/java/com/example/data/models/AccountLedger.kt "Account ledger calculations"
 [2]: app/src/main/java/com/example/data/database/AppDatabase.kt "Room schema and migrations"
 [3]: app/src/main/java/com/example/data/dao/FinanceDao.kt "Finance data access and atomic transfer writes"
+
+## Debt-funded cash-flow activity
+
+The Debt tab supports confirmed credit-card purchases and loan top-ups. A card purchase is accepted only when the selected card has enough available credit; it increases the card balance and appears as an expense in the cash-flow ledger and expense/budget views without reducing a cash account. A loan top-up records the borrowed proceeds in a same-currency deposit account, increases both the loan's principal and outstanding balance, and appears in monthly cash flow as an inflow while remaining excluded from operating-income summaries. Both actions require explicit confirmation, are committed atomically with their linked ledger entry, and cannot be edited or deleted independently from the ledger. Their debt links are included in Firestore sync and Room migration 9-to-10.
+
