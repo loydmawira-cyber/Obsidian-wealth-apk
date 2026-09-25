@@ -144,16 +144,14 @@ fun CashFlowScreen(
         matchesSearch && matchesFilter && inMonth
     }
 
-    // Use the exact same outflow rule as MonthCashFlow so category slices sum to the selected-month total.
-    val cashAccountIds = accounts.filter { it.isActive && it.currencyCode == userSettings.currency.code }.map { it.id }.toSet()
-    val cashFlowCardIds = creditCards.filter { it.currencyCode == userSettings.currency.code }.map { it.id }.toSet()
+    // Every confirmed expense in the selected month/currency counts here — not just ones linked
+    // to an active cash account or a credit-card purchase. Requiring that link used to silently
+    // drop manually logged, imported, or inactive-account expenses from the breakdown even though
+    // they were real confirmed outflow, so the donut undercounted the month's actual spending.
     val expenseTransactions = transactions.filter { tx ->
         tx.type == TransactionType.EXPENSE && transactionCurrency(tx) == userSettings.currency.code &&
             CashFlowTransactionRules.isConfirmedInRange(tx, month.monthStart, month.monthEnd) &&
-            CashFlowTransactionRules.countsAsOutflow(tx) &&
-            ((tx.accountId != null && tx.accountId in cashAccountIds) ||
-                (tx.transactionKind == com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE &&
-                    tx.creditCardId != null && tx.creditCardId in cashFlowCardIds))
+            CashFlowTransactionRules.countsAsOutflow(tx)
     }
     val donutSlices = if (expenseTransactions.isNotEmpty()) {
         val categoryColors = mapOf(
