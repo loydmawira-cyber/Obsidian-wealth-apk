@@ -33,9 +33,12 @@ import com.example.data.repository.FinanceRepository
 import com.example.data.repository.PreferencesManager
 import com.example.data.security.PinCredentialStore
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -176,6 +179,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     private val _cloudSyncResult = MutableStateFlow<CloudSyncResult?>(null)
     val cloudSyncResult: StateFlow<CloudSyncResult?> = _cloudSyncResult
+
+    private val _actionMessages = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val actionMessages: SharedFlow<String> = _actionMessages.asSharedFlow()
+
+    private fun reportInsufficientBalance(accountName: String) {
+        _actionMessages.tryEmit("Not enough balance in $accountName.")
+    }
 
     // Read-only. The vault id IS the Firebase Auth uid — it is never user-settable, because a
     // settable vault id let any signed-in user point the restore path at another user's vault.
@@ -541,6 +551,18 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun currentAccountBalance(account: AccountEntity): Double =
         AccountLedger.currentBalance(account, transactions.value)
 
+    fun availableAccountBalance(account: AccountEntity): Double =
+        currentAccountBalance(account).coerceAtLeast(0.0)
+
+    fun availableAccountBalanceAt(account: AccountEntity, dateMillis: Long): Double =
+        AccountLedger.balanceAt(account, transactions.value, dateMillis + 1L).coerceAtLeast(0.0)
+
+    fun availableBalanceIfTransactionRemoved(account: AccountEntity, transaction: TransactionEntity): Double =
+        AccountLedger.currentBalance(account, transactions.value.filter { it.id != transaction.id }).coerceAtLeast(0.0)
+
+    fun availableBalanceIfTransactionRemovedAt(account: AccountEntity, transaction: TransactionEntity, dateMillis: Long): Double =
+        AccountLedger.balanceAt(account, transactions.value.filter { it.id != transaction.id }, dateMillis + 1L).coerceAtLeast(0.0)
+
     fun addAccount(name: String, accountType: String, currencyCode: String, openingBalance: Double) {
         val cleanName = name.trim()
         if (cleanName.isBlank() || !openingBalance.isFinite() ||
@@ -614,7 +636,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val freshFrom = repository.account(from.id) ?: return@launch
             val freshTo = repository.account(to.id) ?: return@launch
             if (!freshFrom.isActive || !freshTo.isActive || freshFrom.currencyCode != freshTo.currencyCode) return@launch
-            if (AccountLedger.currentBalance(freshFrom, repository.allTransactions.first()) + 0.000001 < amount) return@launch
+            if (AccountLedger.currentBalance(freshFrom, repository.allTransactions.first()) + 0.000001 < amount) {
+                reportInsufficientBalance(freshFrom.name)
+                return@launch
+            }
             val now = System.currentTimeMillis()
             val group = java.util.UUID.randomUUID().toString()
             val recorded = repository.recordTransfer(
@@ -632,6 +657,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 )
             )
             if (recorded) syncVaultToCloud()
+            else if (AccountLedger.currentBalance(freshFrom, repository.allTransactions.first()) + 0.000001 < amount) reportInsufficientBalance(freshFrom.name)
         }
     }
 
@@ -1120,8 +1146,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val freshAccount = repository.account(account.id) ?: return@launch
             if (!freshAccount.isActive || freshAccount.currencyCode != account.currencyCode) return@launch
-            repository.addTransaction(
-                TransactionEntity(
+            val transaction = TransactionEntity(
                     title = title,
                     amount = amount,
                     type = type,
@@ -1133,8 +1158,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     accountId = freshAccount.id,
                     currencyCode = freshAccount.currencyCode
                 )
-            )
-            syncVaultToCloud()
+            if (type == TransactionType.EXPENSE && availableAccountBalanceAt(freshAccount, dateMillis) + 0.000001 < amount) {
+                reportInsufficientBalance(freshAccount.name)
+                return@launch
+            }
+            if (repository.addCashTransaction(transaction)) syncVaultToCloud()
+            else if (type == TransactionType.EXPENSE) reportInsufficientBalance(freshAccount.name)
         }
     }
 
@@ -1153,8 +1182,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 accountId = linked.id,
                 currencyCode = linked.currencyCode
             )
-            repository.addTransaction(stored)
-            syncVaultToCloud()
+            if (stored.type == TransactionType.EXPENSE && availableAccountBalanceAt(linked, stored.dateMillis) + 0.000001 < stored.amount) {
+                reportInsufficientBalance(linked.name)
+                return@launch
+            }
+            if (repository.addCashTransaction(stored)) syncVaultToCloud()
+            else if (stored.type == TransactionType.EXPENSE) reportInsufficientBalance(linked.name)
         }
     }
 
@@ -1163,15 +1196,18 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val current = repository.account(account.id) ?: return@launch
             if (!current.isActive || current.currencyCode.isNullOrBlank() ||
                 (transaction.currencyCode != null && transaction.currencyCode != current.currencyCode)) return@launch
-            repository.updateTransaction(
-                transaction.copy(
+            val confirmed = transaction.copy(
                     account = current.name,
                     accountId = current.id,
                     currencyCode = current.currencyCode,
                     importStatus = "CONFIRMED"
                 )
-            )
-            syncVaultToCloud()
+            if (confirmed.type == TransactionType.EXPENSE && availableAccountBalanceAt(current, confirmed.dateMillis) + 0.000001 < confirmed.amount) {
+                reportInsufficientBalance(current.name)
+                return@launch
+            }
+            if (repository.confirmCashTransaction(confirmed)) syncVaultToCloud()
+            else if (confirmed.type == TransactionType.EXPENSE) reportInsufficientBalance(current.name)
         }
     }
 
@@ -1198,17 +1234,35 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     Category.OTHER
                 }
                 val tType = if (parsed.type == "INCOME") TransactionType.INCOME else TransactionType.EXPENSE
-                repository.addTransaction(
+                val matchingAccounts = repository.accountsSnapshot().filter {
+                    it.isActive && !it.currencyCode.isNullOrBlank() && it.name.equals(parsed.account, ignoreCase = true)
+                }
+                val linked = matchingAccounts.singleOrNull()
+                if (linked == null) {
+                    _actionMessages.tryEmit("Choose one active account to record this transaction.")
+                    onDone()
+                    return@launch
+                }
+                val transactionDate = parsed.dateMillis ?: System.currentTimeMillis()
+                if (tType == TransactionType.EXPENSE && availableAccountBalanceAt(linked, transactionDate) + 0.000001 < parsed.amount) {
+                    reportInsufficientBalance(linked.name)
+                    onDone()
+                    return@launch
+                }
+                val recorded = repository.addCashTransaction(
                     TransactionEntity(
                         title = parsed.title,
                         amount = parsed.amount,
                         type = tType,
                         category = cat,
-                        account = parsed.account,
-                        dateMillis = parsed.dateMillis ?: System.currentTimeMillis()
+                        account = linked.name,
+                        dateMillis = transactionDate,
+                        accountId = linked.id,
+                        currencyCode = linked.currencyCode
                     )
                 )
-                syncVaultToCloud()
+                if (recorded) syncVaultToCloud()
+                else if (tType == TransactionType.EXPENSE) reportInsufficientBalance(linked.name)
             }
             onDone()
         }
@@ -1295,12 +1349,18 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 ?: currentAccounts.filter { it.isActive && it.name.equals(transaction.account.trim(), ignoreCase = true) }
                     .singleOrNull()
             if (linked == null || !linked.isActive || linked.currencyCode.isNullOrBlank()) return@launch
-            repository.updateTransaction(transaction.copy(
+            val updated = transaction.copy(
                 account = linked.name,
                 accountId = linked.id,
                 currencyCode = linked.currencyCode
-            ))
-            syncVaultToCloud()
+            )
+            val available = availableBalanceIfTransactionRemoved(linked, transaction)
+            if (updated.type == TransactionType.EXPENSE && available + 0.000001 < updated.amount) {
+                reportInsufficientBalance(linked.name)
+                return@launch
+            }
+            if (repository.updateCashTransaction(updated)) syncVaultToCloud()
+            else if (updated.type == TransactionType.EXPENSE) reportInsufficientBalance(linked.name)
         }
     }
 
@@ -1532,14 +1592,18 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 val freshCard = repository.creditCardsSnapshot().firstOrNull { it.id == card.id } ?: return@launch
-                if (freshCard.currencyCode.isNullOrBlank() || freshCard.currentBalance < 0.0 ||
-                    freshCard.currentBalance + amount > freshCard.creditLimit + 0.000001) return@launch
+                if (freshCard.currencyCode.isNullOrBlank() || freshCard.currentBalance < 0.0) return@launch
+                if (freshCard.currentBalance + amount > freshCard.creditLimit + 0.000001) {
+                    _actionMessages.tryEmit("Not enough available credit on ${freshCard.cardName}.")
+                    return@launch
+                }
                 val transaction = TransactionEntity(
                     title = merchant.trim(), amount = amount, type = TransactionType.EXPENSE, category = category,
                     account = freshCard.cardName, note = note.trim(), currencyCode = freshCard.currencyCode,
                     transactionKind = TransactionKind.CREDIT_CARD_PURCHASE, creditCardId = freshCard.id
                 )
                 if (repository.recordCreditCardPurchase(freshCard.id, transaction)) syncVaultToCloud()
+                else _actionMessages.tryEmit("Not enough available credit on ${freshCard.cardName}.")
             } finally {
                 synchronized(cardPurchasesInFlight) { cardPurchasesInFlight.remove(card.id) }
             }
@@ -1560,7 +1624,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 if (freshCard.currencyCode.isNullOrBlank() || freshAccount.currencyCode != freshCard.currencyCode || !freshAccount.isActive) return@launch
                 val actualPayment = paymentAmount.coerceAtMost(freshCard.currentBalance)
                 if (actualPayment <= 0.0) return@launch
-                repository.payCreditCard(
+                if (AccountLedger.currentBalance(freshAccount, repository.allTransactions.first()) + 0.000001 < actualPayment) {
+                    reportInsufficientBalance(freshAccount.name)
+                    return@launch
+                }
+                val paid = repository.payCreditCard(
                     freshCard,
                     actualPayment,
                     TransactionEntity(
@@ -1576,7 +1644,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         creditCardId = freshCard.id
                     )
                 )
-                syncVaultToCloud()
+                if (paid > 0.0) syncVaultToCloud() else reportInsufficientBalance(freshAccount.name)
             } finally {
                 synchronized(cardPaymentsInFlight) { cardPaymentsInFlight.remove(card.id) }
             }
@@ -1658,6 +1726,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val freshLoan = repository.loansSnapshot().firstOrNull { it.id == loan.id } ?: return@launch
                 val freshAccount = repository.account(sourceAccount.id) ?: return@launch
                 if (freshLoan.currencyCode.isNullOrBlank() || freshAccount.currencyCode != freshLoan.currencyCode || !freshAccount.isActive) return@launch
+                if (freshLoan.remainingBalance <= 0.0 || freshLoan.remainingMonths <= 0) return@launch
+                val paymentAmount = freshLoan.emiAmount.coerceAtLeast(0.0)
+                    .coerceAtMost(freshLoan.remainingBalance + freshLoan.remainingBalance * freshLoan.interestRate.coerceAtLeast(0.0) / 1200.0)
+                if (!paymentAmount.isFinite() || paymentAmount <= 0.0) return@launch
+                if (AccountLedger.currentBalance(freshAccount, repository.allTransactions.first()) + 0.000001 < paymentAmount) {
+                    reportInsufficientBalance(freshAccount.name)
+                    return@launch
+                }
                 val transaction = TransactionEntity(
                     title = "EMI: ${freshLoan.loanName}",
                     amount = freshLoan.emiAmount,
@@ -1667,9 +1743,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     note = "Manual EMI record; no payment was initiated by the app",
                     accountId = freshAccount.id,
                     currencyCode = freshLoan.currencyCode,
-                    transactionKind = TransactionKind.DEBT_SETTLEMENT
+                    transactionKind = TransactionKind.DEBT_SETTLEMENT,
+                    loanId = freshLoan.id
                 )
                 if (repository.payLoanEmi(freshLoan, transaction) > 0.0) syncVaultToCloud()
+                else reportInsufficientBalance(freshAccount.name)
             } finally {
                 synchronized(loanPaymentsInFlight) { loanPaymentsInFlight.remove(loan.id) }
             }
