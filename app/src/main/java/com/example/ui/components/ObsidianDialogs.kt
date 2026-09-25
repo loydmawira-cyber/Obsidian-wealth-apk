@@ -1503,13 +1503,21 @@ fun ConfirmDeleteHoldingDialog(
 
 @Composable
 fun AddSipDialog(
+    defaultCurrency: SupportedCurrency,
+    accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
-    onAdd: (fundName: String, category: String, amount: Double, plannedDay: Int) -> Unit
+    onAdd: (fundName: String, category: String, amount: Double, plannedDay: Int, currencyCode: String, contributionAccount: AccountEntity?) -> Unit
 ) {
     var fundName by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Index Fund") }
     var amountText by remember { mutableStateOf("") }
     var debitDayText by remember { mutableStateOf("1") }
+    var currency by remember { mutableStateOf(defaultCurrency) }
+    var contributionAccount by remember { mutableStateOf<AccountEntity?>(null) }
+    val matchingAccounts = accounts.filter { it.isActive && it.currencyCode == currency.code }
+    androidx.compose.runtime.LaunchedEffect(currency) {
+        if (contributionAccount != null && contributionAccount?.currencyCode != currency.code) contributionAccount = null
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1584,6 +1592,46 @@ fun AddSipDialog(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
+
+                Text("Contribution currency", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                SupportedCurrencyChips(currency) { currency = it }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (matchingAccounts.isNotEmpty()) {
+                    Text("Fund this month's contribution from (optional)", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Pick a bank to deduct this month's amount from your cash and list it on Cash Flow for you to confirm. Leave unselected to just save the plan.",
+                        color = TextMuted,
+                        fontSize = 10.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(matchingAccounts) { candidate ->
+                            val isSelected = contributionAccount?.id == candidate.id
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { contributionAccount = if (isSelected) null else candidate },
+                                color = if (isSelected) EmeraldGrowth.copy(alpha = 0.2f) else ObsidianSurfaceVariant,
+                                border = BorderStroke(1.dp, if (isSelected) EmeraldGrowth else ObsidianBorderSubtle)
+                            ) {
+                                Text(
+                                    text = "${candidate.name} Â· ${candidate.currencyCode}",
+                                    color = if (isSelected) EmeraldLight else TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        "Add an active account in this currency (Settings) to deduct a contribution from cash and list it on Cash Flow.",
+                        color = TextMuted,
+                        fontSize = 10.sp
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
