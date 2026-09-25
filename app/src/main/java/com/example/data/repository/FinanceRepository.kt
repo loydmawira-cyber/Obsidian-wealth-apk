@@ -21,6 +21,10 @@ class FinanceRepository(private val dao: FinanceDao) {
     suspend fun updateAccount(account: AccountEntity) = dao.updateAccount(account)
     suspend fun recordTransfer(source: TransactionEntity, destination: TransactionEntity): Boolean = dao.recordTransfer(source, destination)
     suspend fun recordReconciliation(account: AccountEntity, adjustment: TransactionEntity) = dao.recordReconciliation(account, adjustment)
+    suspend fun recordCreditCardPurchase(cardId: Long, transaction: TransactionEntity): Boolean =
+        dao.recordCreditCardPurchase(cardId, transaction)
+    suspend fun recordLoanTopUp(loanId: Long, accountId: Long, amount: Double, transaction: TransactionEntity): Boolean =
+        dao.recordLoanTopUp(loanId, accountId, amount, transaction)
 
     // Streams
     val allTransactions: Flow<List<TransactionEntity>> = dao.getAllTransactions()
