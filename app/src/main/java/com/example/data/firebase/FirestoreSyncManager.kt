@@ -175,7 +175,10 @@ class FirestoreSyncManager(private val context: Context) {
                     "dateMillis" to tx.dateMillis,
                     "note" to tx.note,
                     "isRecurring" to tx.isRecurring,
-                    "statementFingerprint" to tx.statementFingerprint
+                    "statementFingerprint" to tx.statementFingerprint,
+                    "importStatus" to tx.importStatus,
+                    "importSource" to tx.importSource,
+                    "sourceReference" to tx.sourceReference
                 )
                 txCollection.document(tx.id.toString()).set(txMap, SetOptions.merge()).awaitTask()
             }
@@ -369,13 +372,34 @@ class FirestoreSyncManager(private val context: Context) {
                         title = doc.getString("title") ?: "Restored Transaction",
                         amount = doc.getDouble("amount") ?: 0.0,
                         type = try { TransactionType.valueOf(doc.getString("type") ?: "EXPENSE") } catch (e: Exception) { TransactionType.EXPENSE },
-                        category = try { Category.valueOf(doc.getString("category") ?: "OTHER") } catch (e: Exception) { Category.OTHER },
+                        category = try {
+                            val storedCategory = Category.valueOf(doc.getString("category") ?: "OTHER")
+                            val storedType = try {
+                                TransactionType.valueOf(doc.getString("type") ?: "EXPENSE")
+                            } catch (e: Exception) {
+                                TransactionType.EXPENSE
+                            }
+                            val title = doc.getString("title") ?: ""
+                            val note = doc.getString("note") ?: ""
+                            if (storedType == TransactionType.EXPENSE && (
+                                    (storedCategory == Category.OTHER && title.startsWith("Payment to ") && note == "Card debt reduction") ||
+                                        (storedCategory == Category.LOAN_EMI && title.startsWith("EMI: ") && note == "Manual EMI payment recorded in Obsidian Wealth")
+                                    )
+                            ) Category.DEBT_PAYMENT else storedCategory
+                        } catch (e: Exception) {
+                            Category.OTHER
+                        },
                         account = doc.getString("account") ?: "Checking",
                         dateMillis = doc.getLong("dateMillis") ?: System.currentTimeMillis(),
                         note = doc.getString("note") ?: "",
                         isRecurring = doc.getBoolean("isRecurring") ?: false,
                         statementFingerprint = doc.getString("statementFingerprint"),
-                        importStatus = doc.getString("importStatus") ?: "MANUAL",
+                        importStatus = doc.getString("importStatus") ?: if (
+                            (doc.getString("note") ?: "") in setOf(
+                                "Automated SIP investment recorded in Obsidian Wealth",
+                                "Automated recurring SIP debit recorded by Obsidian Wealth"
+                            )
+                        ) "PENDING_REVIEW" else "MANUAL",
                         importSource = doc.getString("importSource"),
                         sourceReference = doc.getString("sourceReference")
                     )
@@ -415,7 +439,7 @@ class FirestoreSyncManager(private val context: Context) {
                         debitDayOfMonth = doc.getLong("debitDayOfMonth")?.toInt() ?: 1,
                         isActive = doc.getBoolean("isActive") ?: true,
                         totalInvested = doc.getDouble("totalInvested") ?: 0.0,
-                        annualizedReturnPercent = doc.getDouble("annualizedReturnPercent") ?: 12.0,
+                        annualizedReturnPercent = doc.getDouble("annualizedReturnPercent") ?: 0.0,
                         lastDebitedYearMonth = doc.getString("lastDebitedYearMonth")
                     )
                 } catch (e: Exception) {
