@@ -15,7 +15,7 @@ enum class Category {
     SALARY, FREELANCE, DIVIDENDS, RENTAL,
     HOUSING, FOOD_DINING, UTILITIES, TRANSPORT,
     SHOPPING, HEALTHCARE, SUBSCRIPTIONS, ENTERTAINMENT,
-    INVESTMENT_SIP, LOAN_EMI, OTHER,
+    INVESTMENT_SIP, LOAN_EMI, DEBT_PAYMENT, OTHER,
     // Money moved into or out of a savings goal: a transfer, not spending.
     GOAL_SAVINGS
 }
@@ -60,12 +60,13 @@ data class SipEntity(
     val fundName: String,
     val category: String, // e.g. "Index Fund", "Large Cap Growth", "Dividend Aristocrats"
     val monthlyAmount: Double,
+    // Legacy field retained for compatibility; this is a planned date, not an executed debit.
     val debitDayOfMonth: Int,
     val isActive: Boolean = true,
     val totalInvested: Double = 0.0,
-    val annualizedReturnPercent: Double = 14.5,
-    // "yyyy-MM" of the last calendar month this SIP's automatic debit was recorded for.
-    // Prevents the recurring debit engine from double-charging the same month.
+    // Legacy field retained for cloud/database compatibility; not shown as realized performance.
+    val annualizedReturnPercent: Double = 0.0,
+    // Legacy field retained for compatibility. New builds never run an automatic debit engine.
     val lastDebitedYearMonth: String? = null
 )
 
