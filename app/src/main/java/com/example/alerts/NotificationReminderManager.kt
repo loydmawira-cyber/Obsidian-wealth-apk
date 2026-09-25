@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Enterprise-grade Notification & Reminders Manager for Obsidian Wealth.
- * Handles proactive alerts, bill reminders, SIP standing order notifications,
+ * Handles proactive alerts and bill reminders,
  * and daily financial briefings.
  */
 object NotificationReminderManager {
@@ -58,7 +58,7 @@ object NotificationReminderManager {
                 "Bill & Debt Reminders",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Upcoming credit card due dates, loan EMIs, and SIP standing orders"
+                description = "Upcoming credit card due dates and loan EMIs"
                 enableLights(true)
                 lightColor = AndroidColor.rgb(202, 160, 55) // Gold
             }
@@ -115,10 +115,10 @@ object NotificationReminderManager {
         val builder = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("🔔 Obsidian Wealth Reminders Active")
-            .setContentText("Your automated bill due dates, SIP standing orders, and wealth alerts are enabled.")
+                .setContentText("Your bill reminders and financial alerts are enabled.")
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
-                    "Obsidian Wealth will proactively monitor your cash flow, upcoming credit card due dates, and SIP investments to keep you on track for debt-freedom."
+                    "Obsidian Wealth will check recorded cash flow and upcoming credit card due dates for financial alerts."
                 )
             )
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -190,25 +190,12 @@ object NotificationReminderManager {
         }
     }
 
-    /**
-     * Schedules the recurring SIP debit engine (see [SipDebitWorker] / [SipDebitEngine]) to run
-     * periodically in the background, so monthly SIP debits still record as cash-flow outflows
-     * even on days the app is never opened. Unlike alert notifications, this is not gated by the
-     * user's notification preference - it is financial record-keeping, not a notification.
-     */
-    fun scheduleSipDebitEngine(context: Context) {
+    /** Cancels the legacy worker that recorded planned SIPs as completed cash debits. */
+    fun cancelSipDebitEngine(context: Context) {
         try {
-            val sipDebitWork = PeriodicWorkRequestBuilder<SipDebitWorker>(12, TimeUnit.HOURS)
-                .setInitialDelay(1, TimeUnit.MINUTES)
-                .build()
-
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                WORK_NAME_SIP_DEBITS,
-                ExistingPeriodicWorkPolicy.KEEP,
-                sipDebitWork
-            )
+            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME_SIP_DEBITS)
         } catch (e: Exception) {
-            android.util.Log.e("NotificationManager", "Error scheduling SIP debit engine", e)
+            android.util.Log.e("NotificationManager", "Error cancelling legacy SIP debit work", e)
         }
     }
 }
