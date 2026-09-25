@@ -9,6 +9,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.dao.FinanceDao
 import com.example.data.models.Category
+import com.example.data.models.AccountEntity
 import com.example.data.models.CreditCardEntity
 import com.example.data.models.GeographicRegion
 import com.example.data.models.GoalEntity
@@ -94,6 +95,7 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
 @Database(
     entities = [
         TransactionEntity::class,
+        AccountEntity::class,
         HoldingEntity::class,
         SipEntity::class,
         CreditCardEntity::class,
@@ -102,7 +104,7 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         NetWorthSnapshotEntity::class,
         BudgetEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -118,7 +120,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "obsidian_wealth_v3.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance
@@ -136,6 +138,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         suspend fun reseedDatabaseForRegion(dao: FinanceDao, region: GeographicRegion) {
             dao.clearAllTransactions()
+            dao.clearAllAccounts()
             dao.clearAllHoldings()
             dao.clearAllSips()
             dao.clearAllCreditCards()
@@ -542,6 +545,57 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                 }
             }
+
+            // Region seed data is only used by the designated demo/reset flows. Give every
+            // seeded amount explicit metadata so it is not mistaken for unresolved user data.
+            val currencyCode = region.defaultCurrency.code
+            val seededTransactions = dao.getTransactionsSnapshot()
+            val accountIds = mutableMapOf<String, Long>()
+            seededTransactions.map { it.account }.distinct().forEach { accountName ->
+                accountIds[accountName] = dao.insertAccount(
+                    AccountEntity(
+                        name = accountName,
+                        accountType = "DEMO",
+                        currencyCode = currencyCode,
+                        openingBalance = 0.0,
+                        openingBalanceMillis = 0L,
+                        openingBalanceConfirmed = true
+                    )
+                )
+            }
+            dao.insertTransactions(
+                seededTransactions.map { transaction ->
+                    transaction.copy(
+                        accountId = accountIds[transaction.account],
+                        currencyCode = currencyCode
+                    )
+                }
+            )
+            dao.insertHoldings(dao.getHoldingsSnapshot().map { it.copy(currencyCode = currencyCode) })
+            dao.insertSips(dao.getSipsSnapshot().map { it.copy(currencyCode = currencyCode) })
+            dao.insertCreditCards(dao.getCreditCardsSnapshot().map { it.copy(currencyCode = currencyCode) })
+            dao.insertLoans(dao.getLoansSnapshot().map { it.copy(currencyCode = currencyCode) })
+            dao.insertGoals(dao.getGoalsSnapshot().map { it.copy(currencyCode = currencyCode) })
         }
+    }
+}
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE transactions ADD COLUMN accountId INTEGER DEFAULT NULL")
+        db.execSQL("ALTER TABLE transactions ADD COLUMN currencyCode TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE transactions ADD COLUMN transactionKind TEXT NOT NULL DEFAULT 'STANDARD'")
+        db.execSQL("ALTER TABLE transactions ADD COLUMN transferGroupId TEXT DEFAULT NULL")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `accounts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `accountType` TEXT NOT NULL, `currencyCode` TEXT, `openingBalance` REAL NOT NULL, `openingBalanceMillis` INTEGER NOT NULL, `statementBalance` REAL, `lastReconciledMillis` INTEGER, `isActive` INTEGER NOT NULL, `openingBalanceConfirmed` INTEGER NOT NULL)")
+        db.execSQL("ALTER TABLE holdings ADD COLUMN currencyCode TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE sips ADD COLUMN currencyCode TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE credit_cards ADD COLUMN currencyCode TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE loans ADD COLUMN currencyCode TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE goals ADD COLUMN currencyCode TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE budgets ADD COLUMN currencyCode TEXT DEFAULT NULL")
+        db.execSQL("UPDATE transactions SET category = 'INVESTMENT_SALE', transactionKind = 'ASSET_CONVERSION', importStatus = 'PENDING_REVIEW' WHERE type = 'INCOME' AND category = 'INVESTMENT_SIP' AND sourceReference LIKE 'holdingsale:%'")
+        db.execSQL("UPDATE transactions SET importStatus = 'PENDING_REVIEW' WHERE category = 'GOAL_SAVINGS' AND sourceReference LIKE 'goal:%'")
+        db.execSQL("UPDATE transactions SET importStatus = 'PENDING_REVIEW' WHERE transactionKind = 'DEBT_SETTLEMENT'")
+        db.execSQL("INSERT INTO accounts (name, accountType, currencyCode, openingBalance, openingBalanceMillis, statementBalance, lastReconciledMillis, isActive, openingBalanceConfirmed) SELECT DISTINCT account, 'LEGACY', NULL, 0, 0, NULL, NULL, 1, 0 FROM transactions WHERE TRIM(account) != '' AND transactionKind = 'STANDARD' AND sourceReference IS NULL")
+        db.execSQL("UPDATE transactions SET accountId = (SELECT accounts.id FROM accounts WHERE accounts.name = transactions.account LIMIT 1) WHERE accountId IS NULL")
     }
 }
