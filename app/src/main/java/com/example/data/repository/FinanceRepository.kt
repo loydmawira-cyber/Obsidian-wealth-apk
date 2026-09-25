@@ -109,6 +109,10 @@ class FinanceRepository(private val dao: FinanceDao) {
     suspend fun addGoal(goal: GoalEntity): Long = dao.insertGoal(goal)
     suspend fun updateGoal(goal: GoalEntity) = dao.updateGoal(goal)
     suspend fun deleteGoal(goal: GoalEntity) = dao.deleteGoal(goal)
+    suspend fun recordGoalContribution(goalId: Long, transaction: TransactionEntity): Boolean =
+        dao.recordGoalContribution(goalId, transaction)
+    suspend fun deleteGoalContribution(transactionId: Long): Boolean =
+        dao.deleteGoalContribution(transactionId)
     suspend fun contributeToGoal(goal: GoalEntity, amount: Double) {
         val newAmount = goal.currentAmount + amount
         dao.updateGoal(goal.copy(currentAmount = newAmount))
