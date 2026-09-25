@@ -71,3 +71,13 @@ Cash-funded expenses, transfers, credit-card repayments, and loan installments a
 
 [4]: app/src/main/java/com/example/ui/viewmodel/FinanceViewModel.kt "Spend validation and feedback"
 [5]: app/src/main/java/com/example/ui/components/ObsidianDialogs.kt "Transaction and debt payment forms"
+
+
+## Launcher icon
+
+The launcher icon is a centered gold dollar coin with an emerald growth arrow and obsidian accents. Android adaptive-icon artwork is stored in `app/src/main/res/drawable-nodpi/app_icon_obsidian_wealth.png`; density-specific fallback icons are provided for older Android versions.
+
+
+## Investment and cash-flow donut totals
+
+The Investments screen keeps the live portfolio-allocation donut based on recorded holdings only and shows active SIP mandates in a separate monthly-plan donut, so planned contributions are not presented as owned assets. Cash Flow monthly totals and the category donut share transaction-kind rules: confirmed investment purchases/SIP asset conversions count as cash outflows; internal transfers and adjustments are separate; card repayments are excluded to avoid counting a purchase twice. Pending and ignored entries remain excluded until action is taken.
