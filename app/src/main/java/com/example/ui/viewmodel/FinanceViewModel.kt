@@ -12,6 +12,8 @@ import com.example.alerts.NotificationReminderManager
 import com.example.data.billing.BillingManager
 import com.example.data.database.AppDatabase
 import com.example.data.models.Category
+import com.example.data.models.AccountEntity
+import com.example.data.models.AccountLedger
 import com.example.data.models.CreditCardEntity
 import com.example.data.models.GeographicRegion
 import com.example.data.models.GoalEntity
@@ -22,6 +24,7 @@ import com.example.data.models.SipEntity
 import com.example.data.models.SupportedCurrency
 import com.example.data.models.TransactionEntity
 import com.example.data.models.TransactionType
+import com.example.data.models.TransactionKind
 import com.example.data.models.UserSettings
 import com.example.data.firebase.CloudSyncResult
 import com.example.data.firebase.FirestoreConnectionStatus
@@ -94,7 +97,9 @@ data class FinanceSummary(
     val transactionCount: Int = 0,
     val holdingCount: Int = 0,
     val debtAccountCount: Int = 0,
-    val goalCount: Int = 0
+    val goalCount: Int = 0,
+    val currencyCode: String = "KES",
+    val hasUnresolvedLedgerData: Boolean = false
 )
 
 /** Cash flow for one calendar month, including the balance carried in and out. */
@@ -106,8 +111,15 @@ data class MonthCashFlow(
     val inflow: Double = 0.0,
     val outflow: Double = 0.0,
     val invested: Double = 0.0,
+    val adjustments: Double = 0.0,
     val closing: Double = 0.0,
     val isCurrentMonth: Boolean = true
+)
+
+private data class SummaryAssets(
+    val holdings: List<HoldingEntity>,
+    val accounts: List<AccountEntity>,
+    val currencyCode: String
 )
 
 /** Categories that move money into something you own rather than spend it. */
@@ -241,6 +253,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _isPinEnabled.value = preferencesManager.isPinEnabled()
         _isPinLocked.value = preferencesManager.isPinEnabled() && preferencesManager.isLoggedIn()
 
+        // Convert the old all-in-one cash baseline once. It is intentionally currency-unknown:
+        // the selected display currency is not proof of the bank account's currency.
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val rows = repository.accountsSnapshot()
+            val legacyName = "Legacy starting balance (review)"
+            if (rows.none { it.name == legacyName } && _startingBalance.value != 0.0) {
+                repository.addAccount(
+                    AccountEntity(
+                        name = legacyName,
+                        accountType = "LEGACY",
+                        currencyCode = null,
+                        openingBalance = _startingBalance.value,
+                        openingBalanceMillis = 0L,
+                        openingBalanceConfirmed = false
+                    )
+                )
+                preferencesManager.setStartingBalance(0.0)
+                _startingBalance.value = 0.0
+                syncVaultToCloud()
+            }
+        }
+
         // Recurring investment plans are reminders only. Do not create ledger entries or
         // increase invested value unless an actual contribution is confirmed or imported.
     }
@@ -253,6 +287,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
      */
     private suspend fun clearLocalVaultTables() {
         database.financeDao().clearAllTransactions()
+        database.financeDao().clearAllAccounts()
         database.financeDao().clearAllHoldings()
         database.financeDao().clearAllSips()
         database.financeDao().clearAllCreditCards()
@@ -460,6 +495,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun clearAllFinancialData() {
         viewModelScope.launch {
             database.financeDao().clearAllTransactions()
+            database.financeDao().clearAllAccounts()
             database.financeDao().clearAllHoldings()
             database.financeDao().clearAllSips()
             database.financeDao().clearAllCreditCards()
@@ -489,6 +525,116 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         return userSettings.value.formatAmount(amount, forceVisible)
     }
 
+    fun formatAmount(amount: Double, currencyCode: String?, forceVisible: Boolean = false): String {
+        val settings = userSettings.value
+        val currency = SupportedCurrency.values().firstOrNull { it.code == currencyCode }
+        if (currency == null) {
+            val numberOnly = settings.formatAmount(amount, forceVisible)
+                .removePrefix(settings.currency.symbol)
+                .trim()
+            return "${currencyCode?.takeIf { it.isNotBlank() } ?: "Currency unknown"} $numberOnly"
+        }
+        return settings.copy(currency = currency, hideBalances = settings.hideBalances && !forceVisible)
+            .formatAmount(amount, forceVisible)
+    }
+
+    fun currentAccountBalance(account: AccountEntity): Double =
+        AccountLedger.currentBalance(account, transactions.value)
+
+    fun addAccount(name: String, accountType: String, currencyCode: String, openingBalance: Double) {
+        val cleanName = name.trim()
+        if (cleanName.isBlank() || !openingBalance.isFinite() ||
+            SupportedCurrency.values().none { it.code == currencyCode }) return
+        viewModelScope.launch {
+            repository.addAccount(
+                AccountEntity(
+                    name = cleanName,
+                    accountType = accountType,
+                    currencyCode = currencyCode,
+                    openingBalance = openingBalance,
+                    openingBalanceMillis = System.currentTimeMillis(),
+                    openingBalanceConfirmed = true
+                )
+            )
+            syncVaultToCloud()
+        }
+    }
+
+    fun resolveAccountCurrency(account: AccountEntity, currencyCode: String) {
+        if (SupportedCurrency.values().none { it.code == currencyCode }) return
+        viewModelScope.launch {
+            val fresh = repository.account(account.id) ?: return@launch
+            repository.updateAccount(fresh.copy(currencyCode = currencyCode))
+            database.financeDao().resolveTransactionCurrency(account.id, currencyCode)
+            syncVaultToCloud()
+        }
+    }
+
+    fun confirmAccountOpeningBalance(account: AccountEntity, openingBalance: Double) {
+        if (!openingBalance.isFinite() || account.currencyCode.isNullOrBlank()) return
+        viewModelScope.launch {
+            val fresh = repository.account(account.id) ?: return@launch
+            if (fresh.currencyCode.isNullOrBlank()) return@launch
+            repository.updateAccount(fresh.copy(openingBalance = openingBalance, openingBalanceConfirmed = true))
+            syncVaultToCloud()
+        }
+    }
+
+    fun recordReconciliation(account: AccountEntity, statementBalance: Double) {
+        if (!statementBalance.isFinite() || account.currencyCode.isNullOrBlank()) return
+        viewModelScope.launch {
+            val fresh = repository.account(account.id) ?: return@launch
+            val ledgerBalance = AccountLedger.currentBalance(fresh, repository.allTransactions.first())
+            val difference = AccountLedger.reconciliationAdjustment(ledgerBalance, statementBalance)
+            if (!difference.isFinite()) return@launch
+            val now = System.currentTimeMillis()
+            val adjustment = if (kotlin.math.abs(difference) > 0.005) TransactionEntity(
+                title = "Balance reconciliation: ${fresh.name}",
+                amount = kotlin.math.abs(difference),
+                type = if (difference >= 0.0) TransactionType.INCOME else TransactionType.EXPENSE,
+                category = Category.ACCOUNT_ADJUSTMENT,
+                account = fresh.name,
+                dateMillis = now,
+                note = "Reconciled to a statement balance entered by the user",
+                accountId = fresh.id,
+                currencyCode = fresh.currencyCode,
+                transactionKind = TransactionKind.ADJUSTMENT
+            ) else null
+            val updated = fresh.copy(statementBalance = statementBalance, lastReconciledMillis = now)
+            if (adjustment != null) repository.recordReconciliation(updated, adjustment)
+            else repository.updateAccount(updated)
+            syncVaultToCloud()
+        }
+    }
+
+    fun recordTransfer(from: AccountEntity, to: AccountEntity, amount: Double, note: String = "") {
+        if (!amount.isFinite() || amount <= 0.0 || from.id == to.id || from.currencyCode.isNullOrBlank() ||
+            from.currencyCode != to.currencyCode) return
+        viewModelScope.launch {
+            val freshFrom = repository.account(from.id) ?: return@launch
+            val freshTo = repository.account(to.id) ?: return@launch
+            if (!freshFrom.isActive || !freshTo.isActive || freshFrom.currencyCode != freshTo.currencyCode) return@launch
+            if (AccountLedger.currentBalance(freshFrom, repository.allTransactions.first()) + 0.000001 < amount) return@launch
+            val now = System.currentTimeMillis()
+            val group = java.util.UUID.randomUUID().toString()
+            val recorded = repository.recordTransfer(
+                TransactionEntity(
+                    title = "Transfer to ${freshTo.name}", amount = amount, type = TransactionType.EXPENSE,
+                    category = Category.ACCOUNT_TRANSFER, account = freshFrom.name, dateMillis = now,
+                    note = note, accountId = freshFrom.id, currencyCode = freshFrom.currencyCode,
+                    transactionKind = TransactionKind.TRANSFER, transferGroupId = group
+                ),
+                TransactionEntity(
+                    title = "Transfer from ${freshFrom.name}", amount = amount, type = TransactionType.INCOME,
+                    category = Category.ACCOUNT_TRANSFER, account = freshTo.name, dateMillis = now,
+                    note = note, accountId = freshTo.id, currencyCode = freshTo.currencyCode,
+                    transactionKind = TransactionKind.TRANSFER, transferGroupId = group
+                )
+            )
+            if (recorded) syncVaultToCloud()
+        }
+    }
+
     fun formatCompact(amount: Double, forceVisible: Boolean = false): String {
         return userSettings.value.formatCompact(amount, forceVisible)
     }
@@ -500,10 +646,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun applyRegionPreset(region: GeographicRegion) {
         preferencesManager.applyRegionPreset(region)
-        viewModelScope.launch {
-            AppDatabase.reseedDatabaseForRegion(database.financeDao(), region)
-            validateSelectedTab()
-        }
+        // Locale changes must never replace or delete user-entered financial records.
+        validateSelectedTab()
     }
 
     fun updateCurrency(currency: SupportedCurrency) {
@@ -594,6 +738,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
+    val accounts = repository.allAccounts.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+    )
+
     val holdings = repository.allHoldings.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
@@ -631,55 +779,76 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     private val _selectedMonthStart = MutableStateFlow(currentMonthStart())
 
+    private val summaryAssets = combine(holdings, accounts, userSettings) { h, a, settings ->
+        SummaryAssets(h, a, settings.currency.code)
+    }
+
     val summary: StateFlow<FinanceSummary> = combine(
-        transactions, combine(holdings, _startingBalance) { h, sb -> Pair(h, sb) }, creditCards, loans, goals
-    ) { txList, holdingsAndBalance, cList, lList, gList ->
-        val hList = holdingsAndBalance.first
-        val startBalance = holdingsAndBalance.second
-        // No demo-value substitution. A zero total means the user has recorded nothing, and that
-        // is what the UI and the advisor must both be told.
-        val confirmedTransactions = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
-        val inflow = confirmedTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-        val outflow = confirmedTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        transactions, summaryAssets, creditCards, loans, goals
+    ) { txList, assetContext, cList, lList, gList ->
+        val baseCurrency = assetContext.currencyCode
+        val hList = assetContext.holdings
+        val aList = assetContext.accounts
+        val accountById = aList.associateBy { it.id }
+        fun currency(tx: TransactionEntity): String? = tx.currencyCode ?: tx.accountId?.let { accountById[it]?.currencyCode }
+        val confirmed = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
+        val activeBaseAccountIds = aList.filter { it.isActive && it.currencyCode == baseCurrency }.map { it.id }.toSet()
+        val selected = confirmed.filter { it.accountId in activeBaseAccountIds && currency(it) == baseCurrency }
+        val operatingIncome = selected.filter {
+            it.type == TransactionType.INCOME && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT, TransactionKind.ASSET_CONVERSION)
+        }
+        val operatingExpense = selected.filter {
+            it.type == TransactionType.EXPENSE && it.transactionKind != TransactionKind.TRANSFER && it.category !in nonSpendingCategories
+        }
+        val inflow = operatingIncome.sumOf { it.amount }
+        val outflow = selected.filter { it.type == TransactionType.EXPENSE && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT) }.sumOf { it.amount }
         val netCash = inflow - outflow
-        // Savings rate and DTI use the last 30 days, not all-time totals, so they mean the same
-        // thing in month 1 and month 24. Money moved into investments is saved, not spent, and
-        // sale proceeds are not earnings, so investment transactions are left out of the rate.
+
         val windowStart = System.currentTimeMillis() - 30L * 86_400_000L
-        val recentTx = confirmedTransactions.filter { it.dateMillis >= windowStart }
-        val recentIn = recentTx.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-        val recentOut = recentTx.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
-        val operatingIn = recentTx
-            .filter { it.type == TransactionType.INCOME && it.category !in nonSpendingCategories }.sumOf { it.amount }
-        val operatingOut = recentTx
-            .filter { it.type == TransactionType.EXPENSE && it.category !in nonSpendingCategories }.sumOf { it.amount }
+        val recent = selected.filter { it.dateMillis >= windowStart }
+        val recentIn = recent.filter { it.type == TransactionType.INCOME && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT, TransactionKind.ASSET_CONVERSION) }.sumOf { it.amount }
+        val recentOut = recent.filter { it.type == TransactionType.EXPENSE && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT) }.sumOf { it.amount }
+        val operatingIn = recent.filter { it.type == TransactionType.INCOME && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ADJUSTMENT, TransactionKind.ASSET_CONVERSION) && it.category !in nonSpendingCategories }.sumOf { it.amount }
+        val operatingOut = recent.filter { it.type == TransactionType.EXPENSE && it.transactionKind != TransactionKind.TRANSFER && it.category !in nonSpendingCategories }.sumOf { it.amount }
         val savingsRate = if (operatingIn > 0) ((operatingIn - operatingOut) / operatingIn) * 100.0 else 0.0
 
-        // Contribution plans are not market-valued assets. Include only recorded holdings.
-        val portVal = hList.sumOf { it.totalValue }
-        val portCost = hList.sumOf { it.totalCost }
-        val dayGain = hList.sumOf { it.totalValue * (it.dailyChangePercent / 100.0) }
+        val baseHoldings = hList.filter { it.currencyCode == baseCurrency }
+        val portVal = baseHoldings.sumOf { it.totalValue }
+        val portCost = baseHoldings.sumOf { it.totalCost }
+        val dayGain = baseHoldings.sumOf { it.totalValue * (it.dailyChangePercent / 100.0) }
         val dayGainPct = if (portVal > 0) (dayGain / portVal) * 100.0 else 0.0
-        // Simple return on cost basis. Not XIRR — contribution dates are not recorded.
         val portReturnPct = if (portCost > 0) ((portVal - portCost) / portCost) * 100.0 else 0.0
 
-        val cardDebt = cList.sumOf { it.currentBalance }
-        val loanDebt = lList.sumOf { it.remainingBalance }
+        val baseCards = cList.filter { it.currencyCode == baseCurrency }
+        val baseLoans = lList.filter { it.currencyCode == baseCurrency }
+        val cardDebt = baseCards.sumOf { it.currentBalance }
+        val loanDebt = baseLoans.sumOf { it.remainingBalance }
         val totalDebtVal = cardDebt + loanDebt
-        val monthlyDebt = cList.sumOf { it.currentBalance * 0.03 } + lList.sumOf { it.emiAmount }
+        // Card minimum-payment terms are issuer-specific and unknown here; only explicit loan EMIs are shown.
+        val monthlyDebt = baseLoans.sumOf { it.emiAmount }
         val dti = if (recentIn > 0) (monthlyDebt / recentIn) * 100.0 else 0.0
 
-        val goalsSum = gList.sumOf { it.currentAmount }
-        // Liquid cash was previously a hardcoded 850,000. Until a cash-account entity exists,
-        // net cash retained from recorded transactions is the only defensible figure.
-        // The user's starting cash plus everything recorded since. Shown as-is, even if negative.
-        val liquidCash = startBalance + netCash
-        val totalAssetsVal = portVal + goalsSum + liquidCash
+        val baseGoals = gList.filter { it.currencyCode == baseCurrency }
+        val goalsSum = baseGoals.sumOf { it.currentAmount }
+        val liquidCash = aList.filter { it.isActive && it.currencyCode == baseCurrency }
+            .sumOf { AccountLedger.currentBalance(it, confirmed) }
+        // A goal is a label/target, not a separate asset. Its saved amount may already be inside a cash account.
+        val totalAssetsVal = portVal + liquidCash
         val totalLiabilitiesVal = totalDebtVal
-        val netWorthVal = totalAssetsVal - totalLiabilitiesVal
+
+        val unresolved = aList.any { it.isActive && (it.currencyCode.isNullOrBlank() || (it.openingBalance != 0.0 && !it.openingBalanceConfirmed)) } ||
+            hList.any { it.totalValue != 0.0 && it.currencyCode.isNullOrBlank() } ||
+            cList.any { it.currentBalance != 0.0 && it.currencyCode.isNullOrBlank() } ||
+            lList.any { it.remainingBalance != 0.0 && it.currencyCode.isNullOrBlank() } ||
+            gList.any { it.currentAmount != 0.0 && it.currencyCode.isNullOrBlank() } ||
+            confirmed.any { tx ->
+                val accountCurrency = tx.accountId?.let { accountById[it]?.currencyCode }
+                tx.amount != 0.0 && (tx.accountId == null || currency(tx).isNullOrBlank() ||
+                    (!accountCurrency.isNullOrBlank() && !tx.currencyCode.isNullOrBlank() && accountCurrency != tx.currencyCode))
+            }
 
         FinanceSummary(
-            totalNetWorth = netWorthVal,
+            totalNetWorth = totalAssetsVal - totalLiabilitiesVal,
             totalAssets = totalAssetsVal,
             totalLiabilities = totalLiabilitiesVal,
             liquidCash = liquidCash,
@@ -698,25 +867,33 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             totalDebt = totalDebtVal,
             monthlyDebtServicing = monthlyDebt,
             dtiRatio = dti,
-            transactionCount = confirmedTransactions.size,
-            holdingCount = hList.size,
-            debtAccountCount = cList.size + lList.size,
-            goalCount = gList.size
+            transactionCount = selected.size,
+            holdingCount = baseHoldings.size,
+            debtAccountCount = baseCards.size + baseLoans.size,
+            goalCount = baseGoals.size,
+            currencyCode = baseCurrency,
+            hasUnresolvedLedgerData = unresolved
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FinanceSummary())
 
     /** One calendar month of cash flow with opening and closing balances. */
     val monthCashFlow: StateFlow<MonthCashFlow> = combine(
-        transactions, _selectedMonthStart, _startingBalance
-    ) { txList, monthStart, startBalance ->
+        transactions, accounts, _selectedMonthStart, userSettings
+    ) { txList, accountList, monthStart, settings ->
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = monthStart; add(java.util.Calendar.MONTH, 1) }
         val monthEnd = cal.timeInMillis
         val confirmed = txList.filter { it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" }
-        fun signed(t: TransactionEntity) = if (t.type == TransactionType.INCOME) t.amount else -t.amount
-        val opening = startBalance + confirmed.filter { it.dateMillis < monthStart }.sumOf { signed(it) }
-        val inMonth = confirmed.filter { it.dateMillis >= monthStart && it.dateMillis < monthEnd }
-        val inflow = inMonth.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-        val outflow = inMonth.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        val currency = settings.currency.code
+        val selectedAccounts = accountList.filter { it.isActive && it.currencyCode == currency }
+        val accountIds = selectedAccounts.map { it.id }.toSet()
+        val selectedTransactions = confirmed.filter { it.accountId in accountIds }
+        val inMonth = selectedTransactions.filter { it.dateMillis >= monthStart && it.dateMillis < monthEnd && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ASSET_CONVERSION) }
+        val opening = selectedAccounts.sumOf { AccountLedger.balanceAt(it, selectedTransactions, monthStart) }
+        val closing = selectedAccounts.sumOf { AccountLedger.balanceAt(it, selectedTransactions, monthEnd) }
+        val operatingMonth = inMonth.filter { it.transactionKind != TransactionKind.ADJUSTMENT }
+        val inflow = operatingMonth.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val outflow = operatingMonth.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        val adjustments = inMonth.filter { it.transactionKind == TransactionKind.ADJUSTMENT }.sumOf(AccountLedger::signedEffect)
         val invested = inMonth.filter { it.type == TransactionType.EXPENSE && it.category in investmentCategories }.sumOf { it.amount }
         MonthCashFlow(
             monthStart = monthStart,
@@ -726,7 +903,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             inflow = inflow,
             outflow = outflow,
             invested = invested,
-            closing = opening + inflow - outflow,
+            adjustments = adjustments,
+            closing = closing,
             isCurrentMonth = monthStart == currentMonthStart()
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MonthCashFlow())
@@ -773,9 +951,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val budgets: StateFlow<List<com.example.data.models.BudgetEntity>> = repository.allBudgets
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun saveBudget(category: Category, monthlyLimit: Double) {
+    fun saveBudget(category: Category, monthlyLimit: Double, currencyCode: String) {
+        if (!monthlyLimit.isFinite() || monthlyLimit <= 0.0 || SupportedCurrency.values().none { it.code == currencyCode }) return
         viewModelScope.launch {
-            repository.saveBudget(com.example.data.models.BudgetEntity(category, monthlyLimit))
+            repository.saveBudget(com.example.data.models.BudgetEntity(category, monthlyLimit, currencyCode))
             syncVaultToCloud()
         }
     }
@@ -880,8 +1059,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun addImportedTransactions(transactions: List<com.example.data.util.ParsedTransaction>) {
+    fun addImportedTransactions(transactions: List<com.example.data.util.ParsedTransaction>, account: AccountEntity) {
+        if (!account.isActive || account.currencyCode.isNullOrBlank()) return
         viewModelScope.launch {
+            val currentAccount = repository.account(account.id) ?: return@launch
+            if (!currentAccount.isActive || currentAccount.currencyCode != account.currencyCode) return@launch
             transactions.filter { !it.isDuplicate && !it.dateAmbiguous && it.dateMillis > 0L }.forEach { tx ->
                 if (!repository.isFingerprintImported(tx.fingerprint)) {
                     repository.addTransaction(
@@ -890,10 +1072,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             amount = tx.amount,
                             type = tx.type,
                             category = tx.category,
-                            account = tx.account,
+                            account = currentAccount.name,
                             dateMillis = tx.dateMillis,
                             statementFingerprint = tx.fingerprint,
-                            note = "Imported Statement [FP: ${tx.fingerprint.take(8)}]"
+                            note = "Imported Statement [FP: ${tx.fingerprint.take(8)}]",
+                            accountId = currentAccount.id,
+                            currencyCode = currentAccount.currencyCode
                         )
                     )
                 }
@@ -908,22 +1092,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         amount: Double,
         type: TransactionType,
         category: Category,
-        account: String,
+        account: AccountEntity,
         dateMillis: Long = System.currentTimeMillis(),
         note: String = "",
         statementFingerprint: String? = null
     ) {
+        if (account.currencyCode.isNullOrBlank() || !account.isActive || !amount.isFinite() || amount <= 0.0 || title.isBlank() ||
+            category in setOf(Category.ACCOUNT_TRANSFER, Category.ACCOUNT_ADJUSTMENT, Category.INVESTMENT_SALE)) return
         viewModelScope.launch {
+            val freshAccount = repository.account(account.id) ?: return@launch
+            if (!freshAccount.isActive || freshAccount.currencyCode != account.currencyCode) return@launch
             repository.addTransaction(
                 TransactionEntity(
                     title = title,
                     amount = amount,
                     type = type,
                     category = category,
-                    account = account,
+                    account = freshAccount.name,
                     dateMillis = dateMillis,
                     note = note,
-                    statementFingerprint = statementFingerprint
+                    statementFingerprint = statementFingerprint,
+                    accountId = freshAccount.id,
+                    currencyCode = freshAccount.currencyCode
                 )
             )
             syncVaultToCloud()
@@ -931,15 +1121,38 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun addTransaction(transaction: TransactionEntity) {
+        if (!transaction.amount.isFinite() || transaction.amount <= 0.0 || transaction.title.isBlank() ||
+            transaction.category in setOf(Category.ACCOUNT_TRANSFER, Category.ACCOUNT_ADJUSTMENT, Category.INVESTMENT_SALE)) return
         viewModelScope.launch {
-            repository.addTransaction(transaction)
+            val currentAccounts = repository.accountsSnapshot()
+            val linked = transaction.accountId?.let { id -> currentAccounts.firstOrNull { it.id == id } }
+                ?: currentAccounts.filter { it.isActive && it.name.equals(transaction.account.trim(), ignoreCase = true) }
+                    .singleOrNull()
+            if (linked == null || !linked.isActive || linked.currencyCode.isNullOrBlank() ||
+                (transaction.currencyCode != null && transaction.currencyCode != linked.currencyCode)) return@launch
+            val stored = transaction.copy(
+                account = linked.name,
+                accountId = linked.id,
+                currencyCode = linked.currencyCode
+            )
+            repository.addTransaction(stored)
             syncVaultToCloud()
         }
     }
 
-    fun confirmImportedTransaction(transaction: TransactionEntity) {
+    fun confirmImportedTransaction(transaction: TransactionEntity, account: AccountEntity) {
         viewModelScope.launch {
-            repository.updateImportStatus(transaction.id, "CONFIRMED")
+            val current = repository.account(account.id) ?: return@launch
+            if (!current.isActive || current.currencyCode.isNullOrBlank() ||
+                (transaction.currencyCode != null && transaction.currencyCode != current.currencyCode)) return@launch
+            repository.updateTransaction(
+                transaction.copy(
+                    account = current.name,
+                    accountId = current.id,
+                    currencyCode = current.currencyCode,
+                    importStatus = "CONFIRMED"
+                )
+            )
             syncVaultToCloud()
         }
     }
@@ -1055,8 +1268,20 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateTransaction(transaction: TransactionEntity) {
+        if (!transaction.amount.isFinite() || transaction.amount <= 0.0 || transaction.title.isBlank() ||
+            transaction.transactionKind != TransactionKind.STANDARD || transaction.sourceReference != null ||
+            transaction.category in setOf(Category.ACCOUNT_TRANSFER, Category.ACCOUNT_ADJUSTMENT, Category.INVESTMENT_SALE)) return
         viewModelScope.launch {
-            repository.updateTransaction(transaction)
+            val currentAccounts = repository.accountsSnapshot()
+            val linked = transaction.accountId?.let { id -> currentAccounts.firstOrNull { it.id == id } }
+                ?: currentAccounts.filter { it.isActive && it.name.equals(transaction.account.trim(), ignoreCase = true) }
+                    .singleOrNull()
+            if (linked == null || !linked.isActive || linked.currencyCode.isNullOrBlank()) return@launch
+            repository.updateTransaction(transaction.copy(
+                account = linked.name,
+                accountId = linked.id,
+                currencyCode = linked.currencyCode
+            ))
             syncVaultToCloud()
         }
     }
@@ -1075,7 +1300,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         type: HoldingType,
         shares: Double,
         avgBuyPrice: Double,
-        currentPrice: Double
+        currentPrice: Double,
+        currencyCode: String
     ) {
         viewModelScope.launch {
             val holdingId = repository.addHolding(
@@ -1086,25 +1312,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     shares = shares,
                     avgBuyPrice = avgBuyPrice,
                     currentPrice = currentPrice,
-                    dailyChangePercent = 0.0 // no live price feed: day change is unknown until prices are edited
+                    dailyChangePercent = 0.0, // no live price feed: day change is unknown until prices are edited
+                    currencyCode = currencyCode
                 )
             )
-            // Buying an investment spends cash: record the purchase cost as an expense so it
-            // shows on the Cash Flow tab and reduces available cash.
-            val purchaseCost = shares * avgBuyPrice
-            if (purchaseCost > 0) {
-                repository.addTransaction(
-                    TransactionEntity(
-                        title = "Investment: ${symbol.uppercase()}",
-                        amount = purchaseCost,
-                        type = TransactionType.EXPENSE,
-                        category = Category.INVESTMENT_SIP,
-                        account = "Cash / selected account",
-                        note = "Purchase of $shares x ${symbol.uppercase()} recorded in Obsidian Wealth",
-                        sourceReference = "holding:$holdingId"
-                    )
-                )
-            }
+            // Recording a holding is a portfolio snapshot, not proof that a purchase just occurred.
             syncVaultToCloud()
         }
     }
@@ -1116,11 +1328,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /**
-     * Sells [sharesToSell] units at [salePrice]: reduces (or removes) the holding and records the
-     * proceeds as income on Cash Flow. Realised gain is shown in the note.
-     */
-    fun sellHolding(holding: HoldingEntity, sharesToSell: Double, salePrice: Double) {
+    /** Records a portfolio sale as an asset conversion into a same-currency cash account. */
+    fun sellHolding(holding: HoldingEntity, sharesToSell: Double, salePrice: Double, proceedsAccount: AccountEntity) {
+        if (holding.currencyCode.isNullOrBlank() || proceedsAccount.currencyCode != holding.currencyCode || !proceedsAccount.isActive) return
         viewModelScope.launch {
             val qty = sharesToSell.coerceAtMost(holding.shares)
             if (qty <= 0.0 || salePrice < 0.0) return@launch
@@ -1136,13 +1346,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val gain = qty * (salePrice - holding.avgBuyPrice)
                 repository.addTransaction(
                     TransactionEntity(
-                        title = "Sold: ${holding.symbol}",
+                        title = "Investment sale: ${holding.symbol}",
                         amount = proceeds,
                         type = TransactionType.INCOME,
-                        category = Category.INVESTMENT_SIP,
-                        account = "Cash / selected account",
-                        note = "Sale of $qty x ${holding.symbol}; realised ${if (gain >= 0) "gain" else "loss"} ${"%.2f".format(gain)}",
-                        sourceReference = "holdingsale:${holding.id}"
+                        category = Category.INVESTMENT_SALE,
+                        account = proceedsAccount.name,
+                        note = "Manual asset conversion for $qty ${holding.symbol}; recorded gain/loss ${"%.2f".format(gain)}",
+                        accountId = proceedsAccount.id,
+                        currencyCode = holding.currencyCode,
+                        transactionKind = TransactionKind.ASSET_CONVERSION
                     )
                 )
             }
@@ -1215,8 +1427,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         balance: Double,
         limit: Double,
         apr: Double,
-        dueDays: Int
+        dueDays: Int,
+        currencyCode: String = userSettings.value.currency.code
     ) {
+        if (SupportedCurrency.values().none { it.code == currencyCode } || balance < 0.0 || limit <= 0.0 || apr < 0.0) return
         viewModelScope.launch {
             repository.addCreditCard(
                 CreditCardEntity(
@@ -1224,29 +1438,55 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     currentBalance = balance,
                     creditLimit = limit,
                     apr = apr,
-                    dueDateDays = dueDays
+                    dueDateDays = dueDays,
+                    currencyCode = currencyCode
                 )
             )
             syncVaultToCloud()
         }
     }
 
-    fun payCreditCard(card: CreditCardEntity, paymentAmount: Double) {
-        val actualPayment = paymentAmount.coerceAtLeast(0.0).coerceAtMost(card.currentBalance)
-        if (actualPayment <= 0.0) return
+    fun resolveCardCurrency(card: CreditCardEntity, currencyCode: String) {
+        if (SupportedCurrency.values().none { it.code == currencyCode }) return
         viewModelScope.launch {
-            repository.payCreditCard(card, actualPayment)
-            repository.addTransaction(
-                TransactionEntity(
-                    title = "Payment to ${card.cardName}",
-                    amount = actualPayment,
-                    type = TransactionType.EXPENSE,
-                    category = Category.DEBT_PAYMENT,
-                    account = "Cash / selected account",
-                    note = "Card debt reduction"
-                )
-            )
+            repository.updateCreditCard(card.copy(currencyCode = currencyCode))
             syncVaultToCloud()
+        }
+    }
+
+    private val cardPaymentsInFlight = mutableSetOf<Long>()
+
+    fun payCreditCard(card: CreditCardEntity, paymentAmount: Double, sourceAccount: AccountEntity) {
+        if (!paymentAmount.isFinite() || paymentAmount <= 0.0) return
+        synchronized(cardPaymentsInFlight) {
+            if (!cardPaymentsInFlight.add(card.id)) return
+        }
+        viewModelScope.launch {
+            try {
+                val freshCard = repository.creditCardsSnapshot().firstOrNull { it.id == card.id } ?: return@launch
+                val freshAccount = repository.account(sourceAccount.id) ?: return@launch
+                if (freshCard.currencyCode.isNullOrBlank() || freshAccount.currencyCode != freshCard.currencyCode || !freshAccount.isActive) return@launch
+                val actualPayment = paymentAmount.coerceAtMost(freshCard.currentBalance)
+                if (actualPayment <= 0.0) return@launch
+                repository.payCreditCard(
+                    freshCard,
+                    actualPayment,
+                    TransactionEntity(
+                        title = "Payment to ${freshCard.cardName}",
+                        amount = actualPayment,
+                        type = TransactionType.EXPENSE,
+                        category = Category.DEBT_PAYMENT,
+                        account = freshAccount.name,
+                        note = "Card debt settlement recorded manually; no payment was initiated by the app",
+                        accountId = freshAccount.id,
+                        currencyCode = freshCard.currencyCode,
+                        transactionKind = TransactionKind.DEBT_SETTLEMENT
+                    )
+                )
+                syncVaultToCloud()
+            } finally {
+                synchronized(cardPaymentsInFlight) { cardPaymentsInFlight.remove(card.id) }
+            }
         }
     }
 
@@ -1257,8 +1497,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         remainingBalance: Double,
         emi: Double,
         apr: Double,
-        months: Int
+        months: Int,
+        currencyCode: String = userSettings.value.currency.code
     ) {
+        if (SupportedCurrency.values().none { it.code == currencyCode } || totalAmount <= 0.0 || remainingBalance < 0.0 || remainingBalance > totalAmount || emi < 0.0 || apr < 0.0 || months <= 0) return
         viewModelScope.launch {
             repository.addLoan(
                 LoanEntity(
@@ -1269,104 +1511,104 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     emiAmount = emi,
                     interestRate = apr,
                     totalMonths = months,
-                    remainingMonths = (months * (remainingBalance / totalAmount)).toInt().coerceAtLeast(1)
+                    remainingMonths = (months * (remainingBalance / totalAmount)).toInt().coerceAtLeast(1),
+                    currencyCode = currencyCode
                 )
             )
+            syncVaultToCloud()
+        }
+    }
+
+    fun resolveLoanCurrency(loan: LoanEntity, currencyCode: String) {
+        if (SupportedCurrency.values().none { it.code == currencyCode }) return
+        viewModelScope.launch {
+            repository.updateLoan(loan.copy(currencyCode = currencyCode))
             syncVaultToCloud()
         }
     }
 
     private val loanPaymentsInFlight = mutableSetOf<Long>()
 
-    fun payLoanEmi(loan: LoanEntity) {
+    fun payLoanEmi(loan: LoanEntity, sourceAccount: AccountEntity) {
         synchronized(loanPaymentsInFlight) {
             if (!loanPaymentsInFlight.add(loan.id)) return
         }
         viewModelScope.launch {
             try {
-                val paymentAmount = repository.payLoanEmi(loan)
-                if (paymentAmount > 0.0) {
-                    repository.addTransaction(
-                        TransactionEntity(
-                            title = "EMI: ${loan.loanName}",
-                            amount = paymentAmount,
-                            type = TransactionType.EXPENSE,
-                            category = Category.DEBT_PAYMENT,
-                            account = "Cash / selected account",
-                            note = "Manual EMI payment recorded in Obsidian Wealth",
-                            isRecurring = false
-                        )
-                    )
-                }
-                syncVaultToCloud()
+                val freshLoan = repository.loansSnapshot().firstOrNull { it.id == loan.id } ?: return@launch
+                val freshAccount = repository.account(sourceAccount.id) ?: return@launch
+                if (freshLoan.currencyCode.isNullOrBlank() || freshAccount.currencyCode != freshLoan.currencyCode || !freshAccount.isActive) return@launch
+                val transaction = TransactionEntity(
+                    title = "EMI: ${freshLoan.loanName}",
+                    amount = freshLoan.emiAmount,
+                    type = TransactionType.EXPENSE,
+                    category = Category.DEBT_PAYMENT,
+                    account = freshAccount.name,
+                    note = "Manual EMI record; no payment was initiated by the app",
+                    accountId = freshAccount.id,
+                    currencyCode = freshLoan.currencyCode,
+                    transactionKind = TransactionKind.DEBT_SETTLEMENT
+                )
+                if (repository.payLoanEmi(freshLoan, transaction) > 0.0) syncVaultToCloud()
             } finally {
                 synchronized(loanPaymentsInFlight) { loanPaymentsInFlight.remove(loan.id) }
             }
         }
     }
 
-    /**
-     * Creates a goal. If it starts with a balance, [deductFromCash] says whether that money is still
-     * in the user's cash (deduct it) or was already set aside (leave cash alone).
-     */
+    /** A goal is a tracking label and is not an asset or a cash movement. */
     fun addGoal(
         title: String,
         category: String,
         targetAmount: Double,
         currentAmount: Double,
         monthlyContribution: Double,
-        deductFromCash: Boolean = false
+        currencyCode: String = userSettings.value.currency.code
     ) {
+        if (title.isBlank() || targetAmount <= 0.0 || currentAmount < 0.0 || monthlyContribution < 0.0 ||
+            !targetAmount.isFinite() || !currentAmount.isFinite() || !monthlyContribution.isFinite() ||
+            SupportedCurrency.values().none { it.code == currencyCode }) return
         viewModelScope.launch {
-            val goalId = repository.addGoal(
+            repository.addGoal(
                 GoalEntity(
                     title = title,
                     category = category,
                     targetAmount = targetAmount,
                     currentAmount = currentAmount,
-                    monthlyContribution = monthlyContribution
+                    monthlyContribution = monthlyContribution,
+                    currencyCode = currencyCode
                 )
             )
-            if (deductFromCash && currentAmount > 0) {
-                recordGoalTransfer(title, currentAmount, toGoal = true, goalId = goalId, note = "Opening balance of goal")
-            }
             syncVaultToCloud()
         }
     }
 
-    /** Moves [amount] from cash into the goal and records it as savings. */
+    fun resolveGoalCurrency(goal: GoalEntity, currencyCode: String) {
+        if (SupportedCurrency.values().none { it.code == currencyCode }) return
+        viewModelScope.launch {
+            repository.updateGoal(goal.copy(currencyCode = currencyCode))
+            syncVaultToCloud()
+        }
+    }
+
+    /** Updates goal progress only; this action does not move money in a cash account. */
     fun contributeGoal(goal: GoalEntity, amount: Double) {
-        if (amount <= 0.0) return
+        if (amount <= 0.0 || !amount.isFinite() || goal.currencyCode.isNullOrBlank()) return
         viewModelScope.launch {
             repository.contributeToGoal(goal, amount)
-            recordGoalTransfer(goal.title, amount, toGoal = true, goalId = goal.id, note = "Deposit into goal")
             syncVaultToCloud()
         }
     }
 
-    /** Moves [amount] (at most what the goal holds) from the goal back into cash. */
+    /** Reduces the tracking balance only; record any real bank movement as an account transfer. */
     fun withdrawFromGoal(goal: GoalEntity, amount: Double) {
+        if (amount <= 0.0 || !amount.isFinite() || goal.currencyCode.isNullOrBlank()) return
         viewModelScope.launch {
             val withdrawn = amount.coerceAtMost(goal.currentAmount)
             if (withdrawn <= 0.0) return@launch
             repository.contributeToGoal(goal, -withdrawn)
-            recordGoalTransfer(goal.title, withdrawn, toGoal = false, goalId = goal.id, note = "Withdrawal from goal")
             syncVaultToCloud()
         }
-    }
-
-    private suspend fun recordGoalTransfer(title: String, amount: Double, toGoal: Boolean, goalId: Long, note: String) {
-        repository.addTransaction(
-            TransactionEntity(
-                title = if (toGoal) "Goal deposit: $title" else "Goal withdrawal: $title",
-                amount = amount,
-                type = if (toGoal) TransactionType.EXPENSE else TransactionType.INCOME,
-                category = Category.GOAL_SAVINGS,
-                account = "Cash / selected account",
-                note = note,
-                sourceReference = "goal:$goalId"
-            )
-        )
     }
 
     companion object {
