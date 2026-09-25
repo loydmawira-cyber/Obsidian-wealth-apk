@@ -186,7 +186,9 @@ class FirestoreSyncManager(private val context: Context) {
                     "accountId" to tx.accountId,
                     "currencyCode" to tx.currencyCode,
                     "transactionKind" to tx.transactionKind.name,
-                    "transferGroupId" to tx.transferGroupId
+                    "transferGroupId" to tx.transferGroupId,
+                    "creditCardId" to tx.creditCardId,
+                    "loanId" to tx.loanId
                 )
                 txCollection.document(tx.id.toString()).set(txMap, SetOptions.merge()).awaitTask()
             }
@@ -459,7 +461,9 @@ class FirestoreSyncManager(private val context: Context) {
                         }?.currencyCode,
                         transactionKind = try { TransactionKind.valueOf(doc.getString("transactionKind") ?: "STANDARD") }
                             catch (e: Exception) { TransactionKind.STANDARD },
-                        transferGroupId = doc.getString("transferGroupId")
+                        transferGroupId = doc.getString("transferGroupId"),
+                        creditCardId = doc.getLong("creditCardId"),
+                        loanId = doc.getLong("loanId")
                     )
                 } catch (e: Exception) {
                     null
