@@ -3,6 +3,7 @@ package com.example
 import com.example.ai.AdvisorToolRegistry
 import com.example.ai.GeminiClient
 import com.example.data.dao.FinanceDao
+import com.example.data.models.AccountEntity
 import com.example.data.models.Category
 import com.example.data.models.CreditCardEntity
 import com.example.data.models.GoalEntity
@@ -100,6 +101,14 @@ class StatementParserAndToolsTest {
     @Test
     fun testAdvisorToolRegistryStructuredOutput() = runBlocking {
         val fakeDao = object : FinanceDao {
+            override fun getAllAccounts(): Flow<List<AccountEntity>> = flowOf(emptyList())
+            override suspend fun getAccountsSnapshot(): List<AccountEntity> = emptyList()
+            override suspend fun getAccount(id: Long): AccountEntity? = null
+            override suspend fun insertAccount(account: AccountEntity): Long = 1L
+            override suspend fun insertAccounts(accounts: List<AccountEntity>) {}
+            override suspend fun updateAccount(account: AccountEntity) {}
+            override suspend fun resolveTransactionCurrency(accountId: Long, currencyCode: String) {}
+            override suspend fun clearAllAccounts() {}
             override fun getAllTransactions(): Flow<List<TransactionEntity>> = flowOf(emptyList())
             override suspend fun getTransactionsSnapshot(): List<TransactionEntity> = listOf(
                 TransactionEntity(id = 1, title = "Groceries", amount = 1200.0, type = TransactionType.EXPENSE, category = Category.FOOD_DINING, account = "M-PESA", dateMillis = System.currentTimeMillis()),
