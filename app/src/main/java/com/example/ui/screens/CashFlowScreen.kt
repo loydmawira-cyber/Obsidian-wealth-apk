@@ -141,6 +141,7 @@ fun CashFlowScreen(
     val expenseTransactions = transactions.filter {
         it.type == TransactionType.EXPENSE && it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
             it.category != Category.INVESTMENT_SIP && it.category != Category.GOAL_SAVINGS &&
+            it.category != Category.DEBT_PAYMENT &&
             it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
     }
     val donutSlices = if (expenseTransactions.isNotEmpty()) {
@@ -187,6 +188,7 @@ fun CashFlowScreen(
         .filter {
             it.type == TransactionType.EXPENSE && it.category in budgetedCategories &&
                 it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
+                it.category != Category.DEBT_PAYMENT &&
                 it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
         }
         .sumOf { it.amount }

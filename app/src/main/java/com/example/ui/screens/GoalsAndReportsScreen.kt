@@ -106,31 +106,30 @@ fun GoalsAndReportsScreen(
         )
     }
 
-    // Audit statement built ONLY from recorded data.
+    // Personal finance summary built only from recorded data.
     //
-    // Both previous branches hardcoded figures and presented them as audited output: a fixed
+    // Older branches hardcoded figures and presented them as audited output: a fixed
     // "MoM Growth +KSh 165,000 (+2.1%)", a fixed portfolio allocation (Equities 3,450,000 /
     // IFB 2,600,000 / MMF 1,450,000 / Cash 800,000), a fixed "Blended Portfolio CAGR 15.4%"
     // and "XIRR 16.8% CAGR", a split of revolving vs term debt invented as 15%/85% of the
     // total, and an "OBSIDIAN AI RESILIENCE INDEX" of 91 or 88 out of 100. None of it derived
-    // from the user's records. A document labelled "audit statement" must not contain an
-    // invented number.
+    // from the user's records. The exported summary must not contain an invented number.
     val hasData = summary.transactionCount > 0 || summary.holdingCount > 0 ||
         summary.debtAccountCount > 0 || summary.goalCount > 0
 
     val sampleReportText = if (!hasData) """
 ==================================================
-           OBSIDIAN WEALTH AUDIT STATEMENT
+           OBSIDIAN PERSONAL FINANCE SUMMARY
 ==================================================
 
 No financial records in this vault.
 
 Add transactions, holdings, cards, loans or goals and regenerate this
-statement to produce an audit of your actual position.
+summary to produce an updated view of your recorded position.
 ==================================================
 """.trimIndent() else """
 ==================================================
-           OBSIDIAN WEALTH AUDIT STATEMENT
+           OBSIDIAN PERSONAL FINANCE SUMMARY
           Period: Current Month Financials
 ==================================================
 
@@ -158,11 +157,12 @@ statement to produce an audit of your actual position.
    • Note: simple return on cost, not XIRR/CAGR. A money-weighted return
      requires the date and amount of every contribution, which is not recorded.
 
-4. DEBT AUDIT & DTI
+4. DEBT SUMMARY & PAYMENT ESTIMATE
    • Debt Accounts Recorded:    ${summary.debtAccountCount}
    • Total Outstanding:         ${viewModel.formatAmount(summary.totalDebt)}
    • Debt Servicing / Mo:       ${viewModel.formatAmount(summary.monthlyDebtServicing)}
-   • DTI Ratio:                 ${if (summary.totalInflow > 0) "%.1f%%".format(summary.dtiRatio) else "not computable (no income recorded)"}
+   • Payments / Recent Inflow:  ${if (summary.recentInflow > 0) "%.1f%% (estimate)".format(summary.dtiRatio) else "not computable (no recent income recorded)"}
+   • Note: card payments use 3% of recorded balances; this is not a lender-standard DTI.
    • Note: the revolving/term split is not itemised here because it is not
      derivable from the recorded totals alone.
 
@@ -375,11 +375,11 @@ statement to produce an audit of your actual position.
             )
         }
 
-        // Monthly Financial Reports & Audited Statements
+        // Monthly Financial Reports
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "MONTHLY FINANCIAL AUDITS & STATEMENTS",
+                    text = "FINANCIAL SUMMARIES & REPORTS",
                     color = TextSecondary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -408,7 +408,7 @@ statement to produce an audit of your actual position.
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "Monthly Financial Audit Statement",
+                                    text = "Monthly Personal Finance Summary",
                                     color = TextPrimary,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold

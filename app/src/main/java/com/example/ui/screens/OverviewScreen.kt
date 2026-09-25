@@ -269,24 +269,15 @@ fun OverviewScreen(
             )
         }
 
-        // AI Financial Resilience Index — built only from pillars we can actually measure.
-        // Liquidity (emergency-fund months) and Budget adherence have no backing data model
-        // yet (no cash-account or budget entity), so they are left out rather than faked.
-        // DTI and Savings need real income transactions to mean anything; Diversify needs at
-        // least one holding. When none of the three have real data, the card shows a prompt
-        // instead of a score.
+        // Display individual recorded metrics only. This is not an AI-generated or
+        // comprehensive financial-resilience score.
         item {
-            val dtiScore = if (summary.totalInflow > 0) (100.0 - summary.dtiRatio).coerceIn(0.0, 100.0) else null
-            val savingsScore = if (summary.totalInflow > 0) summary.savingsRate.coerceIn(0.0, 100.0) else null
-            val distinctHoldingTypes = holdings.map { it.type }.distinct().size
-            val diversifyScore = if (holdings.isNotEmpty()) {
-                (distinctHoldingTypes.toDouble() / HoldingType.entries.size * 100.0).coerceIn(0.0, 100.0)
-            } else null
+            val dtiScore = if (summary.recentInflow > 0) summary.dtiRatio.coerceIn(0.0, 100.0) else null
+            val savingsScore = if (summary.recentInflow > 0) summary.savingsRate.coerceIn(0.0, 100.0) else null
 
             val pillars = listOfNotNull(
-                dtiScore?.let { "DTI" to it },
-                savingsScore?.let { "Savings" to it },
-                diversifyScore?.let { "Diversify" to it }
+                dtiScore?.let { "Debt payments / inflow" to it },
+                savingsScore?.let { "Savings rate" to it }
             )
 
             FinCard(
@@ -298,7 +289,7 @@ fun OverviewScreen(
                         ObsidianSurface
                     )
                 ),
-                onClick = { onOpenAiAdvisor("Give me a comprehensive audit of my financial position") }
+            onClick = { onOpenAiAdvisor("Explain my recorded savings rate and estimated debt-payment-to-inflow ratio") }
             ) {
                 if (pillars.isEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -311,7 +302,7 @@ fun OverviewScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "AI FINANCIAL RESILIENCE INDEX",
+                                text = "RECORDED FINANCIAL METRICS",
                                 color = GoldLight,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -319,7 +310,7 @@ fun OverviewScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Add income, expenses, or holdings to unlock your score.",
+                                text = "Add income and debt-payment records to see these estimates.",
                                 color = TextSecondary,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
@@ -327,13 +318,6 @@ fun OverviewScreen(
                         }
                     }
                 } else {
-                    val overallScore = pillars.map { it.second }.average()
-                    val tier = when {
-                        overallScore >= 80 -> "Strong"
-                        overallScore >= 60 -> "Moderate"
-                        overallScore >= 40 -> "Building"
-                        else -> "Needs Attention"
-                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -349,7 +333,7 @@ fun OverviewScreen(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "AI FINANCIAL RESILIENCE INDEX",
+                                    text = "RECORDED FINANCIAL METRICS",
                                     color = GoldLight,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
@@ -358,14 +342,7 @@ fun OverviewScreen(
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "${overallScore.toInt()} / 100 — $tier",
-                                color = TextPrimary,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Based on ${pillars.joinToString(", ") { it.first }} — based only on what's recorded so far.",
+                                text = "Estimates use recorded data; income is based on the last 30 days.",
                                 color = TextSecondary,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
@@ -374,17 +351,11 @@ fun OverviewScreen(
 
                         Spacer(modifier = Modifier.width(12.dp))
 
-                        CircularProgressRing(
-                            progressPercent = overallScore.toFloat(),
-                            sizeDp = 70.dp,
-                            gradientColors = listOf(SovereignGold, GoldLight)
-                        )
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Only the pillars we can actually compute are shown — no placeholder
-                    // tiles for Liquidity or Budget, which this app doesn't track yet.
+                    // Show percentages as percentages, not as invented 0–100 scores.
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -397,7 +368,7 @@ fun OverviewScreen(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(text = name, color = TextMuted, fontSize = 10.sp)
                                 Text(
-                                    text = "${score.toInt()}/100",
+                                    text = "${"%.1f".format(score)}%",
                                     color = SovereignGold,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -409,7 +380,7 @@ fun OverviewScreen(
             }
         }
 
-        // Actionable AI Alpha Feed
+        // Explainable insight cards based on user-recorded data
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -418,7 +389,7 @@ fun OverviewScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "ACTIONABLE AI ALPHA FEED",
+                        text = "INSIGHTS FROM YOUR RECORDS",
                         color = TextSecondary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -452,7 +423,7 @@ fun OverviewScreen(
 
                 if (!showRetainedCard && !showSipCard && !showDebtCard) {
                     Text(
-                        text = "Record transactions, SIPs or debts and insights based on your own data will appear here.",
+                    text = "Record transactions, contribution plans, or debts to see insights based on your data.",
                         color = TextMuted,
                         fontSize = 12.sp,
                         lineHeight = 16.sp
@@ -483,18 +454,17 @@ fun OverviewScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Retained Cash Opportunity",
+                        text = "Estimated cash flow retained",
                                     color = TextPrimary,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Your recorded cash flow retains ${userSettings.formatAmount(retainedCash)} " +
-                                        "(${String.format(Locale.US, "%.1f", summary.savingsRate)}% of inflow). " +
-                                        "Cash left in a low-yield account loses value to inflation. Compare your deposit rate " +
-                                        "with a money market or treasury instrument, and keep only your emergency reserve " +
-                                        "in instant-access cash.",
+                                    text = "Based on the transactions recorded, ${userSettings.formatAmount(retainedCash)} remains " +
+                                        "after outflows (${String.format(Locale.US, "%.1f", summary.savingsRate)}% of recorded inflow). " +
+                                        "This is not a verified account balance. Reconcile your accounts and upcoming bills " +
+                                        "before making decisions about where to keep or invest cash.",
                                     color = TextSecondary,
                                     fontSize = 12.sp,
                                     lineHeight = 16.sp
@@ -504,15 +474,15 @@ fun OverviewScreen(
                     }
                 }
 
-                // Card 2: active SIPs / standing orders (from the SIPs the user has recorded)
+                // Card 2: planned recurring contributions (not connected payment mandates)
                 if (showSipCard) {
                     val sipTitle = if (activeSips.size == 1) {
-                        "1 Active SIP / Standing Order"
+                        "1 Contribution Plan"
                     } else {
-                        "${activeSips.size} Active SIPs / Standing Orders"
+                        "${activeSips.size} Contribution Plans"
                     }
                     val sipListed = activeSips.take(3).joinToString(", ") {
-                        "${it.fundName} (${userSettings.formatAmount(it.monthlyAmount)}, day ${it.debitDayOfMonth})"
+                        "${it.fundName} (${userSettings.formatAmount(it.monthlyAmount)}, planned day ${it.debitDayOfMonth})"
                     }
                     val sipMore = if (activeSips.size > 3) " and ${activeSips.size - 3} more" else ""
                     val sipTotal = userSettings.formatAmount(activeSips.sumOf { it.monthlyAmount })
@@ -545,7 +515,7 @@ fun OverviewScreen(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "$sipListed$sipMore. Total $sipTotal per month.",
+                                    text = "$sipListed$sipMore. Planned total: $sipTotal per month; not debited by the app.",
                                     color = TextSecondary,
                                     fontSize = 12.sp,
                                     lineHeight = 16.sp

@@ -55,7 +55,6 @@ import com.example.ui.components.FinCard
 import com.example.ui.components.GoldBadge
 import com.example.ui.components.HeroGradientCard
 import com.example.ui.components.MetricBadge
-import com.example.ui.components.SparklineChart
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.ElectricIndigo
 import com.example.ui.theme.EmeraldGrowth
@@ -91,9 +90,8 @@ fun InvestmentsScreen(
     val userSettings by viewModel.userSettings.collectAsState()
     val sym = userSettings.currency.symbol
 
-    val totalPortfolioValue = holdings.sumOf { it.totalValue } + sips.sumOf { it.totalInvested }
+    val totalPortfolioValue = holdings.sumOf { it.totalValue }
     val totalUnrealizedGain = holdings.sumOf { it.unrealizedGain }
-    val totalGainPercent = if (holdings.sumOf { it.totalCost } > 0) (totalUnrealizedGain / holdings.sumOf { it.totalCost }) * 100.0 else 0.0
 
     // Compute dynamic allocation across Equities, Mutual Funds, and Gold
     val equityHoldings = holdings.filter {
@@ -104,8 +102,7 @@ fun InvestmentsScreen(
     val mutualFundHoldings = holdings.filter {
         it.type == HoldingType.MUTUAL_FUND || it.symbol == "BND" || it.symbol.startsWith("IFB")
     }
-    val sipsTotalInvested = sips.sumOf { it.totalInvested }
-    val mutualFundVal = mutualFundHoldings.sumOf { it.totalValue } + sipsTotalInvested
+    val mutualFundVal = mutualFundHoldings.sumOf { it.totalValue }
 
     val goldHoldings = holdings.filter {
         it.type == HoldingType.GOLD || it.symbol == "GLD"
@@ -126,7 +123,7 @@ fun InvestmentsScreen(
                     gradientColors = listOf(EmeraldGrowth, CyanAccent),
                     holdingsCount = equityHoldings.size,
                     xirrReturnPercent = 0.0,
-                    description = "High-conviction direct equities and index positions.",
+                    description = "Stocks and ETFs recorded by you.",
                     underlyingAssets = equityHoldings.map { "${it.symbol} (${viewModel.formatCompact(it.totalValue)})" }
                 )
             )
@@ -139,10 +136,10 @@ fun InvestmentsScreen(
                     value = mutualFundVal,
                     primaryColor = ElectricIndigo,
                     gradientColors = listOf(ElectricIndigo, IndigoLight),
-                    holdingsCount = mutualFundHoldings.size + sips.size,
+                    holdingsCount = mutualFundHoldings.size,
                     xirrReturnPercent = 0.0,
-                    description = "Recurring SIP standing orders and money market funds.",
-                    underlyingAssets = sips.map { "${it.fundName.take(16)}... (${viewModel.formatCompact(it.totalInvested)})" }
+                    description = "Funds, bonds, and money-market holdings recorded by you.",
+                    underlyingAssets = mutualFundHoldings.map { "${it.symbol} (${viewModel.formatCompact(it.totalValue)})" }
                 )
             )
         }
@@ -156,7 +153,7 @@ fun InvestmentsScreen(
                     gradientColors = listOf(Color(0xFFF59E0B), Color(0xFFFDE68A)),
                     holdingsCount = goldHoldings.size,
                     xirrReturnPercent = 0.0,
-                    description = "Macroeconomic inflation mitigation reserve.",
+                    description = "Gold holdings recorded by you.",
                     underlyingAssets = goldHoldings.map { "${it.symbol} (${viewModel.formatCompact(it.totalValue)})" }
                 )
             )
@@ -194,7 +191,7 @@ fun InvestmentsScreen(
                 ) {
                     Column {
                         Text(
-                            text = "AGGREGATE PORTFOLIO VALUE",
+                            text = "RECORDED PORTFOLIO VALUE",
                             color = TextSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -229,30 +226,25 @@ fun InvestmentsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (summary.portfolioDayGain == 0.0) "Edit a holding's price to update gains"
-                               else "Day Gain: ${if (summary.portfolioDayGain > 0) "+" else ""}${viewModel.formatAmount(summary.portfolioDayGain)} (${if (summary.portfolioDayGainPercent > 0) "+" else ""}${"%.2f".format(summary.portfolioDayGainPercent)}%)",
-                        color = if (summary.portfolioDayGain >= 0) EmeraldLight else Color(0xFFFB7185),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
+                        text = "Unrealized change on manually priced holdings",
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = "All-Time: ${if (totalUnrealizedGain > 0) "+" else ""}${viewModel.formatCompact(totalUnrealizedGain)}",
+                        text = "${if (totalUnrealizedGain > 0) "+" else ""}${viewModel.formatCompact(totalUnrealizedGain)}",
                         color = CyanAccent,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                val basePv = totalPortfolioValue.toFloat()
-                SparklineChart(
-                    points = listOf(basePv * 0.77f, basePv * 0.83f, basePv * 0.87f, basePv * 0.86f, basePv * 0.93f, basePv),
-                    lineColor = CyanAccent,
-                    gradientStart = CyanAccent.copy(alpha = 0.3f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(60.dp)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Prices are entered manually. Values are not live market quotes.",
+                    color = TextMuted,
+                    fontSize = 11.sp
                 )
             }
         }
@@ -335,7 +327,7 @@ fun InvestmentsScreen(
             }
         }
 
-        // Active SIP Automated Engine Header & List
+        // Planned recurring contribution records
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -345,7 +337,7 @@ fun InvestmentsScreen(
                 ) {
                     Column {
                         Text(
-                            text = "AUTOMATED RECURRING SIPS",
+                            text = "RECURRING CONTRIBUTION PLANS",
                             color = TextSecondary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
@@ -353,7 +345,7 @@ fun InvestmentsScreen(
                         )
                         val activeSipSum = sips.filter { it.isActive }.sumOf { it.monthlyAmount }
                         Text(
-                            text = "${viewModel.formatAmount(activeSipSum)}/month automated capital deployment",
+                            text = "${viewModel.formatAmount(activeSipSum)}/month planned — not debited by the app",
                             color = EmeraldLight,
                             fontSize = 11.sp
                         )
@@ -372,7 +364,7 @@ fun InvestmentsScreen(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, tint = EmeraldLight, modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add sip", color = EmeraldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Add plan", color = EmeraldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -424,12 +416,12 @@ fun InvestmentsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "${sip.category} • Debits on ${sip.debitDayOfMonth}st",
+                                text = "${sip.category} • Planned for day ${sip.debitDayOfMonth}",
                                 color = TextSecondary,
                                 fontSize = 11.sp
                             )
                             Text(
-                                text = "Total Invested: ${viewModel.formatCompact(sip.totalInvested)} (+${sip.annualizedReturnPercent}% CAGR)",
+                                text = "Plan only — record confirmed contributions in holdings or transactions",
                                 color = CyanAccent,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium
@@ -470,7 +462,7 @@ fun InvestmentsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "LIVE EQUITY & ASSET HOLDINGS",
+                        text = "RECORDED HOLDINGS",
                         color = TextSecondary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,

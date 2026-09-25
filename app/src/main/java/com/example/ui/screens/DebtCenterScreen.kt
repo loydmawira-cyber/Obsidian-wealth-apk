@@ -124,22 +124,10 @@ fun DebtCenterScreen(
                         )
                     }
 
-                    // DTI value is real, but the old code labeled it "(Prime)" and forced the
-                    // green/positive badge style unconditionally — a 60% DTI would still say
-                    // "Prime" in green. Threshold is standard debt-to-income guidance: <=36%
-                    // prime, 36-43% caution, >43% high risk. Also skip the label when there's no
-                    // income recorded, since dtiRatio collapses to 0 in that case too (see
-                    // FinanceViewModel) and "0% Prime" would misrepresent "no data" as "no debt".
-                    val hasIncomeData = summary.totalInflow > 0
-                    val dtiTier = when {
-                        !hasIncomeData -> null
-                        summary.dtiRatio <= 36.0 -> "Prime"
-                        summary.dtiRatio <= 43.0 -> "Caution"
-                        else -> "High Risk"
-                    }
+                    val hasRecentIncome = summary.recentInflow > 0
                     MetricBadge(
-                        text = if (dtiTier == null) "DTI: N/A" else "DTI: ${"%.1f".format(summary.dtiRatio)}% ($dtiTier)",
-                        isPositive = dtiTier == "Prime"
+                        text = if (!hasRecentIncome) "Pay/income: N/A" else "Pay/income: ${"%.1f".format(summary.dtiRatio)}% est.",
+                        isPositive = false
                     )
                 }
 
@@ -154,7 +142,7 @@ fun DebtCenterScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
-                        Text("Monthly Servicing", color = TextMuted, fontSize = 11.sp)
+                        Text("Estimated monthly payments", color = TextMuted, fontSize = 11.sp)
                         Text("${viewModel.formatCompact(summary.monthlyDebtServicing)}/mo", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -162,13 +150,13 @@ fun DebtCenterScreen(
                         Text("${"%.1f".format(overallUtilization)}%", color = EmeraldLight, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("Freedom Projection", color = TextMuted, fontSize = 11.sp)
+                        Text("Payoff estimate", color = TextMuted, fontSize = 11.sp)
                         Text(
-                            if (creditCards.isEmpty() && loans.isEmpty()) "Debt Free"
-                            else if (strategy == PayoffStrategy.AVALANCHE) "Mar 2026" else "Aug 2026",
+                            if (creditCards.isEmpty() && loans.isEmpty()) "No debt recorded"
+                            else "See calculator below",
                             color = GoldLight,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.ExtraBold
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -344,7 +332,7 @@ fun DebtCenterScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
-                        Text("Pay", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Record", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -456,7 +444,7 @@ fun DebtCenterScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
-                        Text("Pay EMI", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Record EMI", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
