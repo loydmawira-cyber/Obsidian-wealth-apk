@@ -1,67 +1,60 @@
-# Obsidian Wealth 💎
+# Obsidian Wealth
 
-Obsidian Wealth is an elite, privacy-first personal finance and wealth management Android application designed with modern Material Design 3 and Jetpack Compose. It empowers users with local-first data tracking, deep financial analytics, dynamic regional localization, and autonomous AI insights.
+Obsidian Wealth is an Android app for manually recording personal cash flow, accounts, investments, debts, and savings goals. Its balances and summaries are based on information entered or imported by the user; the app does not connect to banks or move money.
 
-## Features
+## What the app does
 
-- **Cash Flow Intelligence**: Real-time tracking of incomes, categorized expenses, and automated balance calculation with interactive visual breakdowns.
-- **Investments & Portfolio Management**: Track equities (stocks, ETFs), Money Market Funds (MMFs), Treasury bonds, mutual funds, gold, and crypto alongside automated monthly SIP investments.
-- **Debt & Credit Optimization**: Credit card utilization monitoring, loan amortizations, and automated debt payoff velocity algorithms (Debt Avalanche and Snowball strategies).
-- **Goals & Wealth Audits**: Milestone tracking with progress rings and one-tap generation of comprehensive audited financial statements.
-- **Dynamic Localization**: Built-in support for multiple global currencies and regional profiles (defaulting to Kenyan Shillings `KES / KSh` and East Africa, with seamless toggling for USD, GBP, EUR, INR, ZAR, and more).
-- **Customizable Modules**: Toggle any feature module on or off according to personal preferences via the top 3-dash menu.
-- **Autonomous AI Advisor**: Embedded financial advisory engine with natural language queries and offline rule-based fallback mode.
-- **Discreet Vault Mode**: Instant balance masking to protect sensitive figures in public settings.
+- **Cash accounts and ledger:** Record account opening balances, income, expenses, and statement reconciliations. Balances are calculated from the opening balance and confirmed, account-linked entries.
+- **Transfers:** Record a same-currency transfer as a linked debit and credit. The pair is written together and excluded from income and spending totals. Cross-currency conversion is not supported.
+- **Multi-currency records:** Accounts and financial records retain currency metadata. Totals are calculated only within one currency; the app does not infer exchange rates or convert values. Legacy records with unknown currency are excluded from currency-specific totals until reviewed.
+- **Investments:** Maintain user-entered holding quantities, cost, and prices. These values are not represented as live or independently verified market data. Recurring investment plans are reminders; a plan does not create a debit or investment holding.
+- **Debt and goals:** Record user-maintained card, loan, and goal information. Payments and contributions must be explicitly recorded; these figures are not institution-verified.
+- **Reports:** Reports are personal summaries, not audited financial statements or attestations.
+- **Privacy controls:** The app includes local balance masking and Firebase-backed account/cloud functionality as configured by the project.
 
----
+## Accounting notes
 
-## Local Development & Debug Build
+An account's current balance is its explicitly confirmed opening balance plus confirmed linked income and adjustments, less confirmed linked expenses. Unconfirmed legacy opening amounts remain excluded until reviewed. Transfer entries affect the balances of their two accounts but do not count as income or spending. Reconciliation records the difference between the ledger balance and the statement balance as an adjustment rather than operating income or expense.
+
+Unresolved currency values remain visible for review but are not silently assigned the selected display currency. Confirming a currency labels the existing amount; it does not convert that amount. Summary figures cover the selected display currency and can be incomplete while unresolved records remain.
+
+Changing a regional preset changes presentation preferences only. It does not reseed or clear financial records, and stored amounts are not converted when display preferences change.
+
+## Build and test
 
 ### Prerequisites
-- **Android Studio** Ladybug (or newer)
-- **JDK 17** (or JDK 21)
-- Android SDK with API 36 / API 34 installed
 
-### Building the Debug APK Locally
-The repository includes the pre-configured Gradle wrapper, requiring no manual Gradle installation:
+- Android Studio and Android SDK platforms required by the project (API 34 and API 36)
+- JDK 17 or newer
+
+### Build a debug APK
 
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd <repo-name>
-
-# Ensure executable permissions on Unix/macOS/Linux
-chmod +x gradlew
-
-# Build the debug APK
 ./gradlew assembleDebug
 ```
 
-On Windows (Command Prompt / PowerShell):
-```cmd
-gradlew.bat assembleDebug
+On Windows, run `gradlew.bat assembleDebug`. The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+
+### Run unit tests
+
+```bash
+./gradlew testDebugUnitTest
 ```
 
-The compiled APK will be output to:
-```
-app/build/outputs/apk/debug/app-debug.apk
-```
+A local Android SDK is required for Gradle to configure the Android test tasks. In this review environment, unit tests could not run because no Android SDK was installed.
 
----
+## Firebase configuration
 
-## Continuous Integration (CI) on GitHub Actions
+The project includes its Firebase Android client configuration. Before distributing a build, verify that the Firebase project, package name, enabled services, Firestore rules, and API-key restrictions match the intended deployment.
 
-This repository includes a pre-configured GitHub Actions workflow (`.github/workflows/build.yml`) that automatically builds and verifies the debug APK on every push and pull request to the `main` branch.
+## Known limitations
 
-### Downloading the Debug APK from GitHub Actions:
-1. Navigate to your repository on GitHub.
-2. Click on the **Actions** tab at the top.
-3. Select the latest workflow run under **Android CI (Debug Build)**.
-4. Scroll down to the **Artifacts** section at the bottom of the summary page.
-5. Click **obsidian-wealth-debug-apk** to download the zip file containing the ready-to-install debug APK.
+The app does not provide bank connectivity, automatic payment execution, automatic investment execution, or foreign-exchange conversion. Prices, account balances, debt figures, and goal amounts are maintained by the user. Imported or legacy records may require review before they are included in totals.
 
----
+## References
 
-## Release & Play Store Signing
+The accounting behavior and safeguards are implemented in the source files [1] [2] [3].
 
-> **Note on Signing**: The repository is currently configured exclusively for debug builds and continuous integration. Production and Google Play Store release signing configurations (upload keystore, key passwords, and Google Play App Bundle publishing) will be configured when preparing for production deployment.
+[1]: app/src/main/java/com/example/data/models/AccountLedger.kt "Account ledger calculations"
+[2]: app/src/main/java/com/example/data/database/AppDatabase.kt "Room schema and migrations"
+[3]: app/src/main/java/com/example/data/dao/FinanceDao.kt "Finance data access and atomic transfer writes"
