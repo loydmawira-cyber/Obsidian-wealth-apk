@@ -37,6 +37,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,9 +51,11 @@ import com.example.data.models.CreditCardEntity
 import com.example.data.models.GeographicRegion
 import com.example.data.models.LoanEntity
 import com.example.data.models.SupportedCurrency
+import com.example.ui.components.CreditCardPurchaseDialog
 import com.example.ui.components.DebtPayoffCalculator
 import com.example.ui.components.FinCard
 import com.example.ui.components.HeroGradientCard
+import com.example.ui.components.LoanTopUpDialog
 import com.example.ui.components.MetricBadge
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonDebt
@@ -92,6 +97,8 @@ fun DebtCenterScreen(
 
     val selectedCards = creditCards.filter { it.currencyCode == userSettings.currency.code }
     val selectedLoans = loans.filter { it.currencyCode == userSettings.currency.code }
+    var cardToSpend by remember { mutableStateOf<CreditCardEntity?>(null) }
+    var loanToTopUp by remember { mutableStateOf<LoanEntity?>(null) }
     val totalCardBalance = selectedCards.sumOf { it.currentBalance }
     val totalLoanBalance = selectedLoans.sumOf { it.remainingBalance }
     val aggregateDebt = totalCardBalance + totalLoanBalance
@@ -332,14 +339,19 @@ fun DebtCenterScreen(
                         }
                     }
 
-                    Button(
-                        onClick = { onPayCard(card) },
-                        enabled = !card.currencyCode.isNullOrBlank() && accounts.any { it.isActive && it.currencyCode == card.currencyCode },
-                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Text("Record", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Button(
+                            onClick = { onPayCard(card) },
+                            enabled = !card.currencyCode.isNullOrBlank() && accounts.any { it.isActive && it.currencyCode == card.currencyCode },
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
+                            shape = RoundedCornerShape(8.dp), modifier = Modifier.height(32.dp)
+                        ) { Text("Pay", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                        Button(
+                            onClick = { cardToSpend = card },
+                            enabled = !card.currencyCode.isNullOrBlank() && card.creditLimit > card.currentBalance,
+                            colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
+                            shape = RoundedCornerShape(8.dp), modifier = Modifier.height(32.dp)
+                        ) { Text("Spend", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                     }
                 }
 
@@ -453,14 +465,19 @@ fun DebtCenterScreen(
                         }
                     }
 
-                    Button(
-                        onClick = { onPayLoan(loan) },
-                        enabled = !loan.currencyCode.isNullOrBlank() && accounts.any { it.isActive && it.currencyCode == loan.currencyCode },
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Text("Record EMI", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Button(
+                            onClick = { onPayLoan(loan) },
+                            enabled = !loan.currencyCode.isNullOrBlank() && accounts.any { it.isActive && it.currencyCode == loan.currencyCode },
+                            colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo),
+                            shape = RoundedCornerShape(8.dp), modifier = Modifier.height(32.dp)
+                        ) { Text("Pay EMI", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                        Button(
+                            onClick = { loanToTopUp = loan },
+                            enabled = !loan.currencyCode.isNullOrBlank() && accounts.any { it.isActive && it.currencyCode == loan.currencyCode },
+                            colors = ButtonDefaults.buttonColors(containerColor = SovereignGold),
+                            shape = RoundedCornerShape(8.dp), modifier = Modifier.height(32.dp)
+                        ) { Text("Top up", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                     }
                 }
 
@@ -509,5 +526,28 @@ fun DebtCenterScreen(
         item {
             Spacer(modifier = Modifier.height(20.dp))
         }
+    }
+
+    cardToSpend?.let { card ->
+        CreditCardPurchaseDialog(
+            card = card,
+            formatAmount = { viewModel.formatAmount(it, card.currencyCode) },
+            onDismiss = { cardToSpend = null },
+            onConfirm = { merchant, amount, category, note ->
+                viewModel.recordCreditCardPurchase(card, merchant, amount, category, note)
+                cardToSpend = null
+            }
+        )
+    }
+    loanToTopUp?.let { loan ->
+        LoanTopUpDialog(
+            loan = loan, accounts = accounts,
+            formatAmount = { viewModel.formatAmount(it, loan.currencyCode) },
+            onDismiss = { loanToTopUp = null },
+            onConfirm = { amount, account, note ->
+                viewModel.recordLoanTopUp(loan, amount, account, note)
+                loanToTopUp = null
+            }
+        )
     }
 }

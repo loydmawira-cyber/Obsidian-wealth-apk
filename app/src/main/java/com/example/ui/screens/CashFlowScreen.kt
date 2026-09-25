@@ -143,7 +143,7 @@ fun CashFlowScreen(
 
     // Dynamic Donut chart slices for expenses
     val expenseTransactions = transactions.filter {
-        it.type == TransactionType.EXPENSE && transactionCurrency(it) == userSettings.currency.code && it.transactionKind == com.example.data.models.TransactionKind.STANDARD && it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
+        it.type == TransactionType.EXPENSE && transactionCurrency(it) == userSettings.currency.code && it.transactionKind in setOf(com.example.data.models.TransactionKind.STANDARD, com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE) && it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
             it.category != Category.INVESTMENT_SIP && it.category != Category.GOAL_SAVINGS &&
             it.category != Category.DEBT_PAYMENT && it.category != Category.ACCOUNT_TRANSFER && it.category != Category.ACCOUNT_ADJUSTMENT &&
             it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
@@ -193,7 +193,7 @@ fun CashFlowScreen(
         .filter {
             it.type == TransactionType.EXPENSE && transactionCurrency(it) == userSettings.currency.code && it.category in budgetedCategories &&
                 it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
-                it.transactionKind == com.example.data.models.TransactionKind.STANDARD &&
+                it.transactionKind in setOf(com.example.data.models.TransactionKind.STANDARD, com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE) &&
                 it.category != Category.DEBT_PAYMENT && it.category != Category.ACCOUNT_TRANSFER && it.category != Category.ACCOUNT_ADJUSTMENT &&
                 it.dateMillis >= month.monthStart && it.dateMillis < month.monthEnd
         }
