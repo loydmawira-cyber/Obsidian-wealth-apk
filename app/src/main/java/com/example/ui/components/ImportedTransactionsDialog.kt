@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.models.TransactionEntity
 import com.example.data.models.AccountEntity
+import com.example.data.models.TransactionType
 import com.example.ui.theme.CrimsonDebt
 import com.example.ui.theme.EmeraldGrowth
 import com.example.ui.theme.GoldBright
@@ -42,12 +43,13 @@ fun ImportedTransactionsDialog(
     transactions: List<TransactionEntity>,
     accounts: List<AccountEntity>,
     formatAmount: (Double, String?) -> String,
+    availableBalance: (AccountEntity, Long) -> Double,
     onConfirm: (TransactionEntity, AccountEntity) -> Unit,
     onIgnore: (TransactionEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (transactions.isEmpty()) onDismiss() },
         containerColor = ObsidianSurface,
         title = { Text("Review transactions", color = GoldBright, fontWeight = FontWeight.Bold) },
         text = {
@@ -66,6 +68,8 @@ fun ImportedTransactionsDialog(
                                 mutableStateOf(accounts.firstOrNull { it.isActive && it.id == transaction.accountId && !it.currencyCode.isNullOrBlank() }
                                     ?: accounts.firstOrNull { it.isActive && it.name.equals(transaction.account, true) && !it.currencyCode.isNullOrBlank() })
                             }
+                            val available = selectedAccount?.let { availableBalance(it, transaction.dateMillis) }?.coerceAtLeast(0.0) ?: 0.0
+                            val insufficientBalance = transaction.type == TransactionType.EXPENSE && transaction.amount > available + 0.000001
                             Text(
                                 "${transaction.type.name} · ${formatAmount(transaction.amount, transaction.currencyCode ?: selectedAccount?.currencyCode)} · ${SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(transaction.dateMillis))}",
                                 color = TextSecondary,
@@ -78,10 +82,14 @@ fun ImportedTransactionsDialog(
                                     FilterChip(selected = candidate.id == selectedAccount?.id, onClick = { selectedAccount = candidate }, label = { Text("${candidate.name} · ${candidate.currencyCode}", fontSize = 9.sp) })
                                 }
                             }
+                            if (transaction.type == TransactionType.EXPENSE && selectedAccount != null) {
+                                Text("Available: ${formatAmount(available, selectedAccount?.currencyCode)}", color = TextMuted, fontSize = 10.sp)
+                            }
+                            if (insufficientBalance) Text("Not enough balance in the selected account. This confirmation stays pending.", color = CrimsonDebt, fontSize = 11.sp)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
                                     onClick = { selectedAccount?.let { onConfirm(transaction, it) } },
-                                    enabled = selectedAccount != null && (transaction.currencyCode == null || transaction.currencyCode == selectedAccount?.currencyCode),
+                                    enabled = selectedAccount != null && !insufficientBalance && (transaction.currencyCode == null || transaction.currencyCode == selectedAccount?.currencyCode),
                                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
                                     modifier = Modifier.weight(1f)
                                 ) { Text("Confirm", fontSize = 11.sp) }
@@ -96,6 +104,8 @@ fun ImportedTransactionsDialog(
                 }
             }
         },
-        confirmButton = { Button(onClick = onDismiss) { Text("Done") } }
+        confirmButton = {
+            if (transactions.isEmpty()) Button(onClick = onDismiss) { Text("Done") }
+        }
     )
 }

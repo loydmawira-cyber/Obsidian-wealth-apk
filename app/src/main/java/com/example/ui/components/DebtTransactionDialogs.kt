@@ -36,7 +36,7 @@ fun CreditCardPurchaseDialog(card: CreditCardEntity, formatAmount: (Double) -> S
                 Text("Adds spending and card balance; does not reduce a cash account.", fontSize = 12.sp)
                 OutlinedTextField(merchant, { merchant = it }, label = { Text("Merchant / description") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(amountText, { amountText = it }, label = { Text("Amount (${card.currencyCode ?: "currency not set"})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(), isError = amount != null && amount > available)
-                if (amount != null && amount > available) Text("Amount exceeds available credit", color = Color.Red)
+                if (amount != null && amount > available) Text("Not enough available credit on this card.", color = Color.Red)
                 Row(Modifier.horizontalScroll(rememberScrollState())) { debtCategories.forEach { c -> FilterChip(category == c, { category = c }, label = { Text(c.name.replace('_', ' '), fontSize = 10.sp) }) } }
                 OutlinedTextField(note, { note = it }, label = { Text("Note (optional)") }, modifier = Modifier.fillMaxWidth())
                 Button(onClick = { onConfirm(merchant.trim(), amount ?: 0.0, category, note.trim()); onDismiss() }, enabled = valid, modifier = Modifier.fillMaxWidth()) { Text("Confirm & record purchase") }

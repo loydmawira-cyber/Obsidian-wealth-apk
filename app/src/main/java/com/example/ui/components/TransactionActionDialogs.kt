@@ -133,6 +133,8 @@ private fun editFieldColors() = OutlinedTextFieldDefaults.colors(
 fun EditTransactionDialog(
     transaction: TransactionEntity,
     accounts: List<com.example.data.models.AccountEntity>,
+    availableBalance: (com.example.data.models.AccountEntity, Long) -> Double,
+    formatAmount: (Double, String?) -> String,
     onDismiss: () -> Unit,
     onSave: (TransactionEntity) -> Unit
 ) {
@@ -152,7 +154,10 @@ fun EditTransactionDialog(
     val amount = amountText.toDoubleOrNull()
     val parsedDate = if (dateText == originalDate) transaction.dateMillis
     else try { dateFormat.parse(dateText)?.time?.plus(12L * 3_600_000L) } catch (e: Exception) { null }
-    val valid = title.isNotBlank() && amount != null && amount.isFinite() && amount > 0.0 && parsedDate != null && account != null
+    val balanceDate = parsedDate ?: transaction.dateMillis
+    val selectedAccountBalance = account?.let { availableBalance(it, balanceDate) } ?: 0.0
+    val insufficientBalance = type == TransactionType.EXPENSE && amount != null && amount > selectedAccountBalance + 0.000001
+    val valid = title.isNotBlank() && amount != null && amount.isFinite() && amount > 0.0 && parsedDate != null && account != null && !insufficientBalance
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -216,6 +221,10 @@ fun EditTransactionDialog(
                         EditChip("${candidate.name} · ${candidate.currencyCode}", account?.id == candidate.id) { account = candidate }
                     }
                 }
+                if (account != null && type == TransactionType.EXPENSE) {
+                    Text("Available after this entry is replaced: ${formatAmount(selectedAccountBalance, account?.currencyCode)}", color = TextMuted, fontSize = 10.sp)
+                }
+                if (insufficientBalance) Text("Not enough balance in the selected account.", color = Color(0xFFFB7185), fontSize = 11.sp)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = dateText,

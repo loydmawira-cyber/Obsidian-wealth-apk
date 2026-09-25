@@ -106,6 +106,8 @@ import com.example.ui.viewmodel.ChatMessage
 @Composable
 fun AddTransactionDialog(
     accounts: List<AccountEntity>,
+    availableBalance: (AccountEntity) -> Double,
+    formatAmount: (Double, String?) -> String,
     onDismiss: () -> Unit,
     onAdd: (title: String, amount: Double, type: TransactionType, category: Category, account: AccountEntity, note: String) -> Unit,
     onAiSmartLog: () -> Unit
@@ -116,6 +118,9 @@ fun AddTransactionDialog(
     var selectedCategory by remember { mutableStateOf(Category.FOOD_DINING) }
     var account by remember(accounts) { mutableStateOf(accounts.firstOrNull { it.isActive }) }
     var note by remember { mutableStateOf("") }
+    val amountValue = amountText.toDoubleOrNull()
+    val selectedAccountBalance = account?.let(availableBalance) ?: 0.0
+    val insufficientBalance = selectedType == TransactionType.EXPENSE && amountValue != null && amountValue > selectedAccountBalance + 0.000001
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -281,6 +286,10 @@ fun AddTransactionDialog(
                         }
                     }
                     Text("Amount currency: ${account?.currencyCode ?: "unknownâ€”resolve this account first"}", color = if (account?.currencyCode == null) SovereignGold else TextMuted, fontSize = 10.sp)
+                    if (account != null && selectedType == TransactionType.EXPENSE) {
+                        Text("Available: ${formatAmount(selectedAccountBalance, account?.currencyCode)}", color = TextMuted, fontSize = 10.sp)
+                    }
+                    if (insufficientBalance) Text("Not enough balance in the selected account.", color = Color(0xFFFB7185), fontSize = 11.sp)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -293,7 +302,7 @@ fun AddTransactionDialog(
                             onDismiss()
                         }
                     },
-                    enabled = title.isNotBlank() && amountText.toDoubleOrNull()?.let { it > 0.0 } == true && account?.isActive == true && !account?.currencyCode.isNullOrBlank(),
+                    enabled = title.isNotBlank() && amountValue?.let { it.isFinite() && it > 0.0 } == true && account?.isActive == true && !account?.currencyCode.isNullOrBlank() && !insufficientBalance,
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -308,6 +317,8 @@ fun AddTransactionDialog(
 @Composable
 fun AiSmartLogDialog(
     accounts: List<AccountEntity>,
+    availableBalance: (AccountEntity, Long) -> Double,
+    formatAmount: (Double, String?) -> String,
     onDismiss: () -> Unit,
     onConfirm: (TransactionEntity) -> Unit
 ) {
@@ -327,6 +338,11 @@ fun AiSmartLogDialog(
     var dateNeedsReview by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val initialDateMillis = remember { System.currentTimeMillis() }
+    val previewDateMillis = if (dateMillis > 0L) dateMillis else initialDateMillis
+    val draftAmount = amountText.toDoubleOrNull()
+    val draftAvailableBalance = account?.let { availableBalance(it, previewDateMillis) } ?: 0.0
+    val insufficientBalance = selectedType == TransactionType.EXPENSE && draftAmount != null && draftAmount > draftAvailableBalance + 0.000001
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -566,6 +582,10 @@ fun AiSmartLogDialog(
                             }
                         }
                         Text("Currency: ${account?.currencyCode ?: "choose an account"}", color = TextMuted, fontSize = 10.sp)
+                        if (account != null && selectedType == TransactionType.EXPENSE) {
+                            Text("Available: ${formatAmount(draftAvailableBalance, account?.currencyCode)}", color = TextMuted, fontSize = 10.sp)
+                        }
+                        if (insufficientBalance) Text("Not enough balance in the selected account.", color = Color(0xFFFB7185), fontSize = 11.sp)
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -617,12 +637,14 @@ fun AiSmartLogDialog(
                                 val amt = amountText.toDoubleOrNull()
                                 if (title.isBlank()) {
                                     validationError = "Title cannot be blank."
-                                } else if (amt == null || amt <= 0.0) {
+                                } else if (amt == null || !amt.isFinite() || amt <= 0.0) {
                                     validationError = "Please enter a valid positive amount."
                                 } else if (dateMillis <= 0L || StatementParser.parseDateString(dateText) == null) {
                                     validationError = "Please enter a valid transaction date."
                                 } else if (account?.isActive != true || account?.currencyCode.isNullOrBlank()) {
                                     validationError = "Choose an active account with a confirmed currency."
+                                } else if (selectedType == TransactionType.EXPENSE && amt > availableBalance(account!!, dateMillis) + 0.000001) {
+                                    validationError = "Not enough balance in the selected account."
                                 } else {
                                     onConfirm(
                                         TransactionEntity(
@@ -639,6 +661,7 @@ fun AiSmartLogDialog(
                                     )
                                 }
                             },
+                            enabled = !insufficientBalance,
                             colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
@@ -1836,11 +1859,16 @@ fun ConfirmDeleteSipDialog(
 fun PayCreditCardDialog(
     card: CreditCardEntity,
     accounts: List<AccountEntity>,
+    availableBalance: (AccountEntity) -> Double,
+    formatAmount: (Double, String?) -> String,
     onDismiss: () -> Unit,
     onPay: (Double, AccountEntity) -> Unit
 ) {
     var amountText by remember { mutableStateOf(card.currentBalance.toString()) }
-    var sourceAccount by remember(accounts) { mutableStateOf(accounts.firstOrNull { it.currencyCode == card.currencyCode }) }
+    var sourceAccount by remember(accounts) { mutableStateOf(accounts.firstOrNull { it.isActive && it.currencyCode == card.currencyCode }) }
+    val amountValue = amountText.toDoubleOrNull()
+    val sourceBalance = sourceAccount?.let(availableBalance)?.coerceAtLeast(0.0) ?: 0.0
+    val insufficientBalance = amountValue != null && amountValue > sourceBalance + 0.000001
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1877,6 +1905,8 @@ fun PayCreditCardDialog(
                         )
                     }
                 }
+                if (sourceAccount != null) Text("Available: ${formatAmount(sourceBalance, sourceAccount?.currencyCode)}", color = TextMuted, fontSize = 10.sp)
+                if (insufficientBalance) Text("Not enough balance in the selected account.", color = Color(0xFFFB7185), fontSize = 11.sp)
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -1941,7 +1971,7 @@ fun PayCreditCardDialog(
                             onDismiss()
                         }
                     },
-                    enabled = sourceAccount != null && sourceAccount?.currencyCode == card.currencyCode && amountText.toDoubleOrNull()?.let { it > 0.0 && it <= card.currentBalance } == true,
+                    enabled = sourceAccount?.isActive == true && sourceAccount?.currencyCode == card.currencyCode && amountValue?.let { it.isFinite() && it > 0.0 && it <= card.currentBalance } == true && !insufficientBalance,
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -2075,10 +2105,14 @@ fun ConfirmLoanPaymentDialog(
     currencyCode: String?,
     remainingBalance: Double,
     interestRate: Double,
+    availableBalance: (AccountEntity) -> Double,
+    formatAmount: (Double, String?) -> String,
     onDismiss: () -> Unit,
     onConfirm: (AccountEntity) -> Unit
 ) {
     var sourceAccount by remember(accounts, currencyCode) { mutableStateOf(accounts.firstOrNull { it.isActive && it.currencyCode == currencyCode }) }
+    val sourceBalance = sourceAccount?.let(availableBalance)?.coerceAtLeast(0.0) ?: 0.0
+    val insufficientBalance = sourceAccount != null && paymentAmount > sourceBalance + 0.000001
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(18.dp), color = ObsidianSurface, border = BorderStroke(1.dp, ElectricIndigo), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp)) {
@@ -2098,10 +2132,12 @@ fun ConfirmLoanPaymentDialog(
                         FilterChip(selected = candidate.id == sourceAccount?.id, onClick = { sourceAccount = candidate }, label = { Text(candidate.name, fontSize = 10.sp) })
                     }
                 }
+                if (sourceAccount != null) Text("Available: ${formatAmount(sourceBalance, sourceAccount?.currencyCode)}", color = TextMuted, fontSize = 10.sp)
+                if (insufficientBalance) Text("Not enough balance in the selected account.", color = Color(0xFFFB7185), fontSize = 11.sp)
                 Spacer(Modifier.height(16.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                    Button(onClick = { sourceAccount?.let(onConfirm); onDismiss() }, enabled = sourceAccount != null, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo)) { Text("Record payment", color = Color.White) }
+                    Button(onClick = { sourceAccount?.let(onConfirm); onDismiss() }, enabled = sourceAccount != null && paymentAmount > 0.0 && !insufficientBalance, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ElectricIndigo)) { Text("Record payment", color = Color.White) }
                 }
             }
         }
