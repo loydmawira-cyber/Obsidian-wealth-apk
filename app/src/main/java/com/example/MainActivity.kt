@@ -178,7 +178,9 @@ class MainActivity : ComponentActivity() {
         try {
             com.example.alerts.NotificationReminderManager.initChannels(this)
             com.example.alerts.NotificationReminderManager.schedulePeriodicAlerts(this)
-            com.example.alerts.NotificationReminderManager.scheduleSipDebitEngine(this)
+            // Cancel legacy automatic SIP ledger writes. SIPs are plans/reminders only unless
+            // a real contribution is confirmed or imported by the customer.
+            com.example.alerts.NotificationReminderManager.cancelSipDebitEngine(this)
         } catch (e: Exception) {
             android.util.Log.e("ObsidianAlerts", "Notification init notice", e)
         }
@@ -392,8 +394,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     if (showAddSipDialog) {
         AddSipDialog(
             onDismiss = { showAddSipDialog = false },
-            onAdd = { fund, cat, amt, day, returnPercent ->
-                viewModel.addSip(fund, cat, amt, day, returnPercent)
+            onAdd = { fund, cat, amt, day ->
+                viewModel.addSip(fund, cat, amt, day)
             }
         )
     }
@@ -463,14 +465,13 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         EditSipDialog(
             sip = sip,
             onDismiss = { sipToEdit = null },
-            onSave = { fund, cat, amt, day, returnPercent ->
+            onSave = { fund, cat, amt, day ->
                 viewModel.updateSip(
                     sip.copy(
                         fundName = fund,
                         category = cat,
                         monthlyAmount = amt,
-                        debitDayOfMonth = day,
-                        annualizedReturnPercent = returnPercent
+                        debitDayOfMonth = day
                     )
                 )
             }
@@ -518,9 +519,12 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         val loan = loanToPay!!
         ConfirmLoanPaymentDialog(
             loanName = loan.loanName,
-            paymentAmount = loan.emiAmount.coerceAtLeast(0.0).coerceAtMost(loan.remainingBalance),
+            paymentAmount = loan.emiAmount.coerceAtLeast(0.0).coerceAtMost(
+                loan.remainingBalance + loan.remainingBalance * loan.interestRate.coerceAtLeast(0.0) / 1200.0
+            ),
             currencySymbol = userSettings.currency.symbol,
             remainingBalance = loan.remainingBalance,
+            interestRate = loan.interestRate,
             onDismiss = { loanToPay = null },
             onConfirm = { viewModel.payLoanEmi(loan) }
         )
