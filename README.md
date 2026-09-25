@@ -63,3 +63,11 @@ The accounting behavior and safeguards are implemented in the source files [1] [
 
 The Debt tab supports confirmed credit-card purchases and loan top-ups. A card purchase is accepted only when the selected card has enough available credit; it increases the card balance and appears as an expense in the cash-flow ledger and expense/budget views without reducing a cash account. A loan top-up records the borrowed proceeds in a same-currency deposit account, increases both the loan's principal and outstanding balance, and appears in monthly cash flow as an inflow while remaining excluded from operating-income summaries. Both actions require explicit confirmation, are committed atomically with their linked ledger entry, and cannot be edited or deleted independently from the ledger. Their debt links are included in Firestore sync and Room migration 9-to-10.
 
+
+
+## Available-balance spending safeguards
+
+Cash-funded expenses, transfers, credit-card repayments, and loan installments are checked against the selected account's confirmed balance before they are recorded. The database repeats each check atomically, so a balance change between form review and save cannot overdraw the account. Expense edits and imported/holding-related confirmations are also checked against the balance on the transaction date; an unfunded imported transaction remains pending until confirmed or ignored. Forms show the available balance and a clear "Not enough balance" warning. Credit-card purchases are separately limited to the card's available credit; they add card debt but do not spend bank cash. Loan top-ups are incoming borrowed proceeds rather than cash outflows.
+
+[4]: app/src/main/java/com/example/ui/viewmodel/FinanceViewModel.kt "Spend validation and feedback"
+[5]: app/src/main/java/com/example/ui/components/ObsidianDialogs.kt "Transaction and debt payment forms"
