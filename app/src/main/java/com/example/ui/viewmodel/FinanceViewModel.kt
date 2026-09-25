@@ -897,9 +897,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val selectedAccounts = accountList.filter { it.isActive && it.currencyCode == currency }
         val accountIds = selectedAccounts.map { it.id }.toSet()
         val selectedCardIds = cardList.filter { it.currencyCode == currency }.map { it.id }.toSet()
+        val accountById = accountList.associateBy { it.id }
+        fun transactionCurrency(tx: TransactionEntity): String? = tx.currencyCode ?: tx.accountId?.let { accountById[it]?.currencyCode }
         val selectedTransactions = confirmed.filter { tx ->
-            tx.accountId in accountIds ||
-                (tx.transactionKind == TransactionKind.CREDIT_CARD_PURCHASE && tx.creditCardId in selectedCardIds)
+            (tx.accountId in accountIds && transactionCurrency(tx) == currency) ||
+                (tx.transactionKind == TransactionKind.CREDIT_CARD_PURCHASE && tx.creditCardId in selectedCardIds && transactionCurrency(tx) == currency)
         }
         val inMonth = selectedTransactions.filter { it.dateMillis >= monthStart && it.dateMillis < monthEnd && it.transactionKind !in setOf(TransactionKind.TRANSFER, TransactionKind.ASSET_CONVERSION) }
         val opening = selectedAccounts.sumOf { AccountLedger.balanceAt(it, selectedTransactions, monthStart) }
