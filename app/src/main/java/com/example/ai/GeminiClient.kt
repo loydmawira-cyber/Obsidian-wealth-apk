@@ -378,16 +378,17 @@ Once there is data, this summary reports your actual position.
 No cards or loans are recorded in this vault, so there is no payoff ordering to compute.
 """.trimIndent()
         }
-        val dti = if (s.monthlyInflow > 0) {
+        val dti = if (s.monthlyInflow > 0 && s.monthlyDebtServicing > 0.0) {
             "${fmtPct(s.dtiPercent)} of recorded monthly inflow"
         } else {
-            "not computable — no income recorded"
+            "not computable — no recorded loan EMI or income"
         }
         return """
 ### Debt position
 - **Total outstanding**: ${s.money(s.totalDebt)} across ${s.debtAccountCount} account(s)
-- **Recorded monthly servicing**: ${s.money(s.monthlyDebtServicing)}
-- **Debt-to-income**: $dti
+        - **Recorded loan EMIs per month**: ${s.money(s.monthlyDebtServicing)}
+        - **Loan EMI / recent recorded inflow (estimate)**: $dti
+        - Card minimums are excluded because issuer terms are unknown; this is not lender-standard DTI.
 
 ### Strategic recommendations
 1. Order repayments by interest rate, highest first (avalanche), using the rates on your own recorded accounts.
@@ -440,13 +441,13 @@ No holdings are recorded in this vault, so allocation and return cannot be compu
 
     private fun overviewSection(s: AdvisorSnapshot): String {
         val savings = if (s.monthlyInflow > 0) fmtPct(s.savingsRatePercent) else "not computable"
-        val dti = if (s.monthlyInflow > 0) fmtPct(s.dtiPercent) else "not computable"
+        val dti = if (s.monthlyInflow > 0 && s.monthlyDebtServicing > 0.0) fmtPct(s.dtiPercent) else "not computable"
         return """
 ### Position summary
 - **Net worth**: ${s.money(s.netWorth)}
 - **Assets**: ${s.money(s.totalAssets)} | **Liabilities**: ${s.money(s.totalLiabilities)}
 - **Monthly inflow**: ${s.money(s.monthlyInflow)} | **Outflow**: ${s.money(s.monthlyOutflow)}
-- **Savings rate**: $savings | **Debt-to-income**: $dti
+        - **Savings rate**: $savings | **Recorded loan EMI / recent inflow (estimate)**: $dti
 - **Recorded**: ${s.transactionCount} transaction(s), ${s.holdingCount} holding(s), ${s.debtAccountCount} debt account(s), ${s.goalCount} goal(s)
 
 ### Strategic recommendations
@@ -553,8 +554,8 @@ data class AdvisorSnapshot(
         }
         if (debtAccountCount > 0) {
             appendLine("Total Debt: ${money(totalDebt)} | Monthly Servicing: ${money(monthlyDebtServicing)}")
-            appendLine("Estimated monthly debt payments / income recorded in the last 30 days: ${String.format(Locale.US, "%.1f", dtiPercent)}%.")
-            appendLine("Card payment component is estimated as 3% of recorded card balances; this is not a lender-standard DTI.")
+            appendLine("Recorded loan EMIs / income recorded in the last 30 days (estimate): ${String.format(Locale.US, "%.1f", dtiPercent)}%.")
+            appendLine("Credit-card minimums are excluded because issuer terms are unknown; this is not a lender-standard DTI.")
         } else {
             appendLine("Debt: no cards or loans recorded.")
         }
