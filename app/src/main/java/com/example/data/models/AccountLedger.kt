@@ -9,6 +9,16 @@ object AccountLedger {
         return balanceAt(account, transactions, Long.MAX_VALUE)
     }
 
+    fun hasSufficientBalance(
+        account: AccountEntity,
+        transactions: Iterable<TransactionEntity>,
+        amount: Double,
+        asOfMillis: Long = Long.MAX_VALUE
+    ): Boolean {
+        if (!amount.isFinite() || amount <= 0.0) return false
+        return balanceAt(account, transactions, asOfMillis) + 0.000001 >= amount
+    }
+
     fun balanceAt(account: AccountEntity, transactions: Iterable<TransactionEntity>, asOfMillis: Long): Double {
         if (asOfMillis < account.openingBalanceMillis) return 0.0
         val ledgerEffect = transactions.asSequence()
