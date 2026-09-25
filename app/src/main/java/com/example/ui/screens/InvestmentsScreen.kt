@@ -90,27 +90,33 @@ fun InvestmentsScreen(
     val userSettings by viewModel.userSettings.collectAsState()
     val sym = userSettings.currency.symbol
     val selectedHoldings = holdings.filter { it.currencyCode == userSettings.currency.code }
+    val selectedSips = sips.filter { it.currencyCode == userSettings.currency.code }
+    val activeSips = selectedSips.filter { it.isActive && it.monthlyAmount > 0.0 }
+    val activeSipSum = activeSips.sumOf { it.monthlyAmount }
 
     val totalPortfolioValue = selectedHoldings.sumOf { it.totalValue }
     val totalUnrealizedGain = selectedHoldings.sumOf { it.unrealizedGain }
 
-    // Compute dynamic allocation across Equities, Mutual Funds, and Gold
-    val equityHoldings = selectedHoldings.filter {
-        it.type == HoldingType.STOCK || (it.type == HoldingType.ETF && it.symbol != "GLD" && it.symbol != "BND" && !it.symbol.startsWith("IFB"))
-    }
-    val equityVal = equityHoldings.sumOf { it.totalValue }
-
-    val mutualFundHoldings = selectedHoldings.filter {
-        it.type == HoldingType.MUTUAL_FUND || it.symbol == "BND" || it.symbol.startsWith("IFB")
-    }
-    val mutualFundVal = mutualFundHoldings.sumOf { it.totalValue }
-
+    // Assign each holding to exactly one class so allocation slices always add up to the portfolio total.
     val goldHoldings = selectedHoldings.filter {
         it.type == HoldingType.GOLD || it.symbol == "GLD"
     }
+    val goldIds = goldHoldings.map { it.id }.toSet()
     val goldVal = goldHoldings.sumOf { it.totalValue }
 
-    val cryptoHoldings = selectedHoldings.filter { it.type == HoldingType.CRYPTO }
+    val mutualFundHoldings = selectedHoldings.filter {
+        it.id !in goldIds && (it.type == HoldingType.MUTUAL_FUND || it.symbol == "BND" || it.symbol.startsWith("IFB"))
+    }
+    val mutualFundIds = mutualFundHoldings.map { it.id }.toSet()
+    val mutualFundVal = mutualFundHoldings.sumOf { it.totalValue }
+
+    val equityHoldings = selectedHoldings.filter {
+        it.id !in goldIds && it.id !in mutualFundIds && (it.type == HoldingType.STOCK || it.type == HoldingType.ETF)
+    }
+    val equityIds = equityHoldings.map { it.id }.toSet()
+    val equityVal = equityHoldings.sumOf { it.totalValue }
+
+    val cryptoHoldings = selectedHoldings.filter { it.id !in goldIds && it.id !in mutualFundIds && it.id !in equityIds && it.type == HoldingType.CRYPTO }
     val cryptoVal = cryptoHoldings.sumOf { it.totalValue }
 
     val allocationSlices = buildList {
@@ -174,6 +180,22 @@ fun InvestmentsScreen(
                 )
             )
         }
+    }
+
+    val sipColors = listOf(EmeraldGrowth, CyanAccent, ElectricIndigo, SovereignGold, Color(0xFFFB7185), Color(0xFF84CC16))
+    val sipPlanSlices = activeSips.mapIndexed { index, sip ->
+        val color = sipColors[index % sipColors.size]
+        D3AllocationSlice(
+            key = "sip_${sip.id}",
+            name = sip.fundName,
+            value = sip.monthlyAmount,
+            primaryColor = color,
+            gradientColors = listOf(color, color.copy(alpha = 0.55f)),
+            holdingsCount = 1,
+            xirrReturnPercent = 0.0,
+            description = "Planned monthly contribution; not automatically debited or included in portfolio value.",
+            underlyingAssets = listOf("${viewModel.formatAmount(sip.monthlyAmount, sip.currencyCode)} per month")
+        )
     }
 
     LazyColumn(
@@ -350,7 +372,6 @@ fun InvestmentsScreen(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )
-                        val activeSipSum = sips.filter { it.isActive && it.currencyCode == userSettings.currency.code }.sumOf { it.monthlyAmount }
                         Text(
                             text = "${viewModel.formatAmount(activeSipSum, userSettings.currency.code)}/month planned — not debited by the app",
                             color = EmeraldLight,
@@ -374,6 +395,36 @@ fun InvestmentsScreen(
                             Text("Add plan", color = EmeraldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+                }
+            }
+        }
+
+        if (sipPlanSlices.isNotEmpty()) {
+            item {
+                FinCard {
+                    Text(
+                        text = "MONTHLY SIP PLAN ALLOCATION",
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Planned contributions only — separate from holdings. Other or unresolved currencies stay out of this total.",
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    D3InteractiveDonutChart(
+                        slices = sipPlanSlices,
+                        totalPortfolioValue = activeSipSum,
+                        currencySymbol = sym,
+                        formatAmount = { viewModel.formatAmount(it, userSettings.currency.code) },
+                        chartSize = 190.dp,
+                        centerTitle = "PLANNED / MONTH",
+                        aggregateDetail = "${activeSips.size} active plans"
+                    )
                 }
             }
         }

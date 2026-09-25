@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.models.Category
+import com.example.data.models.CashFlowTransactionRules
 import com.example.data.models.GeographicRegion
 import com.example.data.models.SupportedCurrency
 import com.example.data.models.TransactionEntity
@@ -113,8 +114,9 @@ fun CashFlowScreen(
     val creditCards by viewModel.creditCards.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val accountCurrencyById = accounts.associate { it.id to it.currencyCode }
+    val cardCurrencyById = creditCards.associate { it.id to it.currencyCode }
     fun transactionCurrency(tx: TransactionEntity): String? =
-        tx.currencyCode ?: tx.accountId?.let { accountCurrencyById[it] }
+        tx.currencyCode ?: tx.accountId?.let { accountCurrencyById[it] } ?: tx.creditCardId?.let { cardCurrencyById[it] }
     val sym = userSettings.currency.symbol
     val isKenya = userSettings.region == GeographicRegion.EAST_AFRICA || userSettings.currency == SupportedCurrency.KES
 
@@ -142,39 +144,43 @@ fun CashFlowScreen(
         matchesSearch && matchesFilter && inMonth
     }
 
-    // Keep the breakdown in lockstep with monthly outflow. Card repayments are cash movements,
-    // not new spending: the original card purchase is counted once, when it was made.
+    // Use the exact same outflow rule as MonthCashFlow so category slices sum to the selected-month total.
     val cashAccountIds = accounts.filter { it.isActive && it.currencyCode == userSettings.currency.code }.map { it.id }.toSet()
     val cashFlowCardIds = creditCards.filter { it.currencyCode == userSettings.currency.code }.map { it.id }.toSet()
     val expenseTransactions = transactions.filter { tx ->
         tx.type == TransactionType.EXPENSE && transactionCurrency(tx) == userSettings.currency.code &&
-            tx.importStatus != "PENDING_REVIEW" && tx.importStatus != "IGNORED" &&
-            tx.dateMillis >= month.monthStart && tx.dateMillis < month.monthEnd &&
-            tx.transactionKind !in setOf(
-                com.example.data.models.TransactionKind.TRANSFER,
-                com.example.data.models.TransactionKind.ASSET_CONVERSION,
-                com.example.data.models.TransactionKind.ADJUSTMENT
-            ) && !(tx.transactionKind == com.example.data.models.TransactionKind.DEBT_SETTLEMENT && tx.creditCardId != null) &&
-            (tx.accountId in cashAccountIds ||
-                (tx.transactionKind == com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE && tx.creditCardId in cashFlowCardIds))
+            CashFlowTransactionRules.isConfirmedInRange(tx, month.monthStart, month.monthEnd) &&
+            CashFlowTransactionRules.countsAsOutflow(tx) &&
+            ((tx.accountId != null && tx.accountId in cashAccountIds) ||
+                (tx.transactionKind == com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE &&
+                    tx.creditCardId != null && tx.creditCardId in cashFlowCardIds))
     }
     val donutSlices = if (expenseTransactions.isNotEmpty()) {
         val categoryColors = mapOf(
+            Category.SALARY to Color(0xFF22C55E),
+            Category.FREELANCE to Color(0xFF14B8A6),
+            Category.DIVIDENDS to Color(0xFFF472B6),
+            Category.RENTAL to Color(0xFFA78BFA),
             Category.HOUSING to ElectricIndigo,
             Category.FOOD_DINING to EmeraldGrowth,
             Category.TRANSPORT to CyanAccent,
             Category.SHOPPING to Color(0xFFF59E0B),
             Category.INVESTMENT_SIP to Color(0xFF34D399),
+            Category.INVESTMENT_SALE to Color(0xFF84CC16),
             Category.LOAN_EMI to CrimsonDebt,
+            Category.LOAN_TOP_UP to Color(0xFF0EA5E9),
             Category.DEBT_PAYMENT to Color(0xFFFB7185),
             Category.GOAL_SAVINGS to Color(0xFF06B6D4),
             Category.UTILITIES to Color(0xFFEC4899),
             Category.SUBSCRIPTIONS to Color(0xFFA855F7),
             Category.HEALTHCARE to Color(0xFF38BDF8),
+            Category.ENTERTAINMENT to Color(0xFFC084FC),
+            Category.ACCOUNT_TRANSFER to Color(0xFFF97316),
+            Category.ACCOUNT_ADJUSTMENT to Color(0xFF64748B),
             Category.OTHER to Color(0xFF94A3B8)
         )
-        expenseTransactions.groupBy { it.category }
-            .map { (cat, txs) ->
+        CashFlowTransactionRules.outflowsByCategory(expenseTransactions)
+            .map { (cat, value) ->
                 val label = when (cat) {
                     Category.HOUSING -> "Housing & Rent"
                     Category.FOOD_DINING -> "Food & Dining"
@@ -189,11 +195,18 @@ fun CashFlowScreen(
                     Category.SUBSCRIPTIONS -> "Subscriptions"
                     Category.SHOPPING -> "Shopping"
                     Category.HEALTHCARE -> "Healthcare"
-                    else -> "Other"
+                    Category.ENTERTAINMENT -> "Entertainment"
+                    Category.SALARY -> "Salary"
+                    Category.FREELANCE -> "Freelance"
+                    Category.DIVIDENDS -> "Dividends"
+                    Category.RENTAL -> "Rental Income"
+                    Category.INVESTMENT_SALE -> "Investment Sales"
+                    Category.LOAN_TOP_UP -> "Loan Top-ups"
+                    Category.OTHER -> "Other"
                 }
                 DonutSlice(
                     label = label,
-                    value = txs.sumOf { it.amount },
+                    value = value,
                     color = categoryColors[cat] ?: Color(0xFF94A3B8)
                 )
             }
