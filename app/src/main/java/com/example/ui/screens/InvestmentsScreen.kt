@@ -93,8 +93,9 @@ fun InvestmentsScreen(
     val selectedSips = sips.filter { it.currencyCode == userSettings.currency.code }
     val activeSips = selectedSips.filter { it.isActive && it.monthlyAmount > 0.0 }
     val activeSipSum = activeSips.sumOf { it.monthlyAmount }
-
-    val totalPortfolioValue = selectedHoldings.sumOf { it.totalValue }
+    val holdingsValue = selectedHoldings.sumOf { it.totalValue }
+    val totalPortfolioValue = summary.portfolioValue
+    val totalSipInvested = (totalPortfolioValue - holdingsValue).coerceAtLeast(0.0)
     val totalUnrealizedGain = selectedHoldings.sumOf { it.unrealizedGain }
 
     // Assign each holding to exactly one class so allocation slices always add up to the portfolio total.
@@ -182,31 +183,22 @@ fun InvestmentsScreen(
         }
     }
 
-    val sipColors = listOf(EmeraldGrowth, CyanAccent, ElectricIndigo, SovereignGold, Color(0xFFFB7185), Color(0xFF84CC16))
-    val sipPlanSlices = activeSips.mapIndexed { index, sip ->
-        val color = sipColors[index % sipColors.size]
-        D3AllocationSlice(
-            key = "sip_${sip.id}",
-            name = sip.fundName,
-            value = sip.monthlyAmount,
-            primaryColor = color,
-            gradientColors = listOf(color, color.copy(alpha = 0.55f)),
-            holdingsCount = 1,
-            xirrReturnPercent = 0.0,
-            description = "Planned monthly contribution; not automatically debited or included in portfolio value.",
-            underlyingAssets = listOf("${viewModel.formatAmount(sip.monthlyAmount, sip.currencyCode)} per month")
+    val portfolioAllocationSlices = allocationSlices + if (totalSipInvested > 0.0) {
+        listOf(
+            D3AllocationSlice(
+                key = "SIP_INVESTED",
+                name = "SIP Contributions",
+                value = totalSipInvested,
+                primaryColor = SovereignGold,
+                gradientColors = listOf(SovereignGold, GoldLight),
+                holdingsCount = selectedSips.size,
+                xirrReturnPercent = 0.0,
+                description = "Recorded SIP contributions invested to date at cost. Current market values are not stored separately."
+            )
         )
+    } else {
+        emptyList()
     }
-
-    // Single combined donut: holdings slices plus SIP plan slices (labeled), so one chart
-    // shows all allocations across both holdings and active SIPs.
-    val combinedAllocationSlices = allocationSlices + sipPlanSlices.map { slice ->
-        slice.copy(
-            key = "${slice.key}_combined",
-            name = "${slice.name} (SIP)"
-        )
-    }
-    val combinedAllocationTotal = totalPortfolioValue + activeSipSum
 
     LazyColumn(
         modifier = modifier
@@ -275,7 +267,7 @@ fun InvestmentsScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Prices are entered manually. Values are not live market quotes.",
+                    text = "Holding prices are entered manually. SIP values use recorded contributions to date at cost; current SIP market values aren't stored separately.",
                     color = TextMuted,
                     fontSize = 11.sp
                 )
@@ -305,7 +297,7 @@ fun InvestmentsScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "PORTFOLIO & SIP ALLOCATION",
+                            text = "PORTFOLIO ALLOCATION",
                             color = TextSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -341,7 +333,7 @@ fun InvestmentsScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                if (combinedAllocationSlices.isEmpty()) {
+                if (portfolioAllocationSlices.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -349,19 +341,19 @@ fun InvestmentsScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No holdings or active SIPs found. Tap + Asset or Add plan to build your portfolio.",
+                            text = "No recorded holdings yet. Tap Add investment to build your portfolio.",
                             color = TextMuted,
                             fontSize = 12.sp
                         )
                     }
                 } else {
                     D3InteractiveDonutChart(
-                        slices = combinedAllocationSlices,
-                        totalPortfolioValue = combinedAllocationTotal,
+                        slices = portfolioAllocationSlices,
+                        totalPortfolioValue = totalPortfolioValue,
                         currencySymbol = sym,
                         formatAmount = { viewModel.formatAmount(it) },
                         chartSize = 220.dp,
-                        aggregateDetail = "${selectedHoldings.size} holdings • ${activeSips.size} active SIPs"
+                        aggregateDetail = "${selectedHoldings.size} holdings • ${selectedSips.size} SIP plans"
                     )
                 }
             }
@@ -387,6 +379,11 @@ fun InvestmentsScreen(
                             text = "${viewModel.formatAmount(activeSipSum, userSettings.currency.code)}/month planned — not debited by the app",
                             color = EmeraldLight,
                             fontSize = 11.sp
+                        )
+                        Text(
+                            text = "${viewModel.formatAmount(totalSipInvested, userSettings.currency.code)} invested to date — included in portfolio",
+                            color = TextMuted,
+                            fontSize = 10.sp
                         )
                     }
 
