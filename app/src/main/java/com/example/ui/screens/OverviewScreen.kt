@@ -198,19 +198,6 @@ fun OverviewScreen(
                         }
                     }
 
-                    if (snapshots.size >= 2) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "NET WORTH TREND (${snapshots.size} DAYS RECORDED)",
-                            color = TextMuted,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 1.sp
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        NetWorthSparkline(points = snapshots.takeLast(60).map { it.netWorth }, lineColor = SovereignGold)
-                    }
-
                     Spacer(modifier = Modifier.height(12.dp))
                     NetWorthBreakdown(summary = summary, format = { viewModel.formatAmount(it) })
                 }
@@ -708,25 +695,3 @@ private fun BreakdownLine(
     }
 }
 
-
-@Composable
-private fun NetWorthSparkline(points: List<Double>, lineColor: Color) {
-    if (points.size < 2) return
-    val minV = points.minOrNull() ?: 0.0
-    val maxV = points.maxOrNull() ?: 0.0
-    val range = if (maxV - minV > 0.0) maxV - minV else 1.0
-    androidx.compose.foundation.Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(40.dp)
-    ) {
-        val stepX = size.width / (points.size - 1)
-        val path = androidx.compose.ui.graphics.Path()
-        points.forEachIndexed { i, v ->
-            val x = i * stepX
-            val y = size.height - ((v - minV) / range).toFloat() * size.height
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        drawPath(path, color = lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
-    }
-}

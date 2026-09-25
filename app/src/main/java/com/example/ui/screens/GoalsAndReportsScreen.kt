@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.models.GeographicRegion
+import com.example.data.models.AccountLedger
 import com.example.data.models.GoalEntity
 import com.example.data.models.SupportedCurrency
 import com.example.ui.components.CircularProgressRing
@@ -86,6 +87,8 @@ fun GoalsAndReportsScreen(
 ) {
     val summary by viewModel.summary.collectAsState()
     val goals by viewModel.goals.collectAsState()
+    val accounts by viewModel.accounts.collectAsState()
+    val transactions by viewModel.transactions.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val sym = userSettings.currency.symbol
     val selectedGoals = goals.filter { it.currencyCode == userSettings.currency.code }
@@ -99,12 +102,19 @@ fun GoalsAndReportsScreen(
     goalMoneyTarget?.let { (targetGoal, isDeposit) ->
         com.example.ui.components.GoalMoneyDialog(
             goalTitle = targetGoal.title,
+            goalCurrencyCode = targetGoal.currencyCode,
             isDeposit = isDeposit,
             maxAmount = if (isDeposit) null else targetGoal.currentAmount,
-            formatAmount = { viewModel.formatAmount(it, targetGoal.currencyCode) },
+            accounts = accounts,
+            availableBalance = { account -> AccountLedger.currentBalance(account, transactions).coerceAtLeast(0.0) },
+            formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
             onDismiss = { goalMoneyTarget = null },
-            onConfirm = { amt ->
-                if (isDeposit) viewModel.contributeGoal(targetGoal, amt) else viewModel.withdrawFromGoal(targetGoal, amt)
+            onConfirm = { amount, account ->
+                if (isDeposit) {
+                    account?.let { viewModel.contributeGoal(targetGoal, amount, it) }
+                } else {
+                    viewModel.withdrawFromGoal(targetGoal, amount)
+                }
             }
         )
     }

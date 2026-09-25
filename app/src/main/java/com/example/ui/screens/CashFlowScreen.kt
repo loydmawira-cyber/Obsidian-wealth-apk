@@ -26,7 +26,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fastfood
 import androidx.compose.material.icons.filled.Home
@@ -37,12 +36,6 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Subscriptions
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Receipt
-import com.example.ui.components.ReceiptPhotoDialog
-import com.example.ui.components.StatementImportDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -102,8 +95,6 @@ import java.util.Locale
 fun CashFlowScreen(
     viewModel: FinanceViewModel,
     onQuickAdd: () -> Unit,
-    onAiSmartLog: () -> Unit,
-    onReviewImported: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val summary by viewModel.summary.collectAsState()
@@ -122,13 +113,11 @@ fun CashFlowScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") }
-    var showReceiptDialog by remember { mutableStateOf(false) }
-    var showStatementDialog by remember { mutableStateOf(false) }
 
     // The ledger opens short and grows on demand; it resets whenever the month, search or filter changes.
     var actionTx by remember { mutableStateOf<TransactionEntity?>(null) }
     var editTx by remember { mutableStateOf<TransactionEntity?>(null) }
-    var visibleCount by remember(month.monthStart, searchQuery, selectedFilter) { mutableStateOf(15) }
+    var visibleCount by remember(month.monthStart, searchQuery, selectedFilter) { mutableStateOf(5) }
 
     val filteredTransactions = transactions.filter { tx ->
         val matchesSearch = tx.title.contains(searchQuery, ignoreCase = true) ||
@@ -234,25 +223,12 @@ fun CashFlowScreen(
     val nowCal = java.util.Calendar.getInstance()
     val daysLeft = nowCal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH) - nowCal.get(java.util.Calendar.DAY_OF_MONTH) + 1
     val dailyPace = if (budgetCap > 0 && month.isCurrentMonth) bufferRemaining / daysLeft else 0.0
-    val pendingImportedCount = transactions.count { it.importStatus == "PENDING_REVIEW" }
-
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        if (pendingImportedCount > 0) {
-            item {
-                Button(
-                    onClick = onReviewImported,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = SovereignGold)
-                ) {
-                    Text("Review $pendingImportedCount detected transaction${if (pendingImportedCount == 1) "" else "s"}")
-                }
-            }
-        }
         item { AccountManagementCard(viewModel = viewModel) }
         // Month switcher with opening / closing balances
         item { MonthCashFlowCard(viewModel = viewModel) }
@@ -516,75 +492,7 @@ fun CashFlowScreen(
                         letterSpacing = 1.sp
                     )
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { showReceiptDialog = true },
-                            color = CyanAccent.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, CyanAccent.copy(alpha = 0.5f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Receipt, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Receipt", color = CyanAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
 
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { showStatementDialog = true },
-                            color = SovereignGold.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.5f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Description, contentDescription = null, tint = SovereignGold, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("Import", color = GoldLight, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onAiSmartLog() },
-                            color = SovereignGold.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.5f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = SovereignGold, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("AI Log", color = GoldLight, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onQuickAdd() },
-                            color = EmeraldGrowth.copy(alpha = 0.2f),
-                            border = BorderStroke(1.dp, EmeraldGrowth.copy(alpha = 0.4f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, tint = EmeraldLight, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("+ Add", color = EmeraldLight, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
                 }
 
                 // Search Bar
@@ -625,6 +533,24 @@ fun CashFlowScreen(
                                 fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
+                        }
+                    }
+                    item {
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onQuickAdd() },
+                            color = EmeraldGrowth.copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, EmeraldGrowth.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = EmeraldLight, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add transaction", color = EmeraldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -774,24 +700,24 @@ fun CashFlowScreen(
         }
             }
 
-        if (filteredTransactions.size > 15) {
+        if (filteredTransactions.size > 5) {
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center
                 ) {
                     if (visibleCount < filteredTransactions.size) {
-                        androidx.compose.material3.TextButton(onClick = { visibleCount += 15 }) {
+                        androidx.compose.material3.TextButton(onClick = { visibleCount += 5 }) {
                             Text(
-                                "Show 15 more (${filteredTransactions.size - visibleCount} left)",
+                                "Show 5 more (${filteredTransactions.size - visibleCount} left)",
                                 color = SovereignGold,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
-                    if (visibleCount > 15) {
-                        androidx.compose.material3.TextButton(onClick = { visibleCount = 15 }) {
+                    if (visibleCount > 5) {
+                        androidx.compose.material3.TextButton(onClick = { visibleCount = 5 }) {
                             Text("Show less", color = TextMuted, fontSize = 12.sp)
                         }
                     }
@@ -825,19 +751,6 @@ fun CashFlowScreen(
         )
     }
 
-    if (showReceiptDialog) {
-        ReceiptPhotoDialog(
-            viewModel = viewModel,
-            onDismiss = { showReceiptDialog = false }
-        )
-    }
-
-    if (showStatementDialog) {
-        StatementImportDialog(
-            viewModel = viewModel,
-            onDismiss = { showStatementDialog = false }
-        )
-    }
 }
 
 fun getCategoryIcon(category: Category): ImageVector {
