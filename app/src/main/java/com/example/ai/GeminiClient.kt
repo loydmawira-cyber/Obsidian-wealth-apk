@@ -553,7 +553,8 @@ data class AdvisorSnapshot(
         }
         if (debtAccountCount > 0) {
             appendLine("Total Debt: ${money(totalDebt)} | Monthly Servicing: ${money(monthlyDebtServicing)}")
-            appendLine("Debt-to-Income: ${String.format(Locale.US, "%.1f", dtiPercent)}%")
+            appendLine("Estimated monthly debt payments / income recorded in the last 30 days: ${String.format(Locale.US, "%.1f", dtiPercent)}%.")
+            appendLine("Card payment component is estimated as 3% of recorded card balances; this is not a lender-standard DTI.")
         } else {
             appendLine("Debt: no cards or loans recorded.")
         }
