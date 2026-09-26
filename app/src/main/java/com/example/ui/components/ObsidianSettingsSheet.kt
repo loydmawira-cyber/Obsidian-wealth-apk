@@ -123,6 +123,7 @@ fun ObsidianSettingsSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val settings by viewModel.userSettings.collectAsState()
+    val isPremium by viewModel.isPremium.collectAsState()
     val previewSummary by viewModel.summary.collectAsState()
     val isSyncing by viewModel.isSyncingCloud.collectAsState()
     val syncResult by viewModel.cloudSyncResult.collectAsState()
@@ -605,7 +606,7 @@ fun ObsidianSettingsSheet(
                     item {
                         ModuleToggleCard(
                             title = "Goals & Milestones",
-                            description = "Target capital accumulation, emergency liquid reserves, and FIRE independence progress.",
+                            description = if (isPremium) "Target capital accumulation, emergency liquid reserves, and FIRE independence progress." else "Premium feature · Includes goals, milestones, and the goal savings breakdown.",
                             icon = Icons.Default.Flag,
                             isEnabled = settings.enableGoals,
                             onToggle = { viewModel.toggleModule("goals", it) }
