@@ -185,7 +185,7 @@ class StatementParserAndToolsTest {
             override suspend fun clearAllGoals() {}
         }
 
-        val registry = AdvisorToolRegistry(fakeDao)
+        val registry = AdvisorToolRegistry(fakeDao) { true }
 
         val spending = registry.getSpendingByCategory(1)
         assertEquals(4200.0, spending["totalExpenses"]?.jsonPrimitive?.double ?: 0.0, 0.001)
@@ -202,5 +202,8 @@ class StatementParserAndToolsTest {
         val portfolio = registry.getPortfolio()
         assertEquals(22000.0, portfolio["totalPortfolioValue"]?.jsonPrimitive?.double ?: 0.0, 0.001)
         assertEquals(1, portfolio["holdingCount"]?.jsonPrimitive?.int)
+
+        val freeTierGoals = AdvisorToolRegistry(fakeDao) { false }.getGoals()
+        assertNotNull(freeTierGoals["error"])
     }
 }
