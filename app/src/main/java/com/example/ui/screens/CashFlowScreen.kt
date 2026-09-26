@@ -67,6 +67,7 @@ import com.example.ui.components.DonutSlice
 import com.example.ui.components.FinCard
 import com.example.ui.components.GoldBadge
 import com.example.ui.components.MetricBadge
+import com.example.ui.components.PremiumAccessGate
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonDebt
 import com.example.ui.theme.CyanAccent
@@ -92,12 +93,14 @@ import java.util.Locale
 @Composable
 fun CashFlowScreen(
     viewModel: FinanceViewModel,
+    onOpenPremium: () -> Unit,
     onQuickAdd: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val summary by viewModel.summary.collectAsState()
     val month by viewModel.monthCashFlow.collectAsState()
-    val budgets by viewModel.budgets.collectAsState()
+    val isPremium by viewModel.isPremium.collectAsState()
+    val storedBudgets by viewModel.budgets.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
     val creditCards by viewModel.creditCards.collectAsState()
@@ -198,8 +201,9 @@ fun CashFlowScreen(
 
     val hasCashFlowData = summary.totalInflow > 0 || summary.totalOutflow > 0 || summary.transactionCount > 0
     // The monthly cap is the sum of the user's own budgets; amounts are not FX-converted.
-    val selectedBudgets = budgets.filter { !it.currencyCode.isNullOrBlank() }
-    val unresolvedBudgetCount = budgets.count { it.currencyCode.isNullOrBlank() }
+    val accessibleBudgets = if (isPremium) storedBudgets else emptyList()
+    val selectedBudgets = accessibleBudgets.filter { !it.currencyCode.isNullOrBlank() }
+    val unresolvedBudgetCount = accessibleBudgets.count { it.currencyCode.isNullOrBlank() }
     val budgetCap = selectedBudgets.sumOf { it.monthlyLimit }
     val budgetedCategories = selectedBudgets.map { it.category }.toSet()
     val budgetCurrencyByCategory = selectedBudgets.associate { it.category to it.currencyCode }
@@ -336,7 +340,7 @@ fun CashFlowScreen(
         }
 
         // Monthly Cap & Run-Rate Tracker
-        item {
+        if (isPremium) item {
             FinCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -472,7 +476,15 @@ fun CashFlowScreen(
             }
         }
 
-        item { BudgetsCard(viewModel = viewModel, transactions = transactions, monthStart = month.monthStart, monthEnd = month.monthEnd) }
+        item {
+            BudgetsCard(
+                viewModel = viewModel,
+                transactions = transactions,
+                monthStart = month.monthStart,
+                monthEnd = month.monthEnd,
+                onOpenPremium = onOpenPremium
+            )
+        }
 
         // Ledger Activity Header & Search & Filters
         item {

@@ -53,6 +53,7 @@ import com.example.data.models.TransactionEntity
 import com.example.data.models.TransactionType
 import com.example.data.models.SupportedCurrency
 import com.example.ui.components.FinCard
+import com.example.ui.components.PremiumAccessGate
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonDebt
 import com.example.ui.theme.EmeraldGrowth
@@ -133,8 +134,14 @@ fun BudgetsCard(
     viewModel: FinanceViewModel,
     transactions: List<TransactionEntity>,
     monthStart: Long,
-    monthEnd: Long
+    monthEnd: Long,
+    onOpenPremium: () -> Unit
 ) {
+    val isPremium by viewModel.isPremium.collectAsState()
+    if (!isPremium) {
+        PremiumAccessGate(featureName = "Budgets", onUpgrade = onOpenPremium)
+        return
+    }
     val budgets by viewModel.budgets.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
