@@ -59,6 +59,7 @@ import com.example.ui.components.D3FinancialTrendsDashboard
 import com.example.ui.components.FinCard
 import com.example.ui.components.HeroGradientCard
 import com.example.ui.components.MetricBadge
+import com.example.ui.components.PremiumAccessGate
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.ElectricIndigo
 import com.example.ui.theme.EmeraldGrowth
@@ -80,13 +81,16 @@ import com.example.ui.viewmodel.FinanceViewModel
 @Composable
 fun GoalsAndReportsScreen(
     viewModel: FinanceViewModel,
+    onOpenPremium: () -> Unit,
     onAddGoal: () -> Unit,
     onExportReport: (String) -> Unit,
     onAskAiToExplain: (String) -> Unit = { viewModel.askAi(it) },
     modifier: Modifier = Modifier
 ) {
+    val isPremium by viewModel.isPremium.collectAsState()
     val summary by viewModel.summary.collectAsState()
-    val goals by viewModel.goals.collectAsState()
+    val storedGoals by viewModel.goals.collectAsState()
+    val goals = if (isPremium) storedGoals else emptyList()
     val accounts by viewModel.accounts.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
@@ -97,7 +101,7 @@ fun GoalsAndReportsScreen(
     val overallGoalProgress = if (totalGoalTarget > 0) (totalGoalSaved / totalGoalTarget) * 100.0 else 0.0
     // Which goal the deposit / withdraw dialog is open for (second value: true = deposit).
     var goalMoneyTarget by remember { mutableStateOf<Pair<com.example.data.models.GoalEntity, Boolean>?>(null) }
-    goalMoneyTarget?.let { (targetGoal, isDeposit) ->
+    if (isPremium) goalMoneyTarget?.let { (targetGoal, isDeposit) ->
         com.example.ui.components.GoalMoneyDialog(
             goalTitle = targetGoal.title,
             goalCurrencyCode = targetGoal.currencyCode,
@@ -126,16 +130,24 @@ fun GoalsAndReportsScreen(
     // total, and an "OBSIDIAN AI RESILIENCE INDEX" of 91 or 88 out of 100. None of it derived
     // from the user's records. The exported summary must not contain an invented number.
     val hasData = summary.transactionCount > 0 || summary.holdingCount > 0 ||
-        summary.debtAccountCount > 0 || summary.goalCount > 0
+        summary.debtAccountCount > 0 || summary.totalNetWorth != 0.0 || (isPremium && summary.goalCount > 0)
+
+    val goalsReportSection = if (isPremium) """
+5. GOALS
+   • Goals Recorded:            ${summary.goalCount}
+   • Total Target:              ${viewModel.formatAmount(totalGoalTarget)}
+   • Total Saved:               ${viewModel.formatAmount(totalGoalSaved)}
+   • Overall Progress:          ${if (totalGoalTarget > 0) "%.1f%%".format(overallGoalProgress) else "not computable (no targets set)"}
+""".trimIndent() else ""
 
     val sampleReportText = if (!hasData) """
 ==================================================
            OBSIDIAN PERSONAL FINANCE SUMMARY
 ==================================================
 
-No financial records in this vault.
+No financial records are available for this report.
 
-Add transactions, holdings, cards, loans or goals and regenerate this
+Add transactions, holdings, cards or loans and regenerate this
 summary to produce an updated view of your recorded position.
 ==================================================
 """.trimIndent() else """
@@ -177,11 +189,7 @@ summary to produce an updated view of your recorded position.
    • Note: the revolving/term split is not itemised here because it is not
      derivable from the recorded totals alone.
 
-5. GOALS
-   • Goals Recorded:            ${summary.goalCount}
-   • Total Target:              ${viewModel.formatAmount(totalGoalTarget)}
-   • Total Saved:               ${viewModel.formatAmount(totalGoalSaved)}
-   • Overall Progress:          ${if (totalGoalTarget > 0) "%.1f%%".format(overallGoalProgress) else "not computable (no targets set)"}
+${goalsReportSection}
 ==================================================
 """.trimIndent()
 
@@ -191,6 +199,7 @@ summary to produce an updated view of your recorded position.
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (isPremium) {
         // Goals Hero Card
         item {
             HeroGradientCard {
@@ -392,6 +401,14 @@ summary to produce an updated view of your recorded position.
             }
         }
 
+        } else {
+            item {
+                PremiumAccessGate(
+                    featureName = "Goals",
+                    onUpgrade = onOpenPremium
+                )
+            }
+        }
         item {
             WhatIfCalculatorCard(
                 summary = summary,
@@ -478,6 +495,7 @@ fun WhatIfCalculatorCard(
     viewModel: FinanceViewModel,
     onAskAiToExplain: (String) -> Unit
 ) {
+    val isPremium by viewModel.isPremium.collectAsState()
     var extraSavingsInput by remember { mutableStateOf("10000") }
     val extraSavings = extraSavingsInput.toDoubleOrNull() ?: 0.0
 
@@ -488,7 +506,9 @@ fun WhatIfCalculatorCard(
     val additionalAnnualSavings = extraSavings * 12.0
 
     val primaryGoal = goals.firstOrNull()
-    val goalImpactText = if (primaryGoal != null && primaryGoal.targetAmount > 0) {
+    val goalImpactText = if (!isPremium) {
+        "Available with Premium"
+    } else if (primaryGoal != null && primaryGoal.targetAmount > 0) {
         val remaining = (primaryGoal.targetAmount - primaryGoal.currentAmount).coerceAtLeast(0.0)
         val currentMonthly = primaryGoal.monthlyContribution
         val currentMonths = if (currentMonthly > 0) Math.ceil(remaining / currentMonthly).toInt() else primaryGoal.monthsRemaining

@@ -88,6 +88,7 @@ fun OverviewScreen(
     modifier: Modifier = Modifier
 ) {
     val summary by viewModel.summary.collectAsState()
+    val isPremium by viewModel.isPremium.collectAsState()
     val snapshots by viewModel.snapshots.collectAsState()
     val netWorthChange: Pair<Int, Double>? = remember(snapshots, summary.totalNetWorth) {
         val now = System.currentTimeMillis()
@@ -204,7 +205,11 @@ fun OverviewScreen(
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
-                    NetWorthBreakdown(summary = summary, format = { viewModel.formatAmount(it) })
+                    NetWorthBreakdown(
+                        summary = summary,
+                        showGoalSavings = isPremium,
+                        format = { viewModel.formatAmount(it) }
+                    )
                 }
             }
         }
@@ -603,6 +608,7 @@ private data class DebtLine(val name: String, val rate: Double, val balance: Dou
 @Composable
 private fun NetWorthBreakdown(
     summary: com.example.ui.viewmodel.FinanceSummary,
+    showGoalSavings: Boolean,
     format: (Double) -> String
 ) {
     val cashColor = Color(0xFF34D399)
@@ -610,10 +616,10 @@ private fun NetWorthBreakdown(
     val goalsColor = Color(0xFF60A5FA)
     val debtColor = Color(0xFFFB7185)
 
-    val parts = listOf(
+    val parts = listOfNotNull(
         Triple("Cash", summary.liquidCash, cashColor),
         Triple("Investments", summary.portfolioValue, investColor),
-        Triple("Goal savings", summary.goalsValue, goalsColor)
+        if (showGoalSavings) Triple("Goal savings", summary.goalsValue, goalsColor) else null
     )
     val assetTotal = parts.sumOf { it.second.coerceAtLeast(0.0) }
 
