@@ -342,7 +342,7 @@ fun ObsidianSettingsSheet(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Changes display currency, fiscal periods, and numbering only. Existing amounts keep their record currency and are not converted or replaced.",
+                            text = "Currency selection changes the label shown on amounts only. Values and stored record currencies stay unchanged; no conversion is applied. Region also controls fiscal periods and number grouping.",
                             color = TextMuted,
                             fontSize = 11.sp
                         )
@@ -384,7 +384,7 @@ fun ObsidianSettingsSheet(
 
                     item {
                         Text(
-                            text = "BASE CURRENCY",
+                            text = "DISPLAY CURRENCY LABEL",
                             color = SovereignGold,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
@@ -392,7 +392,7 @@ fun ObsidianSettingsSheet(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "All valuations, ledgers, and portfolio gains are presented in this currency",
+                            text = "Changing this changes the currency label only. It does not convert or change amounts; totals may combine recorded numbers from different currencies.",
                             color = TextMuted,
                             fontSize = 11.sp
                         )

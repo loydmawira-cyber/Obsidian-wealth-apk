@@ -1683,6 +1683,7 @@ fun AddSipDialog(
 @Composable
 fun SipActionDialog(
     sip: SipEntity,
+    formatAmount: (Double, String?) -> String,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -1697,7 +1698,7 @@ fun SipActionDialog(
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(sip.fundName, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("${sip.category} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${sip.monthlyAmount.let { "%,.2f".format(it) }}/mo", color = TextSecondary, fontSize = 13.sp)
+                Text("${sip.category} · ${formatAmount(sip.monthlyAmount, sip.currencyCode)}/mo", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = { onEdit(); onDismiss() },
@@ -1883,7 +1884,7 @@ fun PayCreditCardDialog(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Current statement balance: ${"%,.2f".format(card.currentBalance)}",
+                    text = "Current statement balance: ${formatAmount(card.currentBalance, card.currencyCode)}",
                     color = TextSecondary,
                     fontSize = 13.sp
                 )
@@ -2099,7 +2100,6 @@ fun ConfirmLoanPaymentDialog(
     accounts: List<AccountEntity>,
     loanName: String,
     paymentAmount: Double,
-    currencySymbol: String,
     currencyCode: String?,
     remainingBalance: Double,
     interestRate: Double,
@@ -2120,8 +2120,8 @@ fun ConfirmLoanPaymentDialog(
                 Spacer(Modifier.height(8.dp))
                 Text("Record one manual payment for $loanName?", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
-                Text("Payment: $currencySymbol${String.format("%,.2f", paymentAmount)}", color = EmeraldLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text("Estimated balance after payment: $currencySymbol${String.format("%,.2f", (remainingBalance - principalPaid).coerceAtLeast(0.0))}", color = TextMuted, fontSize = 12.sp)
+                Text("Payment: ${formatAmount(paymentAmount, currencyCode)}", color = EmeraldLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("Estimated balance after payment: ${formatAmount((remainingBalance - principalPaid).coerceAtLeast(0.0), currencyCode)}", color = TextMuted, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
                 Text("This does not run automatically. Tap once for one payment; use it again only for a separate payment period.", color = TextMuted, fontSize = 11.sp)
                 Text("Paid from account (${currencyCode ?: "currency unknown"})", color = TextSecondary, fontSize = 11.sp)
