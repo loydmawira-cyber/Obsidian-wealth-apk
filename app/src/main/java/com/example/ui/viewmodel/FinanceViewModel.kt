@@ -159,6 +159,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     val isPremium: StateFlow<Boolean> = billingManager.isPremium
     val billingMessage: StateFlow<String?> = billingManager.message
+    val premiumOfferInfo: StateFlow<com.example.data.billing.PremiumOfferInfo?> = billingManager.offerInfo
 
     fun launchPremiumPurchase(activity: Activity) {
         billingManager.launchPremiumPurchase(activity)
@@ -219,7 +220,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     init {
         database = AppDatabase.getDatabase(application, viewModelScope)
         repository = FinanceRepository(database.financeDao())
-        advisorToolRegistry = com.example.ai.AdvisorToolRegistry(database.financeDao())
+        advisorToolRegistry = com.example.ai.AdvisorToolRegistry(database.financeDao()) { isPremium.value }
         preferencesManager = PreferencesManager(application)
         userSettings = preferencesManager.settings
         firestoreSyncManager = FirestoreSyncManager(application)
@@ -1028,6 +1029,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun saveBudget(category: Category, monthlyLimit: Double, currencyCode: String) {
+        if (!requirePremium("Budgets")) return
         if (!monthlyLimit.isFinite() || monthlyLimit <= 0.0 || SupportedCurrency.values().none { it.code == currencyCode }) return
         viewModelScope.launch {
             repository.saveBudget(com.example.data.models.BudgetEntity(category, monthlyLimit, currencyCode))
@@ -1036,6 +1038,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun deleteBudget(budget: com.example.data.models.BudgetEntity) {
+        if (!requirePremium("Budgets")) return
         viewModelScope.launch {
             queueCloudDeletion("budgets", budget.category.name)
             repository.deleteBudget(budget)
@@ -1111,7 +1114,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 transactionCount = s.transactionCount,
                 holdingCount = s.holdingCount,
                 debtAccountCount = s.debtAccountCount,
-                goalCount = s.goalCount
+                goalCount = if (isPremium.value) s.goalCount else 0
             )
 
             val aiResponseText = GeminiClient.generateFinancialAdvice(question, snapshot, advisorToolRegistry)
@@ -1397,6 +1400,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun deleteTransaction(transaction: TransactionEntity) {
+        if (transaction.sourceReference?.startsWith("goal-contribution:") == true && !requirePremium("Goals")) return
         viewModelScope.launch {
             val deleted = if (transaction.sourceReference?.startsWith("goal-contribution:") == true) {
                 repository.deleteGoalContribution(transaction.id)
@@ -1802,6 +1806,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         monthlyContribution: Double,
         currencyCode: String = userSettings.value.currency.code
     ) {
+        if (!requirePremium("Goals")) return
         if (title.isBlank() || targetAmount <= 0.0 || currentAmount < 0.0 || monthlyContribution < 0.0 ||
             !targetAmount.isFinite() || !currentAmount.isFinite() || !monthlyContribution.isFinite() ||
             SupportedCurrency.values().none { it.code == currencyCode }) return
@@ -1821,6 +1826,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun resolveGoalCurrency(goal: GoalEntity, currencyCode: String) {
+        if (!requirePremium("Goals")) return
         if (SupportedCurrency.values().none { it.code == currencyCode }) return
         viewModelScope.launch {
             repository.updateGoal(goal.copy(currencyCode = currencyCode))
@@ -1830,6 +1836,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     /** Debits the selected cash account and increases goal progress in one database transaction. */
     fun contributeGoal(goal: GoalEntity, amount: Double, sourceAccount: AccountEntity) {
+        if (!requirePremium("Goals")) return
         if (amount <= 0.0 || !amount.isFinite() || goal.currencyCode.isNullOrBlank() ||
             !sourceAccount.isActive || sourceAccount.currencyCode != goal.currencyCode) return
         viewModelScope.launch {
@@ -1855,6 +1862,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     /** Reduces the tracking balance only; record any real bank movement as an account transfer. */
     fun withdrawFromGoal(goal: GoalEntity, amount: Double) {
+        if (!requirePremium("Goals")) return
         if (amount <= 0.0 || !amount.isFinite() || goal.currencyCode.isNullOrBlank()) return
         viewModelScope.launch {
             val withdrawn = amount.coerceAtMost(goal.currentAmount)
@@ -1862,6 +1870,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             repository.contributeToGoal(goal, -withdrawn)
             syncVaultToCloud()
         }
+    }
+
+    private fun requirePremium(feature: String): Boolean {
+        if (isPremium.value) return true
+        _actionMessages.tryEmit("$feature are available with Premium.")
+        return false
     }
 
     companion object {
