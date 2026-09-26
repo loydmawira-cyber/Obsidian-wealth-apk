@@ -463,6 +463,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         val sip = sipActionTarget!!
         SipActionDialog(
             sip = sip,
+            formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
             onDismiss = { sipActionTarget = null },
             onEdit = { sipToEdit = sip },
             onDelete = { sipToDelete = sip }
@@ -532,7 +533,6 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
             paymentAmount = loan.emiAmount.coerceAtLeast(0.0).coerceAtMost(
                 loan.remainingBalance + loan.remainingBalance * loan.interestRate.coerceAtLeast(0.0) / 1200.0
             ),
-            currencySymbol = com.example.data.models.SupportedCurrency.values().firstOrNull { it.code == loan.currencyCode }?.symbol ?: "",
             currencyCode = loan.currencyCode,
             remainingBalance = loan.remainingBalance,
             interestRate = loan.interestRate,
