@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -114,6 +115,7 @@ import com.example.ui.components.AddTransactionDialog
 import com.example.ui.components.ExportReportDialog
 import com.example.ui.components.ObsidianAiAdvisorSheet
 import com.example.ui.components.ObsidianSettingsSheet
+import com.example.ui.components.PremiumPaywallDialog
 import com.example.ui.components.ImportedTransactionsDialog
 import com.example.ui.components.PayCreditCardDialog
 import com.example.ui.screens.CashFlowScreen
@@ -240,6 +242,9 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     }
 
     val selectedTab by viewModel.selectedTab.collectAsState()
+    val isPremium by viewModel.isPremium.collectAsState()
+    val premiumOffer by viewModel.premiumOfferInfo.collectAsState()
+    val billingMessage by viewModel.billingMessage.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
     val isAiThinking by viewModel.isAiThinking.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
@@ -260,6 +265,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     var showThemePickerDialog by remember { mutableStateOf(false) }
     var showExportReportDialog by remember { mutableStateOf(false) }
     var showImportedTransactionsDialog by remember { mutableStateOf(false) }
+    var showPremiumPaywall by remember { mutableStateOf(false) }
     var exportReportContent by remember { mutableStateOf("") }
     var cardToPay by remember { mutableStateOf<CreditCardEntity?>(null) }
     var loanToPay by remember { mutableStateOf<com.example.data.models.LoanEntity?>(null) }
@@ -330,6 +336,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
 
                     FinanceTab.CASH_FLOW -> CashFlowScreen(
                         viewModel = viewModel,
+                        onOpenPremium = { showPremiumPaywall = true },
                         onQuickAdd = { showAddTransactionDialog = true }
                     )
 
@@ -355,6 +362,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
 
                     FinanceTab.GOALS_REPORTS -> GoalsAndReportsScreen(
                         viewModel = viewModel,
+                        onOpenPremium = { showPremiumPaywall = true },
                         onAddGoal = { showAddGoalDialog = true },
                         onExportReport = { report ->
                             exportReportContent = report
@@ -509,7 +517,7 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         }
     }
 
-    if (showAddGoalDialog) {
+    if (showAddGoalDialog && isPremium) {
         AddGoalDialog(defaultCurrency = userSettings.currency, onDismiss = { showAddGoalDialog = false }) { title, category, target, current, monthly, currencyCode ->
             viewModel.addGoal(title, category, target, current, monthly, currencyCode)
         }
@@ -576,7 +584,9 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
             isThinking = isAiThinking,
             onSendMessage = { q -> viewModel.askAi(q) },
             onDismiss = { showAiAdvisorSheet = false },
-            onOpenGoalForm = { showAddGoalDialog = true },
+            onOpenGoalForm = {
+                if (isPremium) showAddGoalDialog = true else showPremiumPaywall = true
+            },
             onOpenTransactionForm = { showAddTransactionDialog = true }
         )
     }
@@ -597,6 +607,15 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
             onConfirm = { transaction, account -> viewModel.confirmImportedTransaction(transaction, account) },
             onIgnore = viewModel::ignoreImportedTransaction,
             onDismiss = { showImportedTransactionsDialog = false }
+        )
+    }
+    if (showPremiumPaywall) {
+        PremiumPaywallDialog(
+            isPremium = isPremium,
+            offer = premiumOffer,
+            billingMessage = billingMessage,
+            onDismiss = { showPremiumPaywall = false },
+            onSubscribe = { (context as? Activity)?.let(viewModel::launchPremiumPurchase) }
         )
     }
 }
