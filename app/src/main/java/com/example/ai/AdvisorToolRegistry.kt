@@ -21,7 +21,10 @@ import java.util.Locale
  * - Reuses existing Room FinanceDao and data models.
  * - Returns structured JSON-compatible results.
  */
-class AdvisorToolRegistry(private val dao: FinanceDao) {
+class AdvisorToolRegistry(
+    private val dao: FinanceDao,
+    private val canAccessPremiumGoals: () -> Boolean = { false }
+) {
 
     /**
      * Tool 1: get_spending_by_category(months: Int)
@@ -36,7 +39,8 @@ class AdvisorToolRegistry(private val dao: FinanceDao) {
 
             val transactions = dao.getTransactionsSnapshot()
             val filteredExpenses = transactions.filter {
-                it.type == TransactionType.EXPENSE && it.dateMillis >= minDate
+                it.type == TransactionType.EXPENSE && it.dateMillis >= minDate &&
+                    (canAccessPremiumGoals() || it.sourceReference?.startsWith("goal-contribution:") != true)
             }
 
             val grouped = filteredExpenses.groupBy { it.category.name }
@@ -122,6 +126,9 @@ class AdvisorToolRegistry(private val dao: FinanceDao) {
      * Returns list of recorded financial goals, progress, target dates, and monthly contributions.
      */
     suspend fun getGoals(): JsonObject {
+        if (!canAccessPremiumGoals()) {
+            return buildJsonObject { put("error", "Goals are available with Premium.") }
+        }
         return try {
             val goals = dao.getGoalsSnapshot()
             val totalSaved = goals.sumOf { it.currentAmount }
@@ -163,7 +170,10 @@ class AdvisorToolRegistry(private val dao: FinanceDao) {
         return try {
             val validDays = if (days <= 0) 7 else days
             val cutoff = System.currentTimeMillis() - (validDays * 86400000L)
-            val transactions = dao.getTransactionsSnapshot().filter { it.dateMillis >= cutoff }
+            val transactions = dao.getTransactionsSnapshot().filter {
+                it.dateMillis >= cutoff &&
+                    (canAccessPremiumGoals() || it.sourceReference?.startsWith("goal-contribution:") != true)
+            }
 
             buildJsonObject {
                 put("days", validDays)
