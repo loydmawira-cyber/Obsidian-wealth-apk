@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.obsidianwealth.qvxzkm"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "1.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -111,7 +111,7 @@ dependencies {
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
   implementation(libs.firebase.firestore)
-  implementation("com.android.billingclient:billing-ktx:7.1.1")
+  implementation("com.android.billingclient:billing-ktx:8.3.0")
   implementation("androidx.work:work-runtime-ktx:2.9.1")
   implementation("androidx.fragment:fragment-ktx:1.8.5")
 
