@@ -95,8 +95,8 @@ fun DebtCenterScreen(
     val sym = userSettings.currency.symbol
     val isKenya = userSettings.region == GeographicRegion.EAST_AFRICA || userSettings.currency == SupportedCurrency.KES
 
-    val selectedCards = creditCards.filter { it.currencyCode == userSettings.currency.code }
-    val selectedLoans = loans.filter { it.currencyCode == userSettings.currency.code }
+    val selectedCards = creditCards.filter { !it.currencyCode.isNullOrBlank() }
+    val selectedLoans = loans.filter { !it.currencyCode.isNullOrBlank() }
     var cardToSpend by remember { mutableStateOf<CreditCardEntity?>(null) }
     var loanToTopUp by remember { mutableStateOf<LoanEntity?>(null) }
     val totalCardBalance = selectedCards.sumOf { it.currentBalance }
@@ -114,7 +114,7 @@ fun DebtCenterScreen(
         // Hero Debt Card
         item {
             HeroGradientCard {
-                Text("${userSettings.currency.code} only; other currencies are shown separately and not converted.", color = TextMuted, fontSize = 10.sp)
+                Text("Amounts keep their recorded numbers and are labeled ${userSettings.currency.code}; different currencies are not converted before totals are combined.", color = TextMuted, fontSize = 10.sp)
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),

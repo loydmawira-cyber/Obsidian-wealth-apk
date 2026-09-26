@@ -141,17 +141,15 @@ fun BudgetsCard(
     val accountCurrencyById = accounts.associate { it.id to it.currencyCode }
     fun transactionCurrency(tx: TransactionEntity): String? =
         tx.currencyCode ?: tx.accountId?.let { accountCurrencyById[it] }
-    val selectedBudgets = budgets.filter { it.currencyCode == userSettings.currency.code }
+    val selectedBudgets = budgets.filter { !it.currencyCode.isNullOrBlank() }
     val unresolvedBudgets = budgets.filter { it.currencyCode.isNullOrBlank() }
-    val otherCurrencyBudgets = budgets.filter {
-        !it.currencyCode.isNullOrBlank() && it.currencyCode != userSettings.currency.code
-    }
+    val budgetCurrencyByCategory = selectedBudgets.associate { it.category to it.currencyCode }
     var dialogFor by remember { mutableStateOf<BudgetEntity?>(null) }
     var showDialog by remember { mutableStateOf(false) }
 
     val spentByCategory = transactions
         .filter {
-            it.type == TransactionType.EXPENSE && transactionCurrency(it) == userSettings.currency.code && it.dateMillis >= monthStart && it.dateMillis < monthEnd &&
+            it.type == TransactionType.EXPENSE && transactionCurrency(it) == budgetCurrencyByCategory[it.category] && it.dateMillis >= monthStart && it.dateMillis < monthEnd &&
                 it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
                 it.transactionKind in setOf(
                     com.example.data.models.TransactionKind.STANDARD,
@@ -246,17 +244,8 @@ fun BudgetsCard(
                     }
                 }
             }
-            if (otherCurrencyBudgets.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Text("Other currency limits (not converted into ${userSettings.currency.code})", color = TextMuted, fontSize = 10.sp)
-                otherCurrencyBudgets.forEach { budget ->
-                    Text(
-                        "${prettyCategory(budget.category)} · ${viewModel.formatAmount(budget.monthlyLimit, budget.currencyCode)}",
-                        color = TextSecondary,
-                        fontSize = 11.sp
-                    )
-                }
-            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("The selected currency changes the label only; budget values are not converted.", color = TextMuted, fontSize = 10.sp)
         }
     }
 
@@ -319,7 +308,7 @@ private fun SetBudgetDialog(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(SupportedCurrency.values().toList()) { c -> ChoiceChip(c.code, currency == c) { currency = c } }
                 }
-                Text("Only transactions recorded in this currency count; no FX conversion is applied.", color = TextMuted, fontSize = 10.sp)
+                Text("Spending is matched to this budget's recorded currency. The Settings currency changes labels only; no conversion is applied.", color = TextMuted, fontSize = 10.sp)
                 Spacer(modifier = Modifier.height(14.dp))
                 Button(
                     onClick = { onSave(category, limit ?: 0.0, currency.code); onDismiss() },

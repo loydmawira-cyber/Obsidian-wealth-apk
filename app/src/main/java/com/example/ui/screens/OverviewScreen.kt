@@ -135,6 +135,11 @@ fun OverviewScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            Text(
+                                text = "${userSettings.currency.code} label only · values are not converted",
+                                color = TextMuted,
+                                fontSize = 9.sp
+                            )
                         }
 
                         // No prior-period snapshot is recorded, so a real MoM % cannot be
@@ -694,4 +699,3 @@ private fun BreakdownLine(
         )
     }
 }
-

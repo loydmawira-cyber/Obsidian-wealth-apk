@@ -90,9 +90,7 @@ fun GoalsAndReportsScreen(
     val accounts by viewModel.accounts.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
-    val sym = userSettings.currency.symbol
-    val selectedGoals = goals.filter { it.currencyCode == userSettings.currency.code }
-    val isKenya = userSettings.region == GeographicRegion.EAST_AFRICA || userSettings.currency == SupportedCurrency.KES
+    val selectedGoals = goals.filter { !it.currencyCode.isNullOrBlank() }
 
     val totalGoalTarget = selectedGoals.sumOf { it.targetAmount }
     val totalGoalSaved = selectedGoals.sumOf { it.currentAmount }
@@ -253,7 +251,7 @@ summary to produce an updated view of your recorded position.
 
         item {
             FinCard {
-                Text("Goal totals show ${userSettings.currency.code} only. Goals are tracking targets, not separately verified assets; other currencies are not converted.", color = TextMuted, fontSize = 11.sp)
+                Text("Amounts keep their recorded numbers and are labeled ${userSettings.currency.code}; different currencies are not converted before totals are combined. Goals are tracking targets, not separately verified assets.", color = TextMuted, fontSize = 11.sp)
             }
         }
 

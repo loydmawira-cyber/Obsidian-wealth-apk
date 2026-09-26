@@ -60,8 +60,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.models.Category
 import com.example.data.models.CashFlowTransactionRules
-import com.example.data.models.GeographicRegion
-import com.example.data.models.SupportedCurrency
 import com.example.data.models.TransactionEntity
 import com.example.data.models.TransactionType
 import com.example.ui.components.DonutChart
@@ -103,14 +101,10 @@ fun CashFlowScreen(
     val transactions by viewModel.transactions.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
     val creditCards by viewModel.creditCards.collectAsState()
-    val userSettings by viewModel.userSettings.collectAsState()
     val accountCurrencyById = accounts.associate { it.id to it.currencyCode }
     val cardCurrencyById = creditCards.associate { it.id to it.currencyCode }
     fun transactionCurrency(tx: TransactionEntity): String? =
         tx.currencyCode ?: tx.accountId?.let { accountCurrencyById[it] } ?: tx.creditCardId?.let { cardCurrencyById[it] }
-    val sym = userSettings.currency.symbol
-    val isKenya = userSettings.region == GeographicRegion.EAST_AFRICA || userSettings.currency == SupportedCurrency.KES
-
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") }
 
@@ -133,12 +127,12 @@ fun CashFlowScreen(
         matchesSearch && matchesFilter && inMonth
     }
 
-    // Every confirmed expense in the selected month/currency counts here — not just ones linked
+    // Every confirmed expense in the selected month counts here — not just ones linked
     // to an active cash account or a credit-card purchase. Requiring that link used to silently
     // drop manually logged, imported, or inactive-account expenses from the breakdown even though
     // they were real confirmed outflow, so the donut undercounted the month's actual spending.
     val expenseTransactions = transactions.filter { tx ->
-        tx.type == TransactionType.EXPENSE && transactionCurrency(tx) == userSettings.currency.code &&
+        tx.type == TransactionType.EXPENSE &&
             CashFlowTransactionRules.isConfirmedInRange(tx, month.monthStart, month.monthEnd) &&
             CashFlowTransactionRules.countsAsOutflow(tx)
     }
@@ -203,14 +197,16 @@ fun CashFlowScreen(
     }
 
     val hasCashFlowData = summary.totalInflow > 0 || summary.totalOutflow > 0 || summary.transactionCount > 0
-    // The monthly cap is the sum of the user's own budgets; nothing is assumed.
-    val selectedBudgets = budgets.filter { it.currencyCode == userSettings.currency.code }
+    // The monthly cap is the sum of the user's own budgets; amounts are not FX-converted.
+    val selectedBudgets = budgets.filter { !it.currencyCode.isNullOrBlank() }
     val unresolvedBudgetCount = budgets.count { it.currencyCode.isNullOrBlank() }
     val budgetCap = selectedBudgets.sumOf { it.monthlyLimit }
     val budgetedCategories = selectedBudgets.map { it.category }.toSet()
+    val budgetCurrencyByCategory = selectedBudgets.associate { it.category to it.currencyCode }
     val budgetSpent = transactions
         .filter {
-            it.type == TransactionType.EXPENSE && transactionCurrency(it) == userSettings.currency.code && it.category in budgetedCategories &&
+            it.type == TransactionType.EXPENSE && it.category in budgetedCategories &&
+                transactionCurrency(it) == budgetCurrencyByCategory[it.category] &&
                 it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
                 it.transactionKind in setOf(com.example.data.models.TransactionKind.STANDARD, com.example.data.models.TransactionKind.CREDIT_CARD_PURCHASE, com.example.data.models.TransactionKind.DEBT_SETTLEMENT) &&
                 !(it.transactionKind == com.example.data.models.TransactionKind.DEBT_SETTLEMENT && it.creditCardId != null) &&
@@ -238,6 +234,8 @@ fun CashFlowScreen(
             FinCard(
                 border = BorderStroke(1.dp, GoldBorder)
             ) {
+            Text("Currency setting changes labels only. Stored amounts and totals are not converted; cross-currency sums are raw numbers.", color = TextMuted, fontSize = 10.sp)
+                Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -560,10 +558,9 @@ fun CashFlowScreen(
         // Transactions list: newest first, grouped by day, limited to what has been revealed so far.
         val dayHeaderFormat = SimpleDateFormat("EEE d MMM", Locale.getDefault())
         filteredTransactions.take(visibleCount)
-            .groupBy { tx -> dayHeaderFormat.format(Date(tx.dateMillis)) to transactionCurrency(tx) }
-            .forEach { (dayKey, dayTx) ->
-        val (dayLabel, dayCurrency) = dayKey
-        item(key = "day_${dayLabel}_${dayCurrency ?: "unknown"}") {
+            .groupBy { tx -> dayHeaderFormat.format(Date(tx.dateMillis)) }
+            .forEach { (dayLabel, dayTx) ->
+        item(key = "day_$dayLabel") {
             val dayNet = dayTx.sumOf { if (it.type == TransactionType.INCOME) it.amount else -it.amount }
             Row(
                 modifier = Modifier
@@ -571,9 +568,9 @@ fun CashFlowScreen(
                     .padding(top = 6.dp, start = 4.dp, end = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("$dayLabel · ${dayCurrency ?: "currency unresolved"}", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(dayLabel, color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    text = if (dayCurrency == null) "No combined total" else if (dayNet >= 0) "+${viewModel.formatAmount(dayNet, dayCurrency)}" else "-${viewModel.formatAmount(-dayNet, dayCurrency)}",
+                    text = if (dayNet >= 0) "+${viewModel.formatAmount(dayNet)}" else "-${viewModel.formatAmount(-dayNet)}",
                     color = if (dayNet >= 0) EmeraldLight else TextMuted,
                     fontSize = 11.sp
                 )
@@ -684,7 +681,7 @@ fun CashFlowScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.End
                     ) {
-                        val formattedAmt = viewModel.formatAmount(tx.amount, transactionCurrency(tx))
+                        val formattedAmt = viewModel.formatAmount(tx.amount)
                         val displayAmt = if (isIncome) "+$formattedAmt" else "-$formattedAmt"
                         Text(
                             text = displayAmt,

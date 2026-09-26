@@ -89,8 +89,8 @@ fun InvestmentsScreen(
     val sips by viewModel.sips.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val sym = userSettings.currency.symbol
-    val selectedHoldings = holdings.filter { it.currencyCode == userSettings.currency.code }
-    val selectedSips = sips.filter { it.currencyCode == userSettings.currency.code }
+    val selectedHoldings = holdings.filter { !it.currencyCode.isNullOrBlank() }
+    val selectedSips = sips.filter { !it.currencyCode.isNullOrBlank() }
     val activeSips = selectedSips.filter { it.isActive && it.monthlyAmount > 0.0 }
     val activeSipSum = activeSips.sumOf { it.monthlyAmount }
     val holdingsValue = selectedHoldings.sumOf { it.totalValue }
@@ -276,7 +276,7 @@ fun InvestmentsScreen(
 
         item {
             FinCard {
-                Text("Values are grouped by ${userSettings.currency.code}. Other or unresolved currency holdings remain listed below and are excluded from these totals; no FX conversion is applied.", color = TextMuted, fontSize = 11.sp)
+                Text("Amounts keep their recorded numbers and are labeled ${userSettings.currency.code}; different currencies are not converted before totals are combined.", color = TextMuted, fontSize = 11.sp)
             }
         }
 
@@ -580,7 +580,7 @@ fun InvestmentsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "${if (h.shares % 1.0 == 0.0) h.shares.toInt() else h.shares} units • ${h.currencyCode ?: "currency unknown"} ${"%,.2f".format(h.currentPrice)} current (Avg ${"%,.2f".format(h.avgBuyPrice)})",
+                                text = "${if (h.shares % 1.0 == 0.0) h.shares.toInt() else h.shares} units • ${viewModel.formatAmount(h.currentPrice, h.currencyCode)} current (Avg ${viewModel.formatAmount(h.avgBuyPrice, h.currencyCode)})",
                                 color = TextSecondary,
                                 fontSize = 11.sp
                             )
