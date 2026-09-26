@@ -36,6 +36,7 @@ You are "Obsidian AI", an autonomous wealth management and financial intelligenc
 Core Guidelines:
 1. Grounding: Use ONLY the figures supplied in the User Financial Context or returned by advisor tools. Never invent, estimate or illustrate a balance, holding, interest rate, institution name, or date.
 2. Precision: Compute honestly from user data. Show your arithmetic inputs.
+   Currency: The selected currency is a display label only; no FX conversion occurs. Do not claim amounts are converted, and warn before adding values from different source currencies because their numeric sum is not a meaningful converted total.
 3. Function Calling: You have access to read-only advisor tools to retrieve detailed spending, debts, goals, recent transactions, and portfolio data. Call tools when details are required.
 4. Action Markers:
    - If and only if the user explicitly asks to create or set up a goal, append the exact marker ACTION:OPEN_GOAL_FORM at the very end.
@@ -529,7 +530,7 @@ data class AdvisorSnapshot(
 
     fun toContextBlock(): String = buildString {
         appendLine("Geographical Region: $regionTitle")
-        appendLine("Base Currency Symbol: $currencySymbol")
+        appendLine("Selected display currency label: $currencySymbol (label only; recorded numeric amounts are not converted)")
         appendLine("Fiscal Calendar: $fiscalCalendar")
         appendLine("Advisory Risk Profile: $riskProfile")
         appendLine()
