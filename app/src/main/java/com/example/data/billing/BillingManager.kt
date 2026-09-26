@@ -83,7 +83,10 @@ class BillingManager(context: Context) : BillingClientStateListener {
             QueryProductDetailsParams.newBuilder()
                 .setProductList(listOf(product))
                 .build()
-        ) { billingResult, productDetailsList ->
+        ) { billingResult, queryProductDetailsResult ->
+            // PBL 8+ wraps results in QueryProductDetailsResult (fetched + unfetched lists)
+            // instead of handing back a raw List<ProductDetails> directly.
+            val productDetailsList = queryProductDetailsResult.productDetailsList
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                 premiumProduct = productDetailsList.firstOrNull { !it.subscriptionOfferDetails.isNullOrEmpty() }
                     ?: productDetailsList.firstOrNull()
