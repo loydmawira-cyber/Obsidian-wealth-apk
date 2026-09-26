@@ -22,7 +22,7 @@ enum class AlertSeverity {
  */
 object ProactiveAlertEngine {
 
-    suspend fun evaluateAlerts(dao: FinanceDao): List<AlertItem> {
+    suspend fun evaluateAlerts(dao: FinanceDao, currencySymbol: String = "$"): List<AlertItem> {
         val alerts = mutableListOf<AlertItem>()
 
         try {
@@ -99,7 +99,7 @@ object ProactiveAlertEngine {
                         AlertItem(
                             id = "card_due_${card.id}",
                             title = "Payment Due Soon",
-                            message = "${card.cardName} balance of ${card.currentBalance} is due in ${card.dueDateDays} day(s).",
+                            message = "${card.cardName} balance of $currencySymbol${String.format(Locale.US, "%,.2f", card.currentBalance)} is due in ${card.dueDateDays} day(s).",
                             severity = AlertSeverity.HIGH
                         )
                     )
@@ -130,7 +130,7 @@ object ProactiveAlertEngine {
                     AlertItem(
                         id = "negative_cash_flow",
                         title = "Negative Monthly Net Cash",
-                        message = "Monthly expenses exceed income by ${String.format(Locale.US, "%.2f", deficit)}.",
+                        message = "Monthly expenses exceed income by $currencySymbol${String.format(Locale.US, "%,.2f", deficit)}.",
                         severity = AlertSeverity.HIGH
                     )
                 )

@@ -26,7 +26,7 @@ class AlertWorker(
 
             val database = AppDatabase.getDatabase(appContext, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO))
             val dao = database.financeDao()
-            val alerts = ProactiveAlertEngine.evaluateAlerts(dao)
+            val alerts = ProactiveAlertEngine.evaluateAlerts(dao, settings.currency.symbol)
 
             if (alerts.isNotEmpty()) {
                 alerts.take(3).forEachIndexed { idx, alert ->
