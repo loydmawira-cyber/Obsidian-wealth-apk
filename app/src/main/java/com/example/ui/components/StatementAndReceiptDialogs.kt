@@ -99,6 +99,7 @@ fun StatementImportDialog(
         StatementPreviewDialog(
             parsedTransactions = parsedList!!,
             accounts = accounts,
+            formatAmount = { viewModel.formatAmount(it) },
             onConfirm = { selected, account ->
                 viewModel.addImportedTransactions(selected, account)
                 onDismiss()
@@ -181,6 +182,7 @@ fun StatementImportDialog(
 fun StatementPreviewDialog(
     parsedTransactions: List<com.example.data.util.ParsedTransaction>,
     accounts: List<AccountEntity>,
+    formatAmount: (Double) -> String,
     onConfirm: (List<com.example.data.util.ParsedTransaction>, AccountEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -275,7 +277,7 @@ fun StatementPreviewDialog(
                                         Text("${tx.category.name} • ${tx.account} • $dateStr", color = TextSecondary, fontSize = 11.sp)
                                     }
                                     Text(
-                                        text = (if (tx.type == TransactionType.INCOME) "+" else "-") + String.format(Locale.US, "%.2f", tx.amount),
+                                        text = (if (tx.type == TransactionType.INCOME) "+" else "-") + formatAmount(tx.amount),
                                         color = if (isBlocked) TextMuted else if (tx.type == TransactionType.INCOME) EmeraldLight else Color(0xFFFB7185),
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
