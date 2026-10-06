@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import com.example.ui.components.displayName
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -471,10 +472,20 @@ ${goalsReportSection}
                     val trackingOnly = (goal.currentAmount - goal.heldAmount).coerceAtLeast(0.0)
                     Spacer(modifier = Modifier.height(6.dp))
                     if (holdingAccount != null && goal.heldAmount > 0.005) {
-                        Text(
-                            "${viewModel.formatAmount(goal.heldAmount, goal.currencyCode)} held in ${holdingAccount.name}",
-                            color = TextSecondary, fontSize = 10.sp
-                        )
+                        val amountText = viewModel.formatAmount(goal.heldAmount, goal.currencyCode)
+                        if (holdingAccount.accountType == "GOALS_RESERVE") {
+                            Text(
+                                "$amountText sits in Goals Reserve, which is not a real account. Tap to choose the bank or mobile-money account where it really is.",
+                                color = GoldLight, fontSize = 10.sp,
+                                modifier = Modifier.clickable { goalMoveTarget = goal }.padding(vertical = 3.dp)
+                            )
+                        } else {
+                            Text(
+                                "$amountText held in ${holdingAccount.displayName()} · tap to change",
+                                color = TextSecondary, fontSize = 10.sp,
+                                modifier = Modifier.clickable { goalMoveTarget = goal }.padding(vertical = 3.dp)
+                            )
+                        }
                     }
                     if (legacyTotal > 0.005) {
                         Text(

@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import com.example.ui.components.displayName
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
@@ -71,7 +72,7 @@ fun AccountManagementCard(viewModel: FinanceViewModel, modifier: Modifier = Modi
                 Column {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(account.name, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text(account.displayName(), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             Text(account.accountType.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }, color = TextMuted, fontSize = 10.sp)
                         }
                         Column {
@@ -91,7 +92,7 @@ fun AccountManagementCard(viewModel: FinanceViewModel, modifier: Modifier = Modi
                     if (setAside > 0.005 && !account.currencyCode.isNullOrBlank()) {
                         val balance = viewModel.currentAccountBalance(account)
                         Text(
-                            if (account.accountType == "GOALS_RESERVE") "All set aside for goals"
+                            if (account.accountType == "GOALS_RESERVE") "Holds " + allGoals.filter { it.heldInAccountId == account.id && it.heldAmount > 0.005 }.joinToString { "${it.title} ${viewModel.formatAmount(it.heldAmount, account.currencyCode)}" } + ". Not a real account: move each goal to the bank or mobile-money account where its money is."
                             else "Set aside for goals ${viewModel.formatAmount(setAside, account.currencyCode)} · Free ${viewModel.formatAmount((balance - setAside).coerceAtLeast(0.0), account.currencyCode)}",
                             color = SovereignGold, fontSize = 10.sp
                         )
@@ -196,7 +197,7 @@ private fun ReconcileAccountDialog(account: AccountEntity, currentBalance: Doubl
     val statement = text.toDoubleOrNull()
     val currency = account.currencyCode
     SimpleAccountDialog(onDismiss) {
-        Text("Reconcile ${account.name}", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("Reconcile ${account.displayName()}", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text("Ledger balance: ${formatAmount(currentBalance, currency)}. Enter the current statement balance; any difference is recorded as an adjustment, not income or spending.", color = TextSecondary, fontSize = 12.sp)
         OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("Statement balance (${currency ?: "currency unknown"})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, colors = fieldColors(), modifier = Modifier.fillMaxWidth())
         Button(onClick = { onSave(statement ?: 0.0); onDismiss() }, enabled = statement != null && statement.isFinite(), colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth()) { Text("Reconcile account", color = Color.Black, fontWeight = FontWeight.Bold) }
@@ -235,7 +236,7 @@ private fun TransferAccountsDialog(accounts: List<AccountEntity>, balance: (Acco
 private fun AccountChoices(accounts: List<AccountEntity>, selected: AccountEntity?, onSelect: (AccountEntity) -> Unit) {
     Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         accounts.forEach { account ->
-            FilterChip(selected = account.id == selected?.id, onClick = { onSelect(account) }, label = { Text("${account.name} · ${account.currencyCode}", fontSize = 10.sp) })
+            FilterChip(selected = account.id == selected?.id, onClick = { onSelect(account) }, label = { Text("${account.displayName()} · ${account.currencyCode}", fontSize = 10.sp) })
         }
     }
 }

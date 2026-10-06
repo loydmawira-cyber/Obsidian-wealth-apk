@@ -669,7 +669,7 @@ fun CashFlowScreen(
                                 horizontalArrangement = Arrangement.Start
                             ) {
                                 Text(
-                                    text = tx.account,
+                                    text = com.example.ui.components.transactionAccountLabel(tx, accounts),
                                     color = TextMuted,
                                     fontSize = 11.sp,
                                     maxLines = 1,
