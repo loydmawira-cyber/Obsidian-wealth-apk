@@ -187,7 +187,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val actionMessages: SharedFlow<String> = _actionMessages.asSharedFlow()
 
     private fun reportInsufficientBalance(accountName: String) {
-        _actionMessages.tryEmit("Not enough balance in $accountName.")
+        _actionMessages.tryEmit("Not enough free balance in $accountName. Money set aside for goals can't be moved or spent from here.")
     }
 
     // Read-only. The vault id IS the Firebase Auth uid — it is never user-settable, because a
@@ -633,7 +633,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val freshFrom = repository.account(from.id) ?: return@launch
             val freshTo = repository.account(to.id) ?: return@launch
             if (!freshFrom.isActive || !freshTo.isActive || freshFrom.currencyCode != freshTo.currencyCode) return@launch
-            if (AccountLedger.currentBalance(freshFrom, repository.allTransactions.first()) + 0.000001 < amount) {
+            if (AccountLedger.freeBalance(freshFrom, repository.allTransactions.first(), goals.value) + 0.000001 < amount) {
                 reportInsufficientBalance(freshFrom.name)
                 return@launch
             }
@@ -654,7 +654,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 )
             )
             if (recorded) syncVaultToCloud()
-            else if (AccountLedger.currentBalance(freshFrom, repository.allTransactions.first()) + 0.000001 < amount) reportInsufficientBalance(freshFrom.name)
+            else if (AccountLedger.freeBalance(freshFrom, repository.allTransactions.first(), goals.value) + 0.000001 < amount) reportInsufficientBalance(freshFrom.name)
         }
     }
 
@@ -1834,41 +1834,110 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Debits the selected cash account and increases goal progress in one database transaction. */
-    fun contributeGoal(goal: GoalEntity, amount: Double, sourceAccount: AccountEntity) {
+    /**
+     * Deposits into a goal. Cash is transferred from [sourceAccount] into the account that holds the goal's
+     * money: the goal's existing holding account, else [holdingAccount], else the Goals Reserve.
+     */
+    fun contributeGoal(goal: GoalEntity, amount: Double, sourceAccount: AccountEntity, holdingAccount: AccountEntity? = null) {
         if (!requirePremium("Goals")) return
-        if (amount <= 0.0 || !amount.isFinite() || goal.currencyCode.isNullOrBlank() ||
-            !sourceAccount.isActive || sourceAccount.currencyCode != goal.currencyCode) return
+        val code = goal.currencyCode
+        if (amount <= 0.0 || !amount.isFinite() || code.isNullOrBlank() ||
+            !sourceAccount.isActive || sourceAccount.currencyCode != code) return
         viewModelScope.launch {
-            val transaction = TransactionEntity(
-                title = "Goal deposit: ${goal.title}",
-                amount = amount,
-                type = TransactionType.EXPENSE,
-                category = Category.GOAL_SAVINGS,
-                account = sourceAccount.name,
-                note = "Deposit to goal ${goal.title}",
-                accountId = sourceAccount.id,
-                currencyCode = goal.currencyCode,
-                transactionKind = TransactionKind.ASSET_CONVERSION,
-                sourceReference = "goal-contribution:${goal.id}"
+            val holding = goal.heldInAccountId?.let { repository.account(it) }
+                ?: holdingAccount
+                ?: repository.ensureGoalsReserve(code)
+            val recorded = repository.recordGoalDeposit(
+                goal.id, sourceAccount.id, holding.id, amount,
+                System.currentTimeMillis(), java.util.UUID.randomUUID().toString()
             )
-            if (repository.recordGoalContribution(goal.id, transaction)) {
+            if (recorded) {
                 syncVaultToCloud()
             } else {
-                _actionMessages.tryEmit("Goal deposit not recorded. Check the selected account's available balance and currency.")
+                _actionMessages.tryEmit("Goal deposit not recorded. Check that the account has enough free balance (money already set aside for goals can't be reused) and matches the goal's currency.")
             }
         }
     }
 
-    /** Reduces the tracking balance only; record any real bank movement as an account transfer. */
-    fun withdrawFromGoal(goal: GoalEntity, amount: Double) {
+    /**
+     * Withdraws from a goal. Money held in an account moves to [destination]; with no destination (or the
+     * holding account itself) it simply stops being set aside. Tracking-only money just lowers the goal balance.
+     */
+    fun withdrawFromGoal(goal: GoalEntity, amount: Double, destination: AccountEntity? = null) {
         if (!requirePremium("Goals")) return
         if (amount <= 0.0 || !amount.isFinite() || goal.currencyCode.isNullOrBlank()) return
         viewModelScope.launch {
-            val withdrawn = amount.coerceAtMost(goal.currentAmount)
-            if (withdrawn <= 0.0) return@launch
-            repository.contributeToGoal(goal, -withdrawn)
+            val recorded = repository.recordGoalWithdrawal(
+                goal.id, destination?.id, amount,
+                System.currentTimeMillis(), java.util.UUID.randomUUID().toString()
+            )
+            if (recorded) syncVaultToCloud()
+            else _actionMessages.tryEmit("Goal withdrawal not recorded. Check the goal's holding account balance and the destination account.")
+        }
+    }
+
+    /** Edits a goal's details. Its money and currency change only through deposits, withdrawals and moves. */
+    fun updateGoalDetails(goal: GoalEntity, title: String, category: String, targetAmount: Double, monthlyContribution: Double, targetYear: Int) {
+        if (!requirePremium("Goals")) return
+        if (title.isBlank() || category.isBlank() || !targetAmount.isFinite() || targetAmount <= 0.0 ||
+            !monthlyContribution.isFinite() || monthlyContribution < 0.0 || targetYear !in 2000..2200) return
+        viewModelScope.launch {
+            val fresh = goals.value.firstOrNull { it.id == goal.id } ?: goal
+            repository.updateGoal(fresh.copy(
+                title = title.trim(), category = category.trim(), targetAmount = targetAmount,
+                monthlyContribution = monthlyContribution, targetYear = targetYear
+            ))
             syncVaultToCloud()
+        }
+    }
+
+    /** Changes the account that holds a goal's money; the held amount is transferred across. */
+    fun moveGoalHolding(goal: GoalEntity, newHolding: AccountEntity) {
+        if (!requirePremium("Goals")) return
+        viewModelScope.launch {
+            val moved = repository.moveGoalHolding(
+                goal.id, newHolding.id, System.currentTimeMillis(), java.util.UUID.randomUUID().toString()
+            )
+            if (moved) syncVaultToCloud()
+            else _actionMessages.tryEmit("Goal not moved. Check the current account still has the money and the new account matches the goal's currency.")
+        }
+    }
+
+    /**
+     * Deletes a goal and returns its money: the held part moves to [destination] (default: where it is held),
+     * and older deposits that never landed in an account are booked there too.
+     */
+    fun deleteGoal(goal: GoalEntity, destination: AccountEntity?) {
+        if (!requirePremium("Goals")) return
+        viewModelScope.launch {
+            val code = goal.currencyCode
+            val dest = destination
+                ?: goal.heldInAccountId?.let { repository.account(it) }
+                ?: if (!code.isNullOrBlank() && goal.currentAmount > 0.0) repository.ensureGoalsReserve(code) else null
+            val deleted = repository.deleteGoalAndReleaseFunds(
+                goal.id, dest?.id ?: -1L, System.currentTimeMillis(), java.util.UUID.randomUUID().toString()
+            )
+            if (deleted) {
+                queueCloudDeletion("goals", goal.id)
+                syncVaultToCloud()
+            } else {
+                _actionMessages.tryEmit("Goal not deleted. Check the account holding its money and the destination account.")
+            }
+        }
+    }
+
+    /** Moves money from older goal deposits (which left their account but had no home) into the goal's holding account. */
+    fun adoptLegacyGoalFunds(goal: GoalEntity) {
+        if (!requirePremium("Goals")) return
+        val code = goal.currencyCode
+        if (code.isNullOrBlank()) return
+        viewModelScope.launch {
+            val holding = goal.heldInAccountId?.let { repository.account(it) } ?: repository.ensureGoalsReserve(code)
+            val moved = repository.adoptLegacyGoalFunds(goal.id, holding.id, System.currentTimeMillis())
+            if (moved > 0.0) {
+                _actionMessages.tryEmit("${formatAmount(moved, code)} is now held in ${holding.name}.")
+                syncVaultToCloud()
+            }
         }
     }
 
