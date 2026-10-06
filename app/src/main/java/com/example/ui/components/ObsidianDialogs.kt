@@ -270,7 +270,7 @@ fun AddTransactionDialog(
                             FilterChip(
                                 selected = candidate.id == account?.id,
                                 onClick = { account = candidate },
-                                label = { Text("${candidate.name} Â· ${candidate.currencyCode ?: "?"}", fontSize = 10.sp) }
+                                label = { Text("${candidate.displayName()} · ${candidate.currencyCode ?: "?"}", fontSize = 10.sp) }
                             )
                         }
                     }
@@ -575,7 +575,7 @@ fun AiSmartLogDialog(
                                 FilterChip(
                                     selected = candidate.id == account?.id,
                                     onClick = { account = candidate },
-                                    label = { Text("${candidate.name} Â· ${candidate.currencyCode}", fontSize = 10.sp) }
+                                    label = { Text("${candidate.displayName()} · ${candidate.currencyCode}", fontSize = 10.sp) }
                                 )
                             }
                         }
@@ -1900,7 +1900,7 @@ fun PayCreditCardDialog(
                         FilterChip(
                             selected = candidate.id == sourceAccount?.id,
                             onClick = { sourceAccount = candidate },
-                            label = { Text(candidate.name, fontSize = 10.sp) }
+                            label = { Text(candidate.displayName(), fontSize = 10.sp) }
                         )
                     }
                 }
@@ -2127,7 +2127,7 @@ fun ConfirmLoanPaymentDialog(
                 Text("Paid from account (${currencyCode ?: "currency unknown"})", color = TextSecondary, fontSize = 11.sp)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(accounts.filter { it.isActive && it.currencyCode == currencyCode }) { candidate ->
-                        FilterChip(selected = candidate.id == sourceAccount?.id, onClick = { sourceAccount = candidate }, label = { Text(candidate.name, fontSize = 10.sp) })
+                        FilterChip(selected = candidate.id == sourceAccount?.id, onClick = { sourceAccount = candidate }, label = { Text(candidate.displayName(), fontSize = 10.sp) })
                     }
                 }
                 if (sourceAccount != null) Text("Available: ${formatAmount(sourceBalance, sourceAccount?.currencyCode)}", color = TextMuted, fontSize = 10.sp)
@@ -2223,7 +2223,7 @@ fun SellHoldingDialog(
                 Text("Proceeds account", color = TextSecondary, fontSize = 11.sp)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(accounts.filter { it.isActive && it.currencyCode == holding.currencyCode }) { candidate ->
-                        FilterChip(selected = candidate.id == proceedsAccount?.id, onClick = { proceedsAccount = candidate }, label = { Text(candidate.name, fontSize = 10.sp) })
+                        FilterChip(selected = candidate.id == proceedsAccount?.id, onClick = { proceedsAccount = candidate }, label = { Text(candidate.displayName(), fontSize = 10.sp) })
                     }
                 }
                 Spacer(Modifier.height(10.dp))

@@ -85,7 +85,7 @@ fun ImportedTransactionsDialog(
                             Text("Choose account and currency", color = TextSecondary, fontSize = 10.sp)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 items(accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() }) { candidate ->
-                                    FilterChip(selected = candidate.id == selectedAccount?.id, onClick = { selectedAccount = candidate }, label = { Text("${candidate.name} · ${candidate.currencyCode}", fontSize = 9.sp) })
+                                    FilterChip(selected = candidate.id == selectedAccount?.id, onClick = { selectedAccount = candidate }, label = { Text("${candidate.displayName()} · ${candidate.currencyCode}", fontSize = 9.sp) })
                                 }
                             }
                             if (transaction.type == TransactionType.EXPENSE && selectedAccount != null) {

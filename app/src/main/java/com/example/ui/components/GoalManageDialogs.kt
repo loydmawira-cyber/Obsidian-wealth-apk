@@ -166,7 +166,8 @@ fun MoveGoalHoldingDialog(
 ) {
     val candidates = remember(accounts, goal.currencyCode, heldInAccount?.id) {
         accounts.filter {
-            it.isActive && !it.currencyCode.isNullOrBlank() && it.currencyCode == goal.currencyCode && it.id != heldInAccount?.id
+            it.isActive && !it.currencyCode.isNullOrBlank() && it.currencyCode == goal.currencyCode &&
+                it.accountType != RESERVE_ACCOUNT_TYPE && it.id != heldInAccount?.id
         }
     }
     var selected by remember(candidates) { mutableStateOf(candidates.firstOrNull()) }
@@ -174,9 +175,13 @@ fun MoveGoalHoldingDialog(
         Text("Change holding account", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text(
-            if (heldInAccount != null) "${goal.title} is held in ${heldInAccount.name}."
+            if (heldInAccount != null) "${goal.title} is held in ${heldInAccount.displayName()}."
             else "${goal.title} isn't held in an account yet.",
             color = TextSecondary, fontSize = 12.sp
+        )
+        Text(
+            "Pick the real bank or mobile-money account where this money is.",
+            color = TextMuted, fontSize = 11.sp
         )
         Spacer(Modifier.height(10.dp))
         if (candidates.isEmpty()) {
@@ -191,7 +196,7 @@ fun MoveGoalHoldingDialog(
                     FilterChip(
                         selected = account.id == selected?.id,
                         onClick = { selected = account },
-                        label = { Text(account.name, fontSize = 10.sp) },
+                        label = { Text(account.displayName(), fontSize = 10.sp) },
                         colors = accountChipColors()
                     )
                 }
@@ -200,8 +205,8 @@ fun MoveGoalHoldingDialog(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     if (heldInAccount != null && goal.heldAmount > 0.0)
-                        "${formatAmount(goal.heldAmount, goal.currencyCode)} moves from ${heldInAccount.name} to ${account.name}."
-                    else "Future deposits will go to ${account.name}.",
+                        "${formatAmount(goal.heldAmount, goal.currencyCode)} moves from ${heldInAccount.displayName()} to ${account.displayName()}. It is set aside for the goal there, so it isn't free to spend."
+                    else "Future deposits will go to ${account.displayName()}.",
                     color = TextMuted, fontSize = 10.sp
                 )
             }
@@ -241,8 +246,8 @@ fun DeleteGoalDialog(
         }
     }
     var destination by remember(others) { mutableStateOf<AccountEntity?>(others.firstOrNull()) }
-    val stayLabel = heldInAccount?.name?.let { "Stay in $it" } ?: "Goals Reserve"
-    val destName = destination?.name ?: heldInAccount?.name ?: "Goals Reserve"
+    val stayLabel = heldInAccount?.displayName()?.let { "Stay in $it" } ?: "🎯 Goals Reserve"
+    val destName = destination?.displayName() ?: heldInAccount?.displayName() ?: "🎯 Goals Reserve"
     val held = goal.heldAmount.coerceAtLeast(0.0)
     val trackingOnly = (goal.currentAmount - held).coerceAtLeast(0.0)
     val hasMoney = held > 0.005 || legacyTotal > 0.005
@@ -262,7 +267,7 @@ fun DeleteGoalDialog(
                     FilterChip(
                         selected = destination?.id == account.id,
                         onClick = { destination = account },
-                        label = { Text(account.name, fontSize = 10.sp) },
+                        label = { Text(account.displayName(), fontSize = 10.sp) },
                         colors = accountChipColors()
                     )
                 }

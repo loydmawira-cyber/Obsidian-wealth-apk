@@ -64,7 +64,7 @@ fun LoanTopUpDialog(loan: LoanEntity, accounts: List<AccountEntity>, formatAmoun
                 Text("Same-currency deposit account")
                 if (eligible.isEmpty()) Text("Add an active account in ${loan.currencyCode ?: "the loan currency"} first.")
                 eligible.forEach { candidate ->
-                    Row(Modifier.fillMaxWidth().clickable { account = candidate }.padding(10.dp)) { RadioButton(account?.id == candidate.id, onClick = { account = candidate }); Text("${candidate.name} · ${candidate.currencyCode}") }
+                    Row(Modifier.fillMaxWidth().clickable { account = candidate }.padding(10.dp)) { RadioButton(account?.id == candidate.id, onClick = { account = candidate }); Text("${candidate.displayName()} · ${candidate.currencyCode}") }
                 }
                 OutlinedTextField(note, { note = it }, label = { Text("Note (optional)") }, modifier = Modifier.fillMaxWidth())
                 Button(onClick = { val selected = account ?: return@Button; onConfirm(amount ?: 0.0, selected, note.trim()); onDismiss() }, enabled = valid, modifier = Modifier.fillMaxWidth()) { Text("Confirm & record top-up") }

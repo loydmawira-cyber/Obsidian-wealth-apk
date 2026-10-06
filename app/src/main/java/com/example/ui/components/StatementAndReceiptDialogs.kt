@@ -230,7 +230,7 @@ fun StatementPreviewDialog(
                                     FilterChip(
                                         selected = candidate.id == selectedAccount?.id,
                                         onClick = { selectedAccount = candidate },
-                                        label = { Text("${candidate.name} · ${candidate.currencyCode}", fontSize = 10.sp) }
+                                        label = { Text("${candidate.displayName()} · ${candidate.currencyCode}", fontSize = 10.sp) }
                                     )
                                 }
                             }
@@ -539,7 +539,7 @@ fun ReceiptReviewDialog(
                 Text("Cash account and currency", color = TextSecondary, fontSize = 11.sp)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() }) { candidate ->
-                        FilterChip(selected = candidate.id == account?.id, onClick = { account = candidate }, label = { Text("${candidate.name} · ${candidate.currencyCode}", fontSize = 10.sp) })
+                        FilterChip(selected = candidate.id == account?.id, onClick = { account = candidate }, label = { Text("${candidate.displayName()} · ${candidate.currencyCode}", fontSize = 10.sp) })
                     }
                 }
                 if (accounts.none { it.isActive && !it.currencyCode.isNullOrBlank() }) {

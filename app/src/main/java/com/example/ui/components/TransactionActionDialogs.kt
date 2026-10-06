@@ -229,7 +229,7 @@ fun EditTransactionDialog(
                 Text("Selecting an account applies its currency to this amount; the numeric value is not converted.", color = TextMuted, fontSize = 10.sp)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() }) { candidate ->
-                        EditChip("${candidate.name} · ${candidate.currencyCode}", account?.id == candidate.id) { account = candidate }
+                        EditChip("${candidate.displayName()} · ${candidate.currencyCode}", account?.id == candidate.id) { account = candidate }
                     }
                 }
                 if (account != null && type == TransactionType.EXPENSE) {

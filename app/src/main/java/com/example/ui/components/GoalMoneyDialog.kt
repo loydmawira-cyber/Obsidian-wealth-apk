@@ -73,7 +73,7 @@ fun GoalMoneyDialog(
     // First deposit only: where the goal's money will live. null = Goals Reserve.
     var holdingChoice by remember(nonReserve) { mutableStateOf<AccountEntity?>(null) }
     val holding: AccountEntity? = heldInAccount ?: holdingChoice
-    val holdingLabel = holding?.name ?: "Goals Reserve"
+    val holdingLabel = holding?.displayName() ?: "🎯 Goals Reserve"
 
     // Deposit sources are real accounts only. Withdraw destinations also include the holding account ("stay").
     var selectedAccount by remember(nonReserve) { mutableStateOf(nonReserve.firstOrNull { it.id != holding?.id } ?: nonReserve.firstOrNull()) }
@@ -119,14 +119,14 @@ fun GoalMoneyDialog(
                             FilterChip(
                                 selected = holdingChoice == null,
                                 onClick = { holdingChoice = null },
-                                label = { Text("Goals Reserve", fontSize = 10.sp) },
+                                label = { Text("🎯 Goals Reserve", fontSize = 10.sp) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SovereignGold, selectedLabelColor = Color.Black)
                             )
                             nonReserve.forEach { account ->
                                 FilterChip(
                                     selected = holdingChoice?.id == account.id,
                                     onClick = { holdingChoice = account },
-                                    label = { Text(account.name, fontSize = 10.sp) },
+                                    label = { Text(account.displayName(), fontSize = 10.sp) },
                                     colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SovereignGold, selectedLabelColor = Color.Black)
                                 )
                             }
@@ -151,7 +151,7 @@ fun GoalMoneyDialog(
                                 FilterChip(
                                     selected = account.id == selectedAccount?.id,
                                     onClick = { selectedAccount = account },
-                                    label = { Text("${account.name} · ${formatAmount(freeBalance(account).coerceAtLeast(0.0), account.currencyCode)}", fontSize = 10.sp) },
+                                    label = { Text("${account.displayName()} · ${formatAmount(freeBalance(account).coerceAtLeast(0.0), account.currencyCode)}", fontSize = 10.sp) },
                                     colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SovereignGold, selectedLabelColor = Color.Black)
                                 )
                             }
@@ -160,7 +160,7 @@ fun GoalMoneyDialog(
                             Text("Free to use: ${formatAmount(free.coerceAtLeast(0.0), account.currencyCode)}", color = TextMuted, fontSize = 10.sp)
                             Text(
                                 if (account.id == holding?.id) "This account already holds the goal, so the money stays put and is set aside."
-                                else "${formatAmount(amount ?: 0.0, account.currencyCode)} moves from ${account.name} to $holdingLabel.",
+                                else "${formatAmount(amount ?: 0.0, account.currencyCode)} moves from ${account.displayName()} to $holdingLabel.",
                                 color = TextMuted, fontSize = 10.sp
                             )
                         }
@@ -181,19 +181,19 @@ fun GoalMoneyDialog(
                                 FilterChip(
                                     selected = account.id == selectedAccount?.id,
                                     onClick = { selectedAccount = account },
-                                    label = { Text(account.name, fontSize = 10.sp) },
+                                    label = { Text(account.displayName(), fontSize = 10.sp) },
                                     colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SovereignGold, selectedLabelColor = Color.Black)
                                 )
                             }
                             FilterChip(
                                 selected = selectedAccount?.id == heldInAccount.id || (selectedAccount == null),
                                 onClick = { selectedAccount = heldInAccount },
-                                label = { Text("Stay in ${heldInAccount.name}", fontSize = 10.sp) },
+                                label = { Text("Stay in ${heldInAccount.displayName()}", fontSize = 10.sp) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SovereignGold, selectedLabelColor = Color.Black)
                             )
                         }
                         Text(
-                            "${formatAmount(goal.heldAmount, goalCurrencyCode)} of this goal is held in ${heldInAccount.name}.",
+                            "${formatAmount(goal.heldAmount, goalCurrencyCode)} of this goal is held in ${heldInAccount.displayName()}.",
                             color = TextMuted, fontSize = 10.sp
                         )
                     }
