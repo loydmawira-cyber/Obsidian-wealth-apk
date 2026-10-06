@@ -293,7 +293,9 @@ class FirestoreSyncManager(private val context: Context) {
                     "monthlyContribution" to g.monthlyContribution,
                     "targetYear" to g.targetYear,
                     "colorHex" to g.colorHex,
-                    "currencyCode" to g.currencyCode
+                    "currencyCode" to g.currencyCode,
+                    "heldInAccountId" to g.heldInAccountId,
+                    "heldAmount" to g.heldAmount
                 )
                 goalsCollection.document(g.id.toString()).set(gMap, SetOptions.merge()).awaitTask()
             }
@@ -566,7 +568,9 @@ class FirestoreSyncManager(private val context: Context) {
                         monthlyContribution = doc.getDouble("monthlyContribution") ?: 0.0,
                         targetYear = doc.getLong("targetYear")?.toInt() ?: 2026,
                         colorHex = doc.getString("colorHex") ?: "#10B981",
-                        currencyCode = doc.getString("currencyCode")
+                        currencyCode = doc.getString("currencyCode"),
+                        heldInAccountId = doc.getLong("heldInAccountId"),
+                        heldAmount = doc.getDouble("heldAmount") ?: 0.0
                     )
                 } catch (e: Exception) {
                     null
