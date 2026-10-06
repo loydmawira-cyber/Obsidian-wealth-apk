@@ -139,7 +139,11 @@ data class GoalEntity(
     val monthlyContribution: Double,
     val targetYear: Int = 2026,
     val colorHex: String = "#10B981",
-    val currencyCode: String? = null
+    val currencyCode: String? = null,
+    // Account that physically holds this goal's money (Goals Reserve by default). Null until the first deposit.
+    val heldInAccountId: Long? = null,
+    // Part of currentAmount that is really sitting in heldInAccountId. Any remainder is tracking-only (e.g. typed in at creation).
+    val heldAmount: Double = 0.0
 ) {
     val progressPercent: Double get() = if (targetAmount > 0) (currentAmount / targetAmount).coerceIn(0.0, 1.0) * 100.0 else 0.0
     val monthsRemaining: Int get() = if (monthlyContribution > 0) {

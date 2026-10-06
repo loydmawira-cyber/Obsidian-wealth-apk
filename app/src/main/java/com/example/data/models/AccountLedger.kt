@@ -35,6 +35,14 @@ object AccountLedger {
         return confirmedOpeningBalance + ledgerEffect
     }
 
+    /** Money in this account that is set aside for goals held here. */
+    fun earmarkedForGoals(account: AccountEntity, goals: Iterable<GoalEntity>): Double =
+        goals.asSequence().filter { it.heldInAccountId == account.id }.sumOf { it.heldAmount }.coerceAtLeast(0.0)
+
+    /** Balance that is not set aside for any goal, so it is free to spend or move. */
+    fun freeBalance(account: AccountEntity, transactions: Iterable<TransactionEntity>, goals: Iterable<GoalEntity>): Double =
+        currentBalance(account, transactions) - earmarkedForGoals(account, goals)
+
     fun reconciliationAdjustment(accountBalance: Double, statementBalance: Double): Double =
         statementBalance - accountBalance
 
