@@ -113,6 +113,17 @@ class FinanceRepository(private val dao: FinanceDao) {
         dao.recordGoalContribution(goalId, transaction)
     suspend fun deleteGoalContribution(transactionId: Long): Boolean =
         dao.deleteGoalContribution(transactionId)
+    suspend fun ensureGoalsReserve(currencyCode: String): AccountEntity = dao.ensureGoalsReserve(currencyCode)
+    suspend fun recordGoalDeposit(goalId: Long, sourceId: Long, holdingId: Long, amount: Double, nowMillis: Long, groupId: String): Boolean =
+        dao.recordGoalDeposit(goalId, sourceId, holdingId, amount, nowMillis, groupId)
+    suspend fun recordGoalWithdrawal(goalId: Long, destinationId: Long?, amount: Double, nowMillis: Long, groupId: String): Boolean =
+        dao.recordGoalWithdrawal(goalId, destinationId, amount, nowMillis, groupId)
+    suspend fun adoptLegacyGoalFunds(goalId: Long, holdingId: Long, nowMillis: Long): Double =
+        dao.adoptLegacyGoalFunds(goalId, holdingId, nowMillis)
+    suspend fun moveGoalHolding(goalId: Long, newHoldingId: Long, nowMillis: Long, groupId: String): Boolean =
+        dao.moveGoalHolding(goalId, newHoldingId, nowMillis, groupId)
+    suspend fun deleteGoalAndReleaseFunds(goalId: Long, destinationId: Long, nowMillis: Long, groupId: String): Boolean =
+        dao.deleteGoalAndReleaseFunds(goalId, destinationId, nowMillis, groupId)
     suspend fun contributeToGoal(goal: GoalEntity, amount: Double) {
         val newAmount = goal.currentAmount + amount
         dao.updateGoal(goal.copy(currentAmount = newAmount))
