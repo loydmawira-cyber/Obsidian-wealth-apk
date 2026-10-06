@@ -53,6 +53,7 @@ import com.example.ui.viewmodel.FinanceViewModel
 @Composable
 fun AccountManagementCard(viewModel: FinanceViewModel, modifier: Modifier = Modifier) {
     val accounts by viewModel.accounts.collectAsState()
+    val allGoals by viewModel.goals.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     var reconcileTarget by remember { mutableStateOf<AccountEntity?>(null) }
     var resolveTarget by remember { mutableStateOf<AccountEntity?>(null) }
@@ -85,6 +86,15 @@ fun AccountManagementCard(viewModel: FinanceViewModel, modifier: Modifier = Modi
                                 Text("Needs review", color = SovereignGold, fontSize = 9.sp)
                             }
                         }
+                    }
+                    val setAside = com.example.data.models.AccountLedger.earmarkedForGoals(account, allGoals)
+                    if (setAside > 0.005 && !account.currencyCode.isNullOrBlank()) {
+                        val balance = viewModel.currentAccountBalance(account)
+                        Text(
+                            if (account.accountType == "GOALS_RESERVE") "All set aside for goals"
+                            else "Set aside for goals ${viewModel.formatAmount(setAside, account.currencyCode)} · Free ${viewModel.formatAmount((balance - setAside).coerceAtLeast(0.0), account.currencyCode)}",
+                            color = SovereignGold, fontSize = 10.sp
+                        )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (account.currencyCode.isNullOrBlank()) {
@@ -128,7 +138,7 @@ fun AccountManagementCard(viewModel: FinanceViewModel, modifier: Modifier = Modi
     ) }
     if (showTransfer) TransferAccountsDialog(
         accounts = accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() },
-        balance = { viewModel.currentAccountBalance(it) },
+        balance = { viewModel.currentAccountBalance(it) - com.example.data.models.AccountLedger.earmarkedForGoals(it, allGoals) },
         formatAmount = { amount, code -> viewModel.formatAmount(amount, code) },
         onDismiss = { showTransfer = false },
         onTransfer = { from, to, amount, note -> viewModel.recordTransfer(from, to, amount, note) }

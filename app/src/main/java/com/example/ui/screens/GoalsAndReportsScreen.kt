@@ -3,7 +3,9 @@ package com.example.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -78,6 +80,7 @@ import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.FinanceViewModel
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GoalsAndReportsScreen(
     viewModel: FinanceViewModel,
@@ -103,22 +106,81 @@ fun GoalsAndReportsScreen(
     var goalMoneyTarget by remember { mutableStateOf<Pair<com.example.data.models.GoalEntity, Boolean>?>(null) }
     if (isPremium) goalMoneyTarget?.let { (targetGoal, isDeposit) ->
         com.example.ui.components.GoalMoneyDialog(
-            goalTitle = targetGoal.title,
-            goalCurrencyCode = targetGoal.currencyCode,
+            goal = targetGoal,
             isDeposit = isDeposit,
-            maxAmount = if (isDeposit) null else targetGoal.currentAmount,
             accounts = accounts,
-            availableBalance = { account -> AccountLedger.currentBalance(account, transactions).coerceAtLeast(0.0) },
+            heldInAccount = accounts.firstOrNull { it.id == targetGoal.heldInAccountId },
+            freeBalance = { account -> AccountLedger.freeBalance(account, transactions, storedGoals) },
             formatAmount = { amount, currencyCode -> viewModel.formatAmount(amount, currencyCode) },
             onDismiss = { goalMoneyTarget = null },
-            onConfirm = { amount, account ->
+            onConfirm = { amount, account, holdingChoice ->
                 if (isDeposit) {
-                    account?.let { viewModel.contributeGoal(targetGoal, amount, it) }
+                    account?.let { viewModel.contributeGoal(targetGoal, amount, it, holdingChoice) }
                 } else {
-                    viewModel.withdrawFromGoal(targetGoal, amount)
+                    viewModel.withdrawFromGoal(targetGoal, amount, account)
                 }
             }
         )
+    }
+
+    // Long-press a goal to edit it, change where its money is held, or delete it.
+    var goalActionTarget by remember { mutableStateOf<com.example.data.models.GoalEntity?>(null) }
+    var goalEditTarget by remember { mutableStateOf<com.example.data.models.GoalEntity?>(null) }
+    var goalMoveTarget by remember { mutableStateOf<com.example.data.models.GoalEntity?>(null) }
+    var goalDeleteTarget by remember { mutableStateOf<com.example.data.models.GoalEntity?>(null) }
+    fun liveGoal(g: com.example.data.models.GoalEntity) = storedGoals.firstOrNull { it.id == g.id } ?: g
+    if (isPremium) {
+        goalActionTarget?.let { g ->
+            com.example.ui.components.GoalActionsDialog(
+                goal = liveGoal(g),
+                canMove = !g.currencyCode.isNullOrBlank(),
+                onEdit = { goalEditTarget = g },
+                onMove = { goalMoveTarget = g },
+                onDelete = { goalDeleteTarget = g },
+                onDismiss = { goalActionTarget = null }
+            )
+        }
+        goalEditTarget?.let { g ->
+            com.example.ui.components.EditGoalDialog(
+                goal = liveGoal(g),
+                onDismiss = { goalEditTarget = null },
+                onSave = { title, category, target, monthly, year ->
+                    viewModel.updateGoalDetails(liveGoal(g), title, category, target, monthly, year)
+                }
+            )
+        }
+        goalMoveTarget?.let { g ->
+            val live = liveGoal(g)
+            com.example.ui.components.MoveGoalHoldingDialog(
+                goal = live,
+                accounts = accounts,
+                heldInAccount = accounts.firstOrNull { it.id == live.heldInAccountId },
+                formatAmount = { amount, code -> viewModel.formatAmount(amount, code) },
+                onDismiss = { goalMoveTarget = null },
+                onConfirm = { newHolding -> viewModel.moveGoalHolding(live, newHolding) }
+            )
+        }
+        goalDeleteTarget?.let { g ->
+            val live = liveGoal(g)
+            val legacyRef = "goal-contribution:${live.id}"
+            val legacyTotal = transactions.asSequence()
+                .filter {
+                    it.sourceReference == legacyRef && it.category == com.example.data.models.Category.GOAL_SAVINGS &&
+                        it.type == com.example.data.models.TransactionType.EXPENSE &&
+                        it.transactionKind == com.example.data.models.TransactionKind.ASSET_CONVERSION &&
+                        it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED"
+                }
+                .sumOf { it.amount }
+            com.example.ui.components.DeleteGoalDialog(
+                goal = live,
+                accounts = accounts,
+                heldInAccount = accounts.firstOrNull { it.id == live.heldInAccountId },
+                legacyTotal = legacyTotal,
+                formatAmount = { amount, code -> viewModel.formatAmount(amount, code) },
+                onDismiss = { goalDeleteTarget = null },
+                onConfirm = { destination -> viewModel.deleteGoal(live, destination) }
+            )
+        }
     }
 
     // Personal finance summary built only from recorded data.
@@ -300,7 +362,12 @@ ${goalsReportSection}
 
         items(goals, key = { "goal_${it.id}" }) { goal ->
             val progress = goal.progressPercent.toFloat()
-            FinCard {
+            FinCard(
+                modifier = Modifier.combinedClickable(
+                    onClick = {},
+                    onLongClick = { goalActionTarget = goal }
+                )
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -390,6 +457,38 @@ ${goalsReportSection}
                     color = EmeraldGrowth,
                     trackColor = ObsidianBorderSubtle
                 )
+                if (!goal.currencyCode.isNullOrBlank()) {
+                    val holdingAccount = accounts.firstOrNull { it.id == goal.heldInAccountId }
+                    val legacyRef = "goal-contribution:${goal.id}"
+                    val legacyTotal = transactions.asSequence()
+                        .filter {
+                            it.sourceReference == legacyRef && it.category == com.example.data.models.Category.GOAL_SAVINGS &&
+                                it.type == com.example.data.models.TransactionType.EXPENSE &&
+                                it.transactionKind == com.example.data.models.TransactionKind.ASSET_CONVERSION &&
+                                it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED"
+                        }
+                        .sumOf { it.amount }
+                    val trackingOnly = (goal.currentAmount - goal.heldAmount).coerceAtLeast(0.0)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (holdingAccount != null && goal.heldAmount > 0.005) {
+                        Text(
+                            "${viewModel.formatAmount(goal.heldAmount, goal.currencyCode)} held in ${holdingAccount.name}",
+                            color = TextSecondary, fontSize = 10.sp
+                        )
+                    }
+                    if (legacyTotal > 0.005) {
+                        Text(
+                            "${viewModel.formatAmount(legacyTotal, goal.currencyCode)} was taken from your accounts by earlier deposits and isn't in any account. Tap to move it into ${holdingAccount?.name ?: "Goals Reserve"}.",
+                            color = GoldLight, fontSize = 10.sp,
+                            modifier = Modifier.clickable { viewModel.adoptLegacyGoalFunds(goal) }.padding(vertical = 3.dp)
+                        )
+                    } else if (trackingOnly > 0.005) {
+                        Text(
+                            "${viewModel.formatAmount(trackingOnly, goal.currencyCode)} is tracking-only (not held in an account). New deposits go to ${holdingAccount?.name ?: "Goals Reserve"}.",
+                            color = TextMuted, fontSize = 10.sp
+                        )
+                    }
+                }
                 if (goal.currencyCode.isNullOrBlank()) {
                     Text("Confirm this legacy goal's currency before adding to its progress:", color = GoldLight, fontSize = 10.sp)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
