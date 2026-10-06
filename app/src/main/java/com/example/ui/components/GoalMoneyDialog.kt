@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.models.AccountEntity
+import com.example.data.models.GoalEntity
 import com.example.ui.theme.CrimsonDebt
 import com.example.ui.theme.EmeraldGrowth
 import com.example.ui.theme.ObsidianBorder
@@ -43,30 +44,48 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
-/** Adds a goal contribution from a selected account, or lowers the tracking amount on withdrawal. */
+private const val RESERVE_TYPE = "GOALS_RESERVE"
+
+/**
+ * Deposit: moves cash from a source account into the account that holds the goal's money
+ * (Goals Reserve by default; chosen on the first deposit, then fixed).
+ * Withdraw: moves the held part back into an account you pick.
+ */
 @Composable
 fun GoalMoneyDialog(
-    goalTitle: String,
-    goalCurrencyCode: String?,
+    goal: GoalEntity,
     isDeposit: Boolean,
-    maxAmount: Double?,
     accounts: List<AccountEntity>,
-    availableBalance: (AccountEntity) -> Double,
+    heldInAccount: AccountEntity?,
+    freeBalance: (AccountEntity) -> Double,
     formatAmount: (Double, String?) -> String,
     onDismiss: () -> Unit,
-    onConfirm: (Double, AccountEntity?) -> Unit
+    // amount, source (deposit) or destination (withdraw), holding choice (first deposit only; null = Goals Reserve)
+    onConfirm: (Double, AccountEntity?, AccountEntity?) -> Unit
 ) {
-    val eligibleAccounts = remember(accounts, goalCurrencyCode) {
+    val goalCurrencyCode = goal.currencyCode
+    val sameCurrency = remember(accounts, goalCurrencyCode) {
         accounts.filter { it.isActive && !it.currencyCode.isNullOrBlank() && it.currencyCode == goalCurrencyCode }
     }
+    val nonReserve = remember(sameCurrency) { sameCurrency.filter { it.accountType != RESERVE_TYPE } }
+
     var text by remember { mutableStateOf("") }
-    var selectedAccount by remember(eligibleAccounts) { mutableStateOf(eligibleAccounts.firstOrNull()) }
+    // First deposit only: where the goal's money will live. null = Goals Reserve.
+    var holdingChoice by remember(nonReserve) { mutableStateOf<AccountEntity?>(null) }
+    val holding: AccountEntity? = heldInAccount ?: holdingChoice
+    val holdingLabel = holding?.name ?: "Goals Reserve"
+
+    // Deposit sources are real accounts only. Withdraw destinations also include the holding account ("stay").
+    var selectedAccount by remember(nonReserve) { mutableStateOf(nonReserve.firstOrNull { it.id != holding?.id } ?: nonReserve.firstOrNull()) }
+
     val amount = text.toDoubleOrNull()
-    val balance = selectedAccount?.let(availableBalance) ?: 0.0
-    val insufficientBalance = isDeposit && amount != null && amount > balance + 0.000001
+    val free = selectedAccount?.let(freeBalance) ?: 0.0
+    val insufficient = isDeposit && amount != null && amount > free + 0.000001
+    val maxAmount = if (isDeposit) null else goal.currentAmount
     val valid = amount != null && amount.isFinite() && amount > 0.0 &&
         (maxAmount == null || amount <= maxAmount + 1e-9) &&
-        (!isDeposit || (selectedAccount != null && !insufficientBalance))
+        (!isDeposit || (selectedAccount != null && !insufficient))
+    val trackingOnly = (goal.currentAmount - goal.heldAmount).coerceAtLeast(0.0)
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -77,62 +96,112 @@ fun GoalMoneyDialog(
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
-                    if (isDeposit) "Add to $goalTitle" else "Withdraw from $goalTitle",
-                    color = TextPrimary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
+                    if (isDeposit) "Add to ${goal.title}" else "Withdraw from ${goal.title}",
+                    color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    if (isDeposit) "Choose the account to withdraw from. The deposit updates goal progress and records the cash debit."
-                    else "This reduces the tracked goal balance only; it does not move cash. Available in the goal: ${formatAmount(maxAmount ?: 0.0, goalCurrencyCode)}.",
-                    color = TextSecondary,
-                    fontSize = 12.sp
+                    if (isDeposit) "Money moves from your account into the account holding this goal. It's a transfer, not spending."
+                    else "The money held for this goal moves back to the account you choose. Available in the goal: ${formatAmount(goal.currentAmount, goalCurrencyCode)}.",
+                    color = TextSecondary, fontSize = 12.sp
                 )
 
                 if (isDeposit) {
                     Spacer(Modifier.height(12.dp))
-                    Text("Withdraw from account · ${goalCurrencyCode ?: "currency unresolved"}", color = TextSecondary, fontSize = 11.sp)
-                    if (eligibleAccounts.isEmpty()) {
+                    if (heldInAccount != null) {
+                        Text("Held in · $holdingLabel", color = TextSecondary, fontSize = 11.sp)
+                    } else {
+                        Text("Hold this goal's money in", color = TextSecondary, fontSize = 11.sp)
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = holdingChoice == null,
+                                onClick = { holdingChoice = null },
+                                label = { Text("Goals Reserve", fontSize = 10.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SovereignGold, selectedLabelColor = Color.Black)
+                            )
+                            nonReserve.forEach { account ->
+                                FilterChip(
+                                    selected = holdingChoice?.id == account.id,
+                                    onClick = { holdingChoice = account },
+                                    label = { Text(account.name, fontSize = 10.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SovereignGold, selectedLabelColor = Color.Black)
+                                )
+                            }
+                        }
+                        Text("Chosen once with the first deposit.", color = TextMuted, fontSize = 10.sp)
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Text("Take it from · ${goalCurrencyCode ?: "currency unresolved"}", color = TextSecondary, fontSize = 11.sp)
+                    if (nonReserve.isEmpty()) {
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "No active account in ${goalCurrencyCode ?: "the goal currency"}. Add or resolve an account in that currency before depositing.",
-                            color = SovereignGold,
-                            fontSize = 11.sp
+                            color = SovereignGold, fontSize = 11.sp
                         )
                     } else {
                         Row(
                             modifier = Modifier.horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            eligibleAccounts.forEach { account ->
-                                val accountBalance = availableBalance(account).coerceAtLeast(0.0)
+                            nonReserve.forEach { account ->
                                 FilterChip(
                                     selected = account.id == selectedAccount?.id,
                                     onClick = { selectedAccount = account },
-                                    label = {
-                                        Text(
-                                            "${account.name} · ${formatAmount(accountBalance, account.currencyCode)}",
-                                            fontSize = 10.sp
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = SovereignGold,
-                                        selectedLabelColor = Color.Black
-                                    )
+                                    label = { Text("${account.name} · ${formatAmount(freeBalance(account).coerceAtLeast(0.0), account.currencyCode)}", fontSize = 10.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SovereignGold, selectedLabelColor = Color.Black)
                                 )
                             }
                         }
                         selectedAccount?.let { account ->
+                            Text("Free to use: ${formatAmount(free.coerceAtLeast(0.0), account.currencyCode)}", color = TextMuted, fontSize = 10.sp)
                             Text(
-                                "Available balance: ${formatAmount(balance.coerceAtLeast(0.0), account.currencyCode)}",
-                                color = TextMuted,
-                                fontSize = 10.sp
+                                if (account.id == holding?.id) "This account already holds the goal, so the money stays put and is set aside."
+                                else "${formatAmount(amount ?: 0.0, account.currencyCode)} moves from ${account.name} to $holdingLabel.",
+                                color = TextMuted, fontSize = 10.sp
                             )
                         }
-                        if (insufficientBalance) {
-                            Text("Not enough balance in the selected account.", color = CrimsonDebt, fontSize = 11.sp)
+                        if (insufficient) {
+                            Text("Not enough free balance in the selected account.", color = CrimsonDebt, fontSize = 11.sp)
                         }
+                    }
+                } else {
+                    Spacer(Modifier.height(12.dp))
+                    if (heldInAccount != null && goal.heldAmount > 0.0) {
+                        Text("Move it to", color = TextSecondary, fontSize = 11.sp)
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val others = nonReserve.filter { it.id != heldInAccount.id }
+                            others.forEach { account ->
+                                FilterChip(
+                                    selected = account.id == selectedAccount?.id,
+                                    onClick = { selectedAccount = account },
+                                    label = { Text(account.name, fontSize = 10.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SovereignGold, selectedLabelColor = Color.Black)
+                                )
+                            }
+                            FilterChip(
+                                selected = selectedAccount?.id == heldInAccount.id || (selectedAccount == null),
+                                onClick = { selectedAccount = heldInAccount },
+                                label = { Text("Stay in ${heldInAccount.name}", fontSize = 10.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = SovereignGold, selectedLabelColor = Color.Black)
+                            )
+                        }
+                        Text(
+                            "${formatAmount(goal.heldAmount, goalCurrencyCode)} of this goal is held in ${heldInAccount.name}.",
+                            color = TextMuted, fontSize = 10.sp
+                        )
+                    }
+                    if (trackingOnly > 0.005) {
+                        Text(
+                            "${formatAmount(trackingOnly, goalCurrencyCode)} is tracking-only (not in any account); withdrawing that part just lowers the goal.",
+                            color = SovereignGold, fontSize = 10.sp
+                        )
                     }
                 }
 
@@ -153,13 +222,20 @@ fun GoalMoneyDialog(
                 )
                 Spacer(Modifier.height(14.dp))
                 Button(
-                    onClick = { onConfirm(amount ?: 0.0, if (isDeposit) selectedAccount else null); onDismiss() },
+                    onClick = {
+                        onConfirm(
+                            amount ?: 0.0,
+                            if (isDeposit) selectedAccount else selectedAccount?.takeIf { heldInAccount != null && goal.heldAmount > 0.0 },
+                            if (isDeposit && heldInAccount == null) holdingChoice else null
+                        )
+                        onDismiss()
+                    },
                     enabled = valid,
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (isDeposit) "Deposit from account" else "Withdraw", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text(if (isDeposit) "Deposit" else "Withdraw", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
