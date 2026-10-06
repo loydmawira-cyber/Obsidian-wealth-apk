@@ -3,6 +3,7 @@ package com.example
 import com.example.data.models.AccountEntity
 import com.example.data.models.AccountLedger
 import com.example.data.models.CurrencyTotals
+import com.example.data.models.GoalEntity
 import com.example.data.models.TransactionEntity
 import com.example.data.models.TransactionKind
 import com.example.data.models.TransactionType
@@ -32,6 +33,22 @@ class AccountLedgerTest {
             tx(4, 50L, 7_000.0, TransactionType.INCOME)
         )
         assertEquals(1_250.0, AccountLedger.currentBalance(account, rows), 0.0001)
+    }
+
+    @Test
+    fun freeBalanceExcludesMoneySetAsideForGoalsHeldInTheAccount() {
+        val savings = AccountEntity(
+            id = 21, name = "Savings", currencyCode = "KES", openingBalance = 1_000.0,
+            openingBalanceMillis = 0L, openingBalanceConfirmed = true
+        )
+        val goals = listOf(
+            GoalEntity(id = 1, title = "Rent", category = "Safety", targetAmount = 500.0, currentAmount = 300.0,
+                monthlyContribution = 0.0, currencyCode = "KES", heldInAccountId = 21, heldAmount = 300.0),
+            GoalEntity(id = 2, title = "Trip", category = "Travel", targetAmount = 500.0, currentAmount = 200.0,
+                monthlyContribution = 0.0, currencyCode = "KES", heldInAccountId = 99, heldAmount = 200.0)
+        )
+        assertEquals(300.0, AccountLedger.earmarkedForGoals(savings, goals), 0.0001)
+        assertEquals(700.0, AccountLedger.freeBalance(savings, emptyList(), goals), 0.0001)
     }
 
     @Test
