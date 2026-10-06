@@ -65,8 +65,185 @@ interface FinanceDao {
             source.category != Category.ACCOUNT_TRANSFER || destination.category != Category.ACCOUNT_TRANSFER ||
             source.transferGroupId.isNullOrBlank() || source.transferGroupId != destination.transferGroupId) return false
         if (!AccountLedger.hasSufficientBalance(from, getTransactionsSnapshot(), amount, source.dateMillis + 1L)) return false
+        // Money set aside for goals held in this account is not free to move.
+        if (AccountLedger.freeBalance(from, getTransactionsSnapshot(), getGoalsSnapshot()) + 0.000001 < amount) return false
         insertTransaction(source)
         insertTransaction(destination)
+        return true
+    }
+
+    // --- Goals Reserve and goal funding ---
+    @Query("SELECT * FROM accounts WHERE accountType = 'GOALS_RESERVE' AND isActive = 1 AND currencyCode = :currencyCode LIMIT 1")
+    suspend fun getGoalsReserve(currencyCode: String): AccountEntity?
+
+    @Query("SELECT COUNT(*) FROM accounts WHERE accountType = 'GOALS_RESERVE'")
+    suspend fun countGoalsReserves(): Int
+
+    /** The default home for goal money: one auto-created account per currency. */
+    @Transaction
+    suspend fun ensureGoalsReserve(currencyCode: String): AccountEntity {
+        getGoalsReserve(currencyCode)?.let { return it }
+        val account = AccountEntity(
+            name = if (countGoalsReserves() == 0) "Goals Reserve" else "Goals Reserve ($currencyCode)",
+            accountType = "GOALS_RESERVE",
+            currencyCode = currencyCode,
+            openingBalance = 0.0,
+            openingBalanceMillis = 0L,
+            openingBalanceConfirmed = true
+        )
+        return account.copy(id = insertAccount(account))
+    }
+
+    /**
+     * Puts money into a goal. Cash moves from [sourceId] into the goal's holding account as a transfer
+     * (not spending). If the source already is the holding account, the money stays put and is just set aside.
+     */
+    @Transaction
+    suspend fun recordGoalDeposit(goalId: Long, sourceId: Long, holdingId: Long, amount: Double, nowMillis: Long, groupId: String): Boolean {
+        val goal = getGoal(goalId) ?: return false
+        val code = goal.currencyCode
+        if (code.isNullOrBlank() || !amount.isFinite() || amount <= 0.0) return false
+        if (goal.heldInAccountId != null && goal.heldInAccountId != holdingId) return false
+        val source = getAccount(sourceId) ?: return false
+        val holding = getAccount(holdingId) ?: return false
+        if (!source.isActive || !holding.isActive || source.currencyCode != code || holding.currencyCode != code) return false
+        val ledger = getTransactionsSnapshot()
+        if (!AccountLedger.hasSufficientBalance(source, ledger, amount, nowMillis + 1L)) return false
+        if (AccountLedger.freeBalance(source, ledger, getGoalsSnapshot()) + 0.000001 < amount) return false
+        val newCurrent = goal.currentAmount + amount
+        val newHeld = goal.heldAmount + amount
+        if (!newCurrent.isFinite() || !newHeld.isFinite()) return false
+        if (sourceId != holdingId) {
+            val (out, inn) = goalTransfer(goal, source, holding, amount, nowMillis, groupId,
+                "Goal deposit: ${goal.title}", "Goal deposit from ${source.name}")
+            insertTransaction(out)
+            insertTransaction(inn)
+        }
+        updateGoal(goal.copy(currentAmount = newCurrent, heldInAccountId = holdingId, heldAmount = newHeld))
+        return true
+    }
+
+    /**
+     * Takes money out of a goal. The part that is really held in an account moves to [destinationId]
+     * (or just stops being set aside if that is the holding account or null). Any tracking-only part
+     * only lowers the goal balance.
+     */
+    @Transaction
+    suspend fun recordGoalWithdrawal(goalId: Long, destinationId: Long?, amount: Double, nowMillis: Long, groupId: String): Boolean {
+        val goal = getGoal(goalId) ?: return false
+        val code = goal.currencyCode
+        if (code.isNullOrBlank() || !amount.isFinite() || amount <= 0.0) return false
+        val withdrawn = kotlin.math.min(amount, goal.currentAmount)
+        if (withdrawn <= 0.0) return false
+        val backed = kotlin.math.min(withdrawn, goal.heldAmount).coerceAtLeast(0.0)
+        val holdingId = goal.heldInAccountId
+        if (backed > 0.0 && holdingId != null && destinationId != null && destinationId != holdingId) {
+            val holding = getAccount(holdingId) ?: return false
+            val dest = getAccount(destinationId) ?: return false
+            if (!dest.isActive || dest.currencyCode != code || holding.currencyCode != code) return false
+            if (AccountLedger.currentBalance(holding, getTransactionsSnapshot()) + 0.000001 < backed) return false
+            val (out, inn) = goalTransfer(goal, holding, dest, backed, nowMillis, groupId,
+                "Goal withdrawal: ${goal.title}", "Goal withdrawal from ${holding.name}")
+            insertTransaction(out)
+            insertTransaction(inn)
+        }
+        updateGoal(goal.copy(
+            currentAmount = (goal.currentAmount - withdrawn).coerceAtLeast(0.0),
+            heldAmount = (goal.heldAmount - backed).coerceAtLeast(0.0)
+        ))
+        return true
+    }
+
+    /**
+     * Older deposits debited an account but left the money nowhere. This lands that money in the
+     * holding account (as a non-income adjustment) and marks those deposits as settled so net worth
+     * does not count the money twice.
+     */
+    @Transaction
+    suspend fun adoptLegacyGoalFunds(goalId: Long, holdingId: Long, nowMillis: Long): Double {
+        val goal = getGoal(goalId) ?: return 0.0
+        val code = goal.currencyCode ?: return 0.0
+        if (goal.heldInAccountId != null && goal.heldInAccountId != holdingId) return 0.0
+        val holding = getAccount(holdingId) ?: return 0.0
+        if (!holding.isActive || holding.currencyCode != code) return 0.0
+        val legacy = legacyGoalContributions(goalId, getTransactionsSnapshot())
+        val total = legacy.sumOf { it.amount }
+        if (total <= 0.0) return 0.0
+        insertTransaction(TransactionEntity(
+            title = "Goal funds moved here: ${goal.title}", amount = total, type = TransactionType.INCOME,
+            category = Category.ACCOUNT_ADJUSTMENT, account = holding.name, dateMillis = nowMillis,
+            note = "Earlier goal deposits for ${goal.title} now held in this account", accountId = holding.id,
+            currencyCode = holding.currencyCode, transactionKind = TransactionKind.ADJUSTMENT,
+            sourceReference = "goal-adopt:$goalId"
+        ))
+        legacy.forEach { updateTransaction(it.copy(sourceReference = "goal-contribution-adopted:$goalId")) }
+        val backed = kotlin.math.min(total, (goal.currentAmount - goal.heldAmount).coerceAtLeast(0.0))
+        updateGoal(goal.copy(heldInAccountId = holdingId, heldAmount = goal.heldAmount + backed))
+        return total
+    }
+
+    /** Changes which account holds a goal's money, moving the held amount across as a transfer. */
+    @Transaction
+    suspend fun moveGoalHolding(goalId: Long, newHoldingId: Long, nowMillis: Long, groupId: String): Boolean {
+        val goal = getGoal(goalId) ?: return false
+        val code = goal.currencyCode
+        if (code.isNullOrBlank()) return false
+        val oldId = goal.heldInAccountId
+        if (oldId == newHoldingId) return false
+        val newHolding = getAccount(newHoldingId) ?: return false
+        if (!newHolding.isActive || newHolding.currencyCode != code) return false
+        if (oldId != null && goal.heldAmount > 0.0) {
+            val old = getAccount(oldId) ?: return false
+            if (old.currencyCode != code) return false
+            if (AccountLedger.currentBalance(old, getTransactionsSnapshot()) + 0.000001 < goal.heldAmount) return false
+            val (out, inn) = goalTransfer(goal, old, newHolding, goal.heldAmount, nowMillis, groupId,
+                "Goal moved: ${goal.title}", "Goal moved from ${old.name}")
+            insertTransaction(out)
+            insertTransaction(inn)
+        }
+        updateGoal(goal.copy(heldInAccountId = newHoldingId))
+        return true
+    }
+
+    /**
+     * Deletes a goal and returns its money. The held part moves to [destinationId] (or just stops being set
+     * aside if that is the holding account). Older deposits that never landed in an account are booked
+     * into [destinationId] too, so net worth is unchanged. Tracking-only money simply disappears with the goal.
+     */
+    @Transaction
+    suspend fun deleteGoalAndReleaseFunds(goalId: Long, destinationId: Long, nowMillis: Long, groupId: String): Boolean {
+        val goal = getGoal(goalId) ?: return false
+        val code = goal.currencyCode
+        val holdingId = goal.heldInAccountId
+        val backed = goal.heldAmount.coerceAtLeast(0.0)
+        val legacy = legacyGoalContributions(goalId, getTransactionsSnapshot())
+        val legacyTotal = legacy.sumOf { it.amount }
+        val movesHeld = backed > 0.0 && holdingId != null && destinationId != holdingId
+        if (movesHeld || legacyTotal > 0.0) {
+            if (code.isNullOrBlank()) return false
+            val dest = getAccount(destinationId) ?: return false
+            if (!dest.isActive || dest.currencyCode != code) return false
+            if (movesHeld) {
+                val holding = getAccount(holdingId!!) ?: return false
+                if (holding.currencyCode != code) return false
+                if (AccountLedger.currentBalance(holding, getTransactionsSnapshot()) + 0.000001 < backed) return false
+                val (out, inn) = goalTransfer(goal, holding, dest, backed, nowMillis, groupId,
+                    "Goal closed: ${goal.title}", "Goal closed, funds from ${holding.name}")
+                insertTransaction(out)
+                insertTransaction(inn)
+            }
+            if (legacyTotal > 0.0) {
+                insertTransaction(TransactionEntity(
+                    title = "Goal funds returned: ${goal.title}", amount = legacyTotal, type = TransactionType.INCOME,
+                    category = Category.ACCOUNT_ADJUSTMENT, account = dest.name, dateMillis = nowMillis,
+                    note = "Earlier deposits for the deleted goal ${goal.title}", accountId = dest.id,
+                    currencyCode = dest.currencyCode, transactionKind = TransactionKind.ADJUSTMENT,
+                    sourceReference = "goal-adopt:$goalId"
+                ))
+                legacy.forEach { updateTransaction(it.copy(sourceReference = "goal-contribution-adopted:$goalId")) }
+            }
+        }
+        deleteGoal(goal)
         return true
     }
 
@@ -424,3 +601,30 @@ interface FinanceDao {
     @Query("DELETE FROM goals")
     suspend fun clearAllGoals()
 }
+
+internal fun goalTransfer(
+    goal: GoalEntity, from: AccountEntity, to: AccountEntity, amount: Double,
+    nowMillis: Long, groupId: String, outTitle: String, inTitle: String
+): Pair<TransactionEntity, TransactionEntity> {
+    val reference = "goal-funds:${goal.id}"
+    return TransactionEntity(
+        title = outTitle, amount = amount, type = TransactionType.EXPENSE, category = Category.ACCOUNT_TRANSFER,
+        account = from.name, dateMillis = nowMillis, note = "Goal: ${goal.title}", accountId = from.id,
+        currencyCode = from.currencyCode, transactionKind = TransactionKind.TRANSFER,
+        transferGroupId = groupId, sourceReference = reference
+    ) to TransactionEntity(
+        title = inTitle, amount = amount, type = TransactionType.INCOME, category = Category.ACCOUNT_TRANSFER,
+        account = to.name, dateMillis = nowMillis, note = "Goal: ${goal.title}", accountId = to.id,
+        currencyCode = to.currencyCode, transactionKind = TransactionKind.TRANSFER,
+        transferGroupId = groupId, sourceReference = reference
+    )
+}
+
+/** Older goal deposits: confirmed expenses that left an account but never landed in one. */
+internal fun legacyGoalContributions(goalId: Long, ledger: List<TransactionEntity>): List<TransactionEntity> =
+    ledger.filter {
+        it.sourceReference == "goal-contribution:$goalId" && it.category == Category.GOAL_SAVINGS &&
+            it.type == TransactionType.EXPENSE && it.transactionKind == TransactionKind.ASSET_CONVERSION &&
+            it.importStatus != "PENDING_REVIEW" && it.importStatus != "IGNORED" &&
+            it.amount.isFinite() && it.amount > 0.0
+    }
