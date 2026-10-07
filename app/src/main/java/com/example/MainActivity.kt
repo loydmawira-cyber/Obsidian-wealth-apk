@@ -212,6 +212,8 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
                 viewModel.onAppBackgrounded()
+            } else if (event == Lifecycle.Event.ON_START) {
+                viewModel.onAppForegrounded()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
