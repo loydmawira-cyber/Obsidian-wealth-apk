@@ -2297,11 +2297,12 @@ fun ThemePickerDialog(
                             Text(
                                 text = mode.title,
                                 color = if (selected) MaterialTheme.colorScheme.primary else TextSecondary,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
+                                maxLines = 2,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 modifier = Modifier
-                                    .padding(vertical = 10.dp)
+                                    .padding(vertical = 10.dp, horizontal = 2.dp)
                                     .fillMaxWidth()
                             )
                         }
