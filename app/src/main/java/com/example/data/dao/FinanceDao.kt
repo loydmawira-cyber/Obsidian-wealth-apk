@@ -72,6 +72,44 @@ interface FinanceDao {
         return true
     }
 
+    @Query("UPDATE transactions SET account = :name WHERE accountId = :accountId")
+    suspend fun renameTransactionsAccount(accountId: Long, name: String)
+
+    @Query("DELETE FROM accounts WHERE id = :id")
+    suspend fun deleteAccountRow(id: Long)
+
+    /** Renames / retypes an account and keeps the account name stored on its transactions in step. */
+    @Transaction
+    suspend fun updateAccountDetails(accountId: Long, name: String, accountType: String): Boolean {
+        val account = getAccount(accountId) ?: return false
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) return false
+        val newType = when {
+            account.accountType == "GOALS_RESERVE" -> account.accountType
+            accountType == "GOALS_RESERVE" -> return false
+            else -> accountType
+        }
+        updateAccount(account.copy(name = cleanName, accountType = newType))
+        renameTransactionsAccount(accountId, cleanName)
+        return true
+    }
+
+    /**
+     * Deletes an account only when its balance is exactly zero and no goal holds money in it.
+     * Its past transactions stay in your history.
+     */
+    @Transaction
+    suspend fun deleteAccountIfEmpty(accountId: Long): Boolean {
+        val account = getAccount(accountId) ?: return false
+        val balance = AccountLedger.currentBalance(account, getTransactionsSnapshot())
+        if (!balance.isFinite() || kotlin.math.abs(balance) > 0.005) return false
+        val heldHere = getGoalsSnapshot().filter { it.heldInAccountId == accountId }
+        if (heldHere.any { it.heldAmount > 0.005 }) return false
+        heldHere.forEach { updateGoal(it.copy(heldInAccountId = null, heldAmount = 0.0)) }
+        deleteAccountRow(accountId)
+        return true
+    }
+
     // --- Goals Reserve and goal funding ---
     @Query("SELECT * FROM accounts WHERE accountType = 'GOALS_RESERVE' AND isActive = 1 AND currencyCode = :currencyCode LIMIT 1")
     suspend fun getGoalsReserve(currencyCode: String): AccountEntity?
