@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
@@ -136,6 +137,7 @@ fun ObsidianSettingsSheet(
 
     var activeTab by remember { mutableStateOf(0) } // 0: Regional, 1: Modules, 2: AI & Privacy, 3: Cloud Vault
     var showSetPinDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
     // Saving a PIN derives a salted hash off the main thread, so it needs a scope.
     val pinScope = rememberCoroutineScope()
 
@@ -145,6 +147,15 @@ fun ObsidianSettingsSheet(
         containerColor = ObsidianBg,
         tonalElevation = 0.dp
     ) {
+        if (showThemeDialog) {
+            ThemePickerDialog(
+                currentMode = settings.themeMode,
+                currentAccent = settings.accentColor,
+                onDismiss = { showThemeDialog = false },
+                onModeChange = { viewModel.setThemeMode(it) },
+                onAccentChange = { viewModel.setAccentColor(it) }
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -290,6 +301,14 @@ fun ObsidianSettingsSheet(
                 }
                 item {
                     SettingsCategoryTab(
+                        title = "Theme",
+                        icon = Icons.Default.Palette,
+                        isSelected = activeTab == 4,
+                        onClick = { activeTab = 4 }
+                    )
+                }
+                item {
+                    SettingsCategoryTab(
                         title = "Modules",
                         icon = Icons.Default.Tune,
                         isSelected = activeTab == 1,
@@ -331,6 +350,48 @@ fun ObsidianSettingsSheet(
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                if (activeTab == 4) {
+                    // APPEARANCE: theme mode and accent colour (moved here from the top bar)
+                    item {
+                        Text(
+                            text = "APPEARANCE",
+                            color = SovereignGold,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 0.8.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Pick Dark, Light, Match Device or Royal Gold, and an accent colour.",
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = ObsidianSurfaceVariant,
+                            border = BorderStroke(1.dp, SovereignGold.copy(alpha = 0.45f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showThemeDialog = true }
+                                .testTag("open_theme_picker_button")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Palette, contentDescription = null, tint = SovereignGold, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Theme: ${settings.themeMode.title}", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Accent: ${settings.accentColor.name.lowercase().replaceFirstChar { it.uppercase() }}", color = TextMuted, fontSize = 11.sp)
+                                }
+                                Text("Change", color = SovereignGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
                 if (activeTab == 0) {
                     // GEOGRAPHICAL & REGIONAL SETTINGS
                     item {
