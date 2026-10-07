@@ -3,7 +3,9 @@ package com.example.ui.screens
 import com.example.ui.components.displayName
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -51,6 +53,7 @@ import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.FinanceViewModel
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AccountManagementCard(viewModel: FinanceViewModel, modifier: Modifier = Modifier) {
     val accounts by viewModel.accounts.collectAsState()
@@ -60,16 +63,19 @@ fun AccountManagementCard(viewModel: FinanceViewModel, modifier: Modifier = Modi
     var resolveTarget by remember { mutableStateOf<AccountEntity?>(null) }
     var openingBalanceTarget by remember { mutableStateOf<AccountEntity?>(null) }
     var showTransfer by remember { mutableStateOf(false) }
+    var actionTarget by remember { mutableStateOf<AccountEntity?>(null) }
+    var editTarget by remember { mutableStateOf<AccountEntity?>(null) }
+    var deleteTarget by remember { mutableStateOf<AccountEntity?>(null) }
 
     FinCard(modifier = modifier, border = BorderStroke(1.dp, ObsidianBorder)) {
         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Text("CASH ACCOUNTS", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Text("Enter balances yourself. Obsidian does not connect to or move money from your bank.", color = TextMuted, fontSize = 11.sp)
+            Text("Enter balances yourself. Obsidian does not connect to or move money from your bank. Long-press an account to edit or delete it.", color = TextMuted, fontSize = 11.sp)
             if (accounts.isEmpty()) {
                 Text("Add a cash, bank, wallet, or mobile-money account to start an account-level balance.", color = TextSecondary, fontSize = 12.sp)
             }
             accounts.forEach { account ->
-                Column {
+                Column(modifier = Modifier.combinedClickable(onClick = {}, onLongClick = { actionTarget = account })) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(account.displayName(), color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -113,6 +119,30 @@ fun AccountManagementCard(viewModel: FinanceViewModel, modifier: Modifier = Modi
                 OutlinedButton(onClick = { showTransfer = true }, enabled = accounts.count { it.isActive && !it.currencyCode.isNullOrBlank() } >= 2, modifier = Modifier.weight(1f)) { Text("Transfer", color = SovereignGold, fontSize = 11.sp) }
             }
         }
+    }
+
+    actionTarget?.let { account -> AccountActionsDialog(
+        account = account,
+        onEdit = { editTarget = account },
+        onDelete = { deleteTarget = account },
+        onDismiss = { actionTarget = null }
+    ) }
+    editTarget?.let { account -> EditAccountDialog(
+        account = account,
+        onDismiss = { editTarget = null },
+        onSave = { name, type -> viewModel.updateAccountDetails(account, name, type) }
+    ) }
+    deleteTarget?.let { account ->
+        val balance = viewModel.currentAccountBalance(account)
+        val holdsGoalMoney = allGoals.any { it.heldInAccountId == account.id && it.heldAmount > 0.005 }
+        DeleteAccountDialog(
+            account = account,
+            balanceText = account.currencyCode?.let { viewModel.formatAmount(balance, it) } ?: balance.toString(),
+            balanceIsZero = kotlin.math.abs(balance) <= 0.005,
+            holdsGoalMoney = holdsGoalMoney,
+            onDismiss = { deleteTarget = null },
+            onConfirm = { viewModel.deleteAccount(account) }
+        )
     }
 
     if (showAdd) AddAccountDialog(
@@ -163,6 +193,49 @@ private fun AddAccountDialog(defaultCurrency: SupportedCurrency, onDismiss: () -
         OutlinedTextField(value = balanceText, onValueChange = { balanceText = it }, label = { Text("Opening balance (${currency.code})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, colors = fieldColors(), modifier = Modifier.fillMaxWidth())
         Button(onClick = { onSave(name, type, currency.code, balance ?: 0.0); onDismiss() }, enabled = name.isNotBlank() && balance != null && balance.isFinite(), colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth()) { Text("Save account", color = Color.Black, fontWeight = FontWeight.Bold) }
         OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+    }
+}
+
+@Composable
+private fun AccountActionsDialog(account: AccountEntity, onEdit: () -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
+    SimpleAccountDialog(onDismiss) {
+        Text(account.displayName(), color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Button(onClick = { onDismiss(); onEdit() }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth()) { Text("Edit details", color = Color.Black, fontWeight = FontWeight.Bold) }
+        Button(onClick = { onDismiss(); onDelete() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)), modifier = Modifier.fillMaxWidth()) { Text("Delete account", color = Color.White, fontWeight = FontWeight.Bold) }
+        OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+    }
+}
+
+@Composable
+private fun EditAccountDialog(account: AccountEntity, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+    var name by remember(account.id) { mutableStateOf(account.name) }
+    var type by remember(account.id) { mutableStateOf(account.accountType) }
+    val isReserve = account.accountType == "GOALS_RESERVE"
+    SimpleAccountDialog(onDismiss) {
+        Text("Edit account", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("Past transactions are renamed too. Balance and currency don't change.", color = TextSecondary, fontSize = 11.sp)
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Account name") }, singleLine = true, colors = fieldColors(), modifier = Modifier.fillMaxWidth())
+        if (!isReserve) {
+            Text("Account type", color = TextSecondary, fontSize = 11.sp)
+            ChipChoices(listOf("BANK", "MOBILE MONEY", "CASH", "SAVINGS", "OTHER"), type.replace('_', ' ')) { type = it.replace(' ', '_') }
+        }
+        Button(onClick = { onSave(name, type); onDismiss() }, enabled = name.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = EmeraldGrowth), modifier = Modifier.fillMaxWidth()) { Text("Save changes", color = Color.Black, fontWeight = FontWeight.Bold) }
+        OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+    }
+}
+
+@Composable
+private fun DeleteAccountDialog(account: AccountEntity, balanceText: String, balanceIsZero: Boolean, holdsGoalMoney: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    val canDelete = balanceIsZero && !holdsGoalMoney
+    SimpleAccountDialog(onDismiss) {
+        Text("Delete ${account.displayName()}?", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        when {
+            !balanceIsZero -> Text("Balance is $balanceText. An account can only be deleted when its balance is zero. Transfer or withdraw the money first.", color = SovereignGold, fontSize = 12.sp)
+            holdsGoalMoney -> Text("Money for a goal is still held here. Move that goal to another account first.", color = SovereignGold, fontSize = 12.sp)
+            else -> Text("Balance is zero. The account is removed; its past transactions stay in your history. This can't be undone.", color = TextSecondary, fontSize = 12.sp)
+        }
+        Button(onClick = { onConfirm(); onDismiss() }, enabled = canDelete, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)), modifier = Modifier.fillMaxWidth()) { Text("Delete account", color = Color.White, fontWeight = FontWeight.Bold) }
+        OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Keep account") }
     }
 }
 
