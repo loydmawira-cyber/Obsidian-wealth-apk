@@ -99,7 +99,6 @@ import com.example.ui.components.ConfirmLoanPaymentDialog
 import com.example.data.models.UserSettings
 import com.example.data.models.ThemeMode
 import com.example.data.models.AccentColor
-import com.example.ui.components.ThemePickerDialog
 import com.example.ui.auth.AuthScreen
 import com.example.ui.auth.PinLockScreen
 import com.example.ui.components.AddHoldingDialog
@@ -262,7 +261,6 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
     var showClearDataDialog by remember { mutableStateOf(false) }
     var showAiAdvisorSheet by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
-    var showThemePickerDialog by remember { mutableStateOf(false) }
     var showExportReportDialog by remember { mutableStateOf(false) }
     var showImportedTransactionsDialog by remember { mutableStateOf(false) }
     var showPremiumPaywall by remember { mutableStateOf(false) }
@@ -291,7 +289,6 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
                 userSettings = userSettings,
                 onOpenSettings = { showSettingsSheet = true },
                 onToggleHideBalances = { viewModel.toggleHideBalances() },
-                onOpenThemePicker = { showThemePickerDialog = true },
                 pendingApprovalCount = pendingReviewCount,
                 onOpenApprovals = { showImportedTransactionsDialog = true }
             )
@@ -523,16 +520,6 @@ fun ObsidianApp(viewModel: FinanceViewModel) {
         }
     }
 
-    if (showThemePickerDialog) {
-        ThemePickerDialog(
-            currentMode = userSettings.themeMode,
-            currentAccent = userSettings.accentColor,
-            onDismiss = { showThemePickerDialog = false },
-            onModeChange = { viewModel.setThemeMode(it) },
-            onAccentChange = { viewModel.setAccentColor(it) }
-        )
-    }
-
     if (loanToPay != null) {
         val loan = loanToPay!!
         ConfirmLoanPaymentDialog(
@@ -625,7 +612,6 @@ fun ObsidianTopBar(
     userSettings: UserSettings,
     onOpenSettings: () -> Unit = {},
     onToggleHideBalances: () -> Unit = {},
-    onOpenThemePicker: () -> Unit = {},
     pendingApprovalCount: Int = 0,
     onOpenApprovals: () -> Unit = {}
 ) {
@@ -717,38 +703,11 @@ fun ObsidianTopBar(
                     }
                 }
 
-                // Right: Regional Badge, Privacy Toggle, Theme Picker & Settings menu
+                // Right: Approvals, Privacy Toggle & Settings menu
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Regional Currency Pill
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = Color(0xFF121824),
-                        border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
-                        modifier = Modifier
-                            .clickable { onOpenSettings() }
-                            .testTag("currency_selector_pill")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Text(
-                                text = userSettings.currency.flag,
-                                fontSize = 11.sp
-                            )
-                            Text(
-                                text = userSettings.currency.code,
-                                color = accent,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
                     // Pending transaction approvals inbox
                     Box(modifier = Modifier.size(32.dp)) {
                         IconButton(
@@ -799,23 +758,6 @@ fun ObsidianTopBar(
                             imageVector = if (userSettings.hideBalances) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                             contentDescription = if (userSettings.hideBalances) "Show Balances" else "Hide Balances",
                             tint = if (userSettings.hideBalances) accent else TextMuted,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    // Appearance / Theme Picker Button
-                    IconButton(
-                        onClick = onOpenThemePicker,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(ObsidianSurfaceVariant, CircleShape)
-                            .border(1.dp, accent.copy(alpha = 0.45f), CircleShape)
-                            .testTag("open_theme_picker_button")
-                    ) {
-                        Icon(
-                            Icons.Default.Palette,
-                            contentDescription = "Appearance",
-                            tint = accent,
                             modifier = Modifier.size(16.dp)
                         )
                     }
