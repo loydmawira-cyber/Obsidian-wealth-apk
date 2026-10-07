@@ -579,6 +579,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Renames an account or changes its type (bank, mobile money, cash...). Its transactions are renamed too. */
+    fun updateAccountDetails(account: AccountEntity, name: String, accountType: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            if (repository.updateAccountDetails(account.id, name, accountType)) syncVaultToCloud()
+            else _actionMessages.tryEmit("Account details not saved.")
+        }
+    }
+
+    /** Deletes an account only when its balance is zero. Past transactions stay in your history. */
+    fun deleteAccount(account: AccountEntity) {
+        viewModelScope.launch {
+            if (repository.deleteAccountIfEmpty(account.id)) {
+                queueCloudDeletion("accounts", account.id)
+                syncVaultToCloud()
+                _actionMessages.tryEmit("${account.name} deleted.")
+            } else {
+                _actionMessages.tryEmit("${account.name} not deleted. Its balance must be zero and no goal can hold money in it.")
+            }
+        }
+    }
+
     fun resolveAccountCurrency(account: AccountEntity, currencyCode: String) {
         if (SupportedCurrency.values().none { it.code == currencyCode }) return
         viewModelScope.launch {
