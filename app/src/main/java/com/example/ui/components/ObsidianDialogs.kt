@@ -282,7 +282,7 @@ fun AddTransactionDialog(
                             fontSize = 10.sp
                         )
                     }
-                    Text("Amount currency: ${account?.currencyCode ?: "unknownâ€”resolve this account first"}", color = if (account?.currencyCode == null) SovereignGold else TextMuted, fontSize = 10.sp)
+                    Text("Amount currency: ${account?.currencyCode ?: "unknown—resolve this account first"}", color = if (account?.currencyCode == null) SovereignGold else TextMuted, fontSize = 10.sp)
                     if (account != null) {
                         val balanceLabel = if (selectedType == TransactionType.EXPENSE) "Selected available" else "Selected current"
                         Text("$balanceLabel: ${formatAmount(selectedAccountBalance, account?.currencyCode)}", color = TextMuted, fontSize = 10.sp)
@@ -391,8 +391,8 @@ fun AiSmartLogDialog(
                         val presets = listOf(
                             "Spent $45 on groceries at Supermarket",
                             "Received $4,500 consulting retainer deposit",
-                            "Paid ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬85 for electricity bill",
-                            "Spent Ãƒâ€šÃ‚Â£65 on transport and rail ticket",
+                            "Paid €85 for electricity bill",
+                            "Spent £65 on transport and rail ticket",
                             "Invested $500 into Index Fund ETF",
                             "Paid $120 for Internet & Mobile bill"
                         )
@@ -467,7 +467,7 @@ fun AiSmartLogDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Extracting DraftÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("Extracting Draft…", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                         } else {
                             Text("Extract & Review Draft", color = Color.Black, fontWeight = FontWeight.Bold)
@@ -848,7 +848,7 @@ fun ObsidianAiAdvisorSheet(
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¯ Create Goal (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("🎯 Create Goal (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -865,7 +865,7 @@ fun ObsidianAiAdvisorSheet(
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("ÃƒÂ¢Ã…Â¾Ã¢â‚¬Â¢ Log Transaction (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("➕ Log Transaction (Review Form)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1189,7 +1189,7 @@ fun AddHoldingDialog(
                                 border = BorderStroke(1.dp, if (isSelected) EmeraldGrowth else ObsidianBorderSubtle)
                             ) {
                                 Text(
-                                    text = "${candidate.name} Â· ${candidate.currencyCode}",
+                                    text = "${candidate.displayName()} · ${candidate.currencyCode}",
                                     color = if (isSelected) EmeraldLight else TextSecondary,
                                     fontSize = 11.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
@@ -1282,7 +1282,7 @@ fun HoldingActionDialog(
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(holding.name, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("${holding.symbol} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${if (holding.shares % 1.0 == 0.0) holding.shares.toInt() else holding.shares} units", color = TextSecondary, fontSize = 13.sp)
+                Text("${holding.symbol} • ${if (holding.shares % 1.0 == 0.0) holding.shares.toInt() else holding.shares} units", color = TextSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = { onEdit(); onDismiss() },
@@ -1637,7 +1637,7 @@ fun AddSipDialog(
                                 border = BorderStroke(1.dp, if (isSelected) EmeraldGrowth else ObsidianBorderSubtle)
                             ) {
                                 Text(
-                                    text = "${candidate.name} Â· ${candidate.currencyCode}",
+                                    text = "${candidate.displayName()} · ${candidate.currencyCode}",
                                     color = if (isSelected) EmeraldLight else TextSecondary,
                                     fontSize = 11.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,

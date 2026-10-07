@@ -135,7 +135,7 @@ fun ObsidianSettingsSheet(
     val isDemoAccount = userEmail.equals(FinanceViewModel.DEMO_SEED_EMAIL, ignoreCase = true)
     val context = LocalContext.current
 
-    var activeTab by remember { mutableStateOf(0) } // 0: Regional, 1: Modules, 2: AI & Privacy, 3: Cloud Vault
+    var activeTab by remember { mutableStateOf(0) } // 0: Regional, 1: Modules, 2: Alerts, 3: Privacy, 4: Cloud Sync, 5: Theme
     var showSetPinDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     // Saving a PIN derives a salted hash off the main thread, so it needs a scope.
@@ -303,8 +303,8 @@ fun ObsidianSettingsSheet(
                     SettingsCategoryTab(
                         title = "Theme",
                         icon = Icons.Default.Palette,
-                        isSelected = activeTab == 4,
-                        onClick = { activeTab = 4 }
+                        isSelected = activeTab == 5,
+                        onClick = { activeTab = 5 }
                     )
                 }
                 item {
@@ -350,7 +350,7 @@ fun ObsidianSettingsSheet(
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                if (activeTab == 4) {
+                if (activeTab == 5) {
                     // APPEARANCE: theme mode and accent colour (moved here from the top bar)
                     item {
                         Text(
