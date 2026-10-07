@@ -110,11 +110,21 @@ fun CashFlowScreen(
         tx.currencyCode ?: tx.accountId?.let { accountCurrencyById[it] } ?: tx.creditCardId?.let { cardCurrencyById[it] }
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") }
+    // Account-type filter: null = all accounts, otherwise BANK / MOBILE_MONEY / CASH / GOALS_RESERVE.
+    var selectedAccountType by remember { mutableStateOf<String?>(null) }
 
     // The ledger opens short and grows on demand; it resets whenever the month, search or filter changes.
     var actionTx by remember { mutableStateOf<TransactionEntity?>(null) }
     var editTx by remember { mutableStateOf<TransactionEntity?>(null) }
-    var visibleCount by remember(month.monthStart, searchQuery, selectedFilter) { mutableStateOf(5) }
+    var visibleCount by remember(month.monthStart, searchQuery, selectedFilter, selectedAccountType) { mutableStateOf(5) }
+
+    fun normalizedAccountType(raw: String): String = raw.trim().uppercase().replace(' ', '_')
+    // Same-named accounts are common, so match by id first and by name only when the name is unique.
+    fun accountTypeOf(tx: TransactionEntity): String? {
+        val account = accounts.firstOrNull { tx.accountId != null && it.id == tx.accountId }
+            ?: accounts.filter { it.name.equals(tx.account.trim(), ignoreCase = true) }.singleOrNull()
+        return account?.let { normalizedAccountType(it.accountType) }
+    }
 
     val filteredTransactions = transactions.filter { tx ->
         val matchesSearch = tx.title.contains(searchQuery, ignoreCase = true) ||
@@ -126,8 +136,9 @@ fun CashFlowScreen(
             "RECURRING" -> tx.isRecurring
             else -> true
         }
+        val matchesAccountType = selectedAccountType == null || accountTypeOf(tx) == selectedAccountType
         val inMonth = tx.dateMillis >= month.monthStart && tx.dateMillis < month.monthEnd
-        matchesSearch && matchesFilter && inMonth
+        matchesSearch && matchesFilter && matchesAccountType && inMonth
     }
 
     // Every confirmed expense in the selected month counts here — not just ones linked
@@ -523,6 +534,36 @@ fun CashFlowScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+
+                // Account-type chips: tell bank and mobile-money activity apart at a glance.
+                val accountTypeChips = listOf(
+                    "BANK" to "\uD83C\uDFE0 Bank",
+                    "MOBILE_MONEY" to "\uD83D\uDCF1 Mobile money",
+                    "CASH" to "\uD83D\uDCB5 Cash",
+                    "GOALS_RESERVE" to "\uD83C\uDFAF Goals"
+                ).filter { (type, _) -> accounts.any { normalizedAccountType(it.accountType) == type } }
+                if (accountTypeChips.size >= 2) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(listOf<Pair<String?, String>>(null to "All accounts") + accountTypeChips) { (type, label) ->
+                            val isSel = selectedAccountType == type
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { selectedAccountType = type },
+                                color = if (isSel) SovereignGold else ObsidianSurfaceVariant,
+                                border = BorderStroke(1.dp, if (isSel) SovereignGold else ObsidianBorderSubtle)
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isSel) Color(0xFF0A0700) else TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+                }
 
                 // Filter Chips
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
