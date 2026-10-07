@@ -441,14 +441,29 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // Elapsed-realtime stamp of when the app left the foreground; null while it is in front.
+    private var backgroundedAtMillis: Long? = null
+
     fun onAppBackgrounded() {
         if (_isLoggedIn.value) {
             if (_isPinEnabled.value) {
-                _isPinLocked.value = true
+                // Don't lock yet: coming back within the grace period (e.g. to copy an SMS code) skips the PIN.
+                if (backgroundedAtMillis == null) backgroundedAtMillis = android.os.SystemClock.elapsedRealtime()
             } else {
                 _isLoggedIn.value = false
                 preferencesManager.setLoggedIn(false)
             }
+        }
+    }
+
+    /** Locks with the PIN only if the app was away longer than [PIN_RELOCK_GRACE_MILLIS]. */
+    fun onAppForegrounded() {
+        val since = backgroundedAtMillis ?: return
+        backgroundedAtMillis = null
+        if (_isLoggedIn.value && _isPinEnabled.value &&
+            android.os.SystemClock.elapsedRealtime() - since >= PIN_RELOCK_GRACE_MILLIS
+        ) {
+            _isPinLocked.value = true
         }
     }
 
@@ -1973,5 +1988,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         // Only this account receives auto-seeded Kenyan demo/sample data on first login
         // (used as a shared demo login for testers/reviewers). All other accounts start blank.
         const val DEMO_SEED_EMAIL = "smarttechlab.apps@gmail.com"
+
+        // How long the app may stay in the background before the PIN is asked for again.
+        const val PIN_RELOCK_GRACE_MILLIS = 30_000L
     }
 }
