@@ -73,7 +73,8 @@ enum class AiRiskProfile(
 enum class ThemeMode(val title: String) {
     DARK("Dark"),
     LIGHT("Light"),
-    SYSTEM("Match Device")
+    SYSTEM("Match Device"),
+    ROYAL_GOLD("Royal Gold")
 }
 
 /** Accent tint applied to the app's chrome (top bar, nav, FAB). ARGB stored as a raw Long so this model has no Compose dependency. */
