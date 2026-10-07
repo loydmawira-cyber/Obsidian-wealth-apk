@@ -113,6 +113,9 @@ class FinanceRepository(private val dao: FinanceDao) {
         dao.recordGoalContribution(goalId, transaction)
     suspend fun deleteGoalContribution(transactionId: Long): Boolean =
         dao.deleteGoalContribution(transactionId)
+    suspend fun updateAccountDetails(accountId: Long, name: String, accountType: String): Boolean =
+        dao.updateAccountDetails(accountId, name, accountType)
+    suspend fun deleteAccountIfEmpty(accountId: Long): Boolean = dao.deleteAccountIfEmpty(accountId)
     suspend fun ensureGoalsReserve(currencyCode: String): AccountEntity = dao.ensureGoalsReserve(currencyCode)
     suspend fun recordGoalDeposit(goalId: Long, sourceId: Long, holdingId: Long, amount: Double, nowMillis: Long, groupId: String): Boolean =
         dao.recordGoalDeposit(goalId, sourceId, holdingId, amount, nowMillis, groupId)
