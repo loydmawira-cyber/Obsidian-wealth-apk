@@ -57,6 +57,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.EmeraldLight
+import com.example.ui.theme.ObsidianBg
+import com.example.ui.theme.ObsidianSurface
+import com.example.ui.theme.ObsidianSurfaceVariant
 import com.example.ui.theme.ObsidianBorderSubtle
 import com.example.ui.theme.SovereignGold
 import com.example.ui.theme.TextMuted
@@ -104,7 +107,7 @@ private fun computeLabelPlacements(
     boxW: Float,
     boxH: Float
 ): List<DonutLabelPlacement> {
-    class Raw(val index: Int, val side: Int, val vAnchor: Int, val ax: Float, var y: Float)
+    class Raw(val index: Int, val side: Int, val vAnchor: Int, var x: Float, var y: Float)
 
     var start = 0f
     val raws = slices.mapIndexed { i, s ->
@@ -127,10 +130,16 @@ private fun computeLabelPlacements(
             1 -> ay
             else -> ay - labelH / 2f
         }
-        Raw(i, side, vAnchor, ax, y)
+        val x = when (side) {
+            1 -> ax
+            -1 -> ax - labelW
+            else -> ax - labelW / 2f
+        }
+        Raw(i, side, vAnchor, x, y)
     }
 
     val gap = 2f
+    // Labels on the left/right: spread vertically so they never overlap.
     listOf(-1, 1).forEach { sd ->
         val group = raws.filter { it.side == sd }.sortedBy { it.y }
         group.forEachIndexed { k, r ->
@@ -142,14 +151,16 @@ private fun computeLabelPlacements(
             group[k].y = min(group[k].y, limit)
         }
     }
+    // Labels above/below the ring: spread horizontally so neighbours don't sit on top of each other.
+    listOf(-1, 1).forEach { va ->
+        val group = raws.filter { it.side == 0 && it.vAnchor == va }.sortedBy { it.x }
+        group.forEachIndexed { k, r ->
+            if (k > 0) r.x = max(r.x, group[k - 1].x + labelW + gap)
+        }
+    }
 
     return raws.map {
-        val x = when (it.side) {
-            1 -> it.ax
-            -1 -> it.ax - labelW
-            else -> it.ax - labelW / 2f
-        }.coerceIn(0f, max(0f, boxW - labelW))
-        DonutLabelPlacement(it.index, x, it.y, it.side, it.vAnchor)
+        DonutLabelPlacement(it.index, it.x.coerceIn(0f, max(0f, boxW - labelW)), it.y, it.side, it.vAnchor)
     }
 }
 
@@ -201,9 +212,9 @@ fun D3InteractiveDonutChart(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val labelW = 64.dp
-            val labelH = 40.dp
-            val anchorGap = 12.dp
+            val labelW = 58.dp
+            val labelH = 38.dp
+            val anchorGap = 10.dp
             val vMargin = labelH + anchorGap
 
             val ringD = min(chartSize.value, (maxWidth - (labelW + anchorGap) * 2).value)
@@ -335,6 +346,7 @@ fun D3InteractiveDonutChart(
                     val percent = (slice.value / totalValue) * 100.0
                     Column(
                         modifier = Modifier
+                            .align(Alignment.TopStart)
                             .offset(x = p.x.dp, y = p.y.dp)
                             .width(labelW)
                             .height(labelH)
@@ -384,7 +396,7 @@ fun D3InteractiveDonutChart(
                     modifier = Modifier
                         .size(ringD - thickness * 2 - 6.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF0C111A))
+                        .background(ObsidianBg)
                         .border(1.5.dp, SovereignGold.copy(alpha = 0.85f), CircleShape)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -491,7 +503,7 @@ fun D3InteractiveDonutChart(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
-                color = Color(0xFF101725),
+                color = ObsidianSurface,
                 border = BorderStroke(1.dp, slice.primaryColor.copy(alpha = 0.4f))
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -549,7 +561,7 @@ fun D3InteractiveDonutChart(
                         ) {
                             slice.underlyingAssets.forEach { asset ->
                                 Surface(
-                                    color = Color(0xFF182234),
+                                    color = ObsidianSurfaceVariant,
                                     shape = RoundedCornerShape(6.dp),
                                     border = BorderStroke(1.dp, ObsidianBorderSubtle)
                                 ) {
