@@ -84,8 +84,13 @@ fun MyApplicationTheme(
         ThemeMode.DARK -> true
         ThemeMode.LIGHT -> false
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.ROYAL_GOLD -> true
     }
-    val accent = Color(accentColor.argb)
+    // Set the palette before any child reads a themed colour, only when it actually changes.
+    val palette = if (themeMode == ThemeMode.ROYAL_GOLD) ObsidianPalettes.RoyalGold else ObsidianPalettes.Classic
+    if (ActivePalette.current !== palette) ActivePalette.current = palette
+    // In Royal Gold the default gold accent becomes the champagne gold of the palette.
+    val accent = if (themeMode == ThemeMode.ROYAL_GOLD && accentColor == AccentColor.GOLD) palette.gold else Color(accentColor.argb)
     val colorScheme = if (isDark) darkSchemeFor(accent) else lightSchemeFor(accent)
 
     MaterialTheme(
